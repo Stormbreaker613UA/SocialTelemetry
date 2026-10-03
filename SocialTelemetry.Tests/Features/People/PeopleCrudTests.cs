@@ -3,13 +3,13 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 using CreatePerson = SocialTelemetry.Api.Features.People.Create;
+using DomainUserProfile = SocialTelemetry.Api.Domain.Users.UserProfile;
 using GetPerson = SocialTelemetry.Api.Features.People.GetById;
 using GetPeople = SocialTelemetry.Api.Features.People.GetAll;
 using UpdatePerson = SocialTelemetry.Api.Features.People.Update;
@@ -176,20 +176,28 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         await database.DisposeAsync();
     }
 
-    public async Task<Guid> CreateUserProfileAsync()
+    public async Task<Guid> CreateUserProfileAsync(string displayName = "Test user")
     {
         await using var scope = application!.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var userProfile = new UserProfile
+        var userProfile = new DomainUserProfile
         {
             Id = Guid.NewGuid(),
-            DisplayName = "Test user"
+            DisplayName = displayName
         };
 
         dbContext.UserProfiles.Add(userProfile);
         await dbContext.SaveChangesAsync();
 
         return userProfile.Id;
+    }
+
+    public async Task ClearUserProfilesAsync()
+    {
+        await using var scope = application!.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        await dbContext.UserProfiles.ExecuteDeleteAsync();
     }
 
     public async Task<Guid> CreatePersonAsync(CreatePerson.Request request)
@@ -215,12 +223,11 @@ public sealed class PeopleApiFixture : IAsyncLifetime
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+            builder.ConfigureServices(services =>
             {
-                configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:Default"] = connectionString
-                });
+                services.RemoveAll<AppDbContext>();
+                services.RemoveAll<DbContextOptions<AppDbContext>>();
+                services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
             });
         }
     }
