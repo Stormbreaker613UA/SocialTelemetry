@@ -187,6 +187,10 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         (application ?? throw new InvalidOperationException("The fixture has not been initialized."))
         .WithWebHostBuilder(builder => builder.ConfigureServices(configureServices));
 
+    public AsyncServiceScope CreateAsyncScope() =>
+        (application ?? throw new InvalidOperationException("The fixture has not been initialized."))
+        .Services.CreateAsyncScope();
+
     public async Task InitializeAsync()
     {
         await database.StartAsync();

@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 using CreateInteraction = SocialTelemetry.Api.Features.Interactions.Create;
 using GetInteraction = SocialTelemetry.Api.Features.Interactions.GetById;
@@ -165,6 +168,55 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
 
         using var getResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_cascades_to_sourced_inferences_and_preserves_unrelated_inferences()
+    {
+        var (userProfileId, personId, _) = await CreatePeopleAsync();
+        var interactionId = await CreateInteractionAsync(
+            CreateRequest(userProfileId, "Source", [personId], DateTimeOffset.UtcNow));
+        var otherInteractionId = await CreateInteractionAsync(
+            CreateRequest(userProfileId, "Other source", [personId], DateTimeOffset.UtcNow));
+        Guid?[] sourceIds = [interactionId, interactionId, otherInteractionId, null];
+        var inferences = sourceIds.Select(sourceId => new PersonInference
+        {
+            Id = Guid.NewGuid(),
+            PersonId = personId,
+            SourceInteractionId = sourceId,
+            Value = "Test inference",
+            Confidence = 0.5m,
+            CreatedAt = DateTimeOffset.UtcNow
+        }).ToList();
+
+        await using (var scope = fixture.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            dbContext.PersonInferences.AddRange(inferences);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}");
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+
+        using var getResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}");
+        Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+
+        await using var verificationScope = fixture.CreateAsyncScope();
+        var verificationContext = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var remainingInferenceIds = await verificationContext.PersonInferences
+            .AsNoTracking()
+            .Where(inference => inference.PersonId == personId)
+            .Select(inference => inference.Id)
+            .ToListAsync();
+        var expectedInferenceIds = inferences
+            .Where(inference => inference.SourceInteractionId != interactionId)
+            .Select(inference => inference.Id)
+            .ToList();
+
+        Assert.Equal(expectedInferenceIds.Order(), remainingInferenceIds.Order());
+        Assert.True(await verificationContext.Interactions.AsNoTracking()
+            .AnyAsync(interaction => interaction.Id == otherInteractionId));
     }
 
     [Fact]
