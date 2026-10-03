@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SocialTelemetry.Api/SocialTelemetry.Api.csproj" />
+  <Project Path="SocialTelemetry.Tests/SocialTelemetry.Tests.csproj" />
+</Solution>
