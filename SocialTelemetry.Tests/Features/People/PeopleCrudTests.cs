@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 using CreatePerson = SocialTelemetry.Api.Features.People.Create;
@@ -154,14 +155,23 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         .Build();
 
     private PeopleWebApplicationFactory? application;
+    private string? attachmentStorageDirectory;
 
     public HttpClient Client { get; private set; } = null!;
+    public string AttachmentStorageDirectory => attachmentStorageDirectory
+        ?? throw new InvalidOperationException("The fixture has not been initialized.");
 
     public async Task InitializeAsync()
     {
         await database.StartAsync();
 
-        application = new PeopleWebApplicationFactory(database.GetConnectionString());
+        attachmentStorageDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "SocialTelemetry.Tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(attachmentStorageDirectory);
+
+        application = new PeopleWebApplicationFactory(database.GetConnectionString(), attachmentStorageDirectory);
         await using var scope = application.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await dbContext.Database.MigrateAsync();
@@ -174,6 +184,11 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         Client.Dispose();
         application?.Dispose();
         await database.DisposeAsync();
+
+        if (attachmentStorageDirectory is not null && Directory.Exists(attachmentStorageDirectory))
+        {
+            Directory.Delete(attachmentStorageDirectory, recursive: true);
+        }
     }
 
     public async Task<Guid> CreateUserProfileAsync(string displayName = "Test user")
@@ -219,10 +234,24 @@ public sealed class PeopleApiFixture : IAsyncLifetime
             .SingleOrDefaultAsync(person => person.Id == personId);
     }
 
-    private sealed class PeopleWebApplicationFactory(string connectionString) : WebApplicationFactory<Program>
+    public async Task<InteractionAttachment?> FindAttachmentAsync(Guid attachmentId)
+    {
+        await using var scope = application!.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        return await dbContext.InteractionAttachments
+            .AsNoTracking()
+            .SingleOrDefaultAsync(attachment => attachment.Id == attachmentId);
+    }
+
+    private sealed class PeopleWebApplicationFactory(
+        string connectionString,
+        string attachmentStorageDirectory) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseSetting("AttachmentStorage:LocalDirectory", attachmentStorageDirectory);
+
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<AppDbContext>();

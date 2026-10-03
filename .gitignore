@@ -22,3 +22,6 @@ coverage/
 # Local environment files
 .env
 .env.*
+
+# Local attachment storage
+SocialTelemetry.Api/attachments/
