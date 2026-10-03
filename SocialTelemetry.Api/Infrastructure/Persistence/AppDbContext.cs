@@ -19,6 +19,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
         modelBuilder.Entity<InteractionParticipant>()
             .HasKey(participant => new { participant.InteractionId, participant.PersonId });
     }

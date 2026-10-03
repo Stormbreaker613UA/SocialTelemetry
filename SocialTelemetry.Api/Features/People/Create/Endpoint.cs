@@ -1,4 +1,5 @@
 using FastEndpoints;
+using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
@@ -18,6 +19,16 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
         {
             AddError("UserProfileId and DisplayName are required.");
             await Send.ErrorsAsync(400, cancellationToken);
+            return;
+        }
+
+        var userProfileExists = await dbContext.UserProfiles
+            .AsNoTracking()
+            .AnyAsync(userProfile => userProfile.Id == request.UserProfileId, cancellationToken);
+
+        if (!userProfileExists)
+        {
+            await Send.NotFoundAsync(cancellationToken);
             return;
         }
 
