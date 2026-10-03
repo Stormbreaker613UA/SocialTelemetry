@@ -21,6 +21,13 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
             return;
         }
 
+        if (request.DisplayName.Trim().Length > 200 || !Enum.IsDefined(request.RelationshipContext))
+        {
+            AddError("DisplayName cannot exceed 200 characters and RelationshipContext must be supported.");
+            await Send.ErrorsAsync(400, cancellationToken);
+            return;
+        }
+
         var person = await dbContext.People
             .SingleOrDefaultAsync(person => person.Id == request.Id, cancellationToken);
 

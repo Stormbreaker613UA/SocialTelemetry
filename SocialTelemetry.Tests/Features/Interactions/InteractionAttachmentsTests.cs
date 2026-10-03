@@ -1,6 +1,11 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Tests.Features.People;
@@ -184,6 +189,8 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
         Assert.Equal(fileBytes, await response.Content.ReadAsByteArrayAsync());
     }
 
@@ -261,6 +268,137 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         Assert.False(File.Exists(firstFilePath));
         Assert.True(File.Exists(secondFilePath));
         Assert.Equal(new byte[] { 3, 4 }, await File.ReadAllBytesAsync(secondFilePath));
+    }
+
+    [Fact]
+    public async Task Delete_interaction_removes_its_files_and_preserves_unrelated_files()
+    {
+        var interactionId = await CreateInteractionAsync();
+        var otherInteractionId = await CreateInteractionAsync();
+        var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
+        var otherAttachment = await AddFileAttachmentAsync(otherInteractionId, AttachmentType.Image, [2], "image/png");
+
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
+        Assert.False(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!)));
+        Assert.Equal(new byte[] { 2 }, await File.ReadAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, otherAttachment.StorageKey!)));
+    }
+
+    [Fact]
+    public async Task Missing_file_returns_not_found_and_can_still_be_deleted()
+    {
+        var interactionId = await CreateInteractionAsync();
+        var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
+        File.Delete(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!));
+
+        using var downloadResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content");
+        Assert.Equal(HttpStatusCode.NotFound, downloadResponse.StatusCode);
+
+        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
+    }
+
+    [Fact]
+    public async Task Failed_metadata_save_removes_uploaded_file()
+    {
+        var interactionId = await CreateInteractionAsync();
+        var existingFiles = Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray();
+        using var application = fixture.WithServices(services =>
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(new FailedSaveInterceptor())));
+        using var client = application.CreateClient();
+        using var form = CreateFileForm(AttachmentType.Image, [1], "private.png", "image/png");
+
+        using var response = await client.PostAsync($"/interactions/{interactionId}/attachments", form);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray());
+    }
+
+    [Fact]
+    public async Task Failed_file_delete_keeps_metadata_for_retry()
+    {
+        var interactionId = await CreateInteractionAsync();
+        var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
+        using var application = fixture.WithServices(services =>
+        {
+            services.AddScoped<LocalAttachmentStorage>();
+            services.AddScoped<IAttachmentStorage>(serviceProvider =>
+                new FailedDeleteStorage(serviceProvider.GetRequiredService<LocalAttachmentStorage>()));
+        });
+        using var client = application.CreateClient();
+
+        using var failedResponse = await client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, failedResponse.StatusCode);
+        Assert.NotNull(await fixture.FindAttachmentAsync(attachment.Id));
+        Assert.True(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!)));
+
+        using var retryResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode);
+        Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
+    }
+
+    [Fact]
+    public async Task Storage_rejects_invalid_keys_without_touching_unrelated_files()
+    {
+        using var application = fixture.WithServices(_ => { });
+        using var scope = application.Services.CreateScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IAttachmentStorage>();
+        var unrelatedFile = Path.Combine(fixture.AttachmentStorageDirectory, "keep.txt");
+        await File.WriteAllTextAsync(unrelatedFile, "Unrelated content");
+
+        foreach (var key in new[] { "../keep.txt", "..\\keep.txt", "keep.txt", unrelatedFile })
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => storage.OpenReadAsync(key, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => storage.DeleteAsync(key, CancellationToken.None));
+        }
+
+        Assert.Equal("Unrelated content", await File.ReadAllTextAsync(unrelatedFile));
+    }
+
+    [Fact]
+    public async Task Failed_storage_write_removes_partial_file()
+    {
+        using var application = fixture.WithServices(_ => { });
+        using var scope = application.Services.CreateScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IAttachmentStorage>();
+        var existingFiles = Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray();
+        await using var content = new FailedReadStream();
+
+        await Assert.ThrowsAsync<IOException>(() => storage.SaveAsync(content, "private.png", "image/png", CancellationToken.None));
+
+        Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray());
+    }
+
+    private sealed class FailedReadStream : MemoryStream
+    {
+        public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+        {
+            await destination.WriteAsync(new byte[] { 1 }, cancellationToken);
+            throw new IOException("Simulated read failure after a partial write.");
+        }
+    }
+
+    private sealed class FailedSaveInterceptor : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Simulated metadata save failure.");
+    }
+
+    private sealed class FailedDeleteStorage(IAttachmentStorage storage) : IAttachmentStorage
+    {
+        public Task<string> SaveAsync(Stream content, string fileName, string? mimeType, CancellationToken cancellationToken) =>
+            storage.SaveAsync(content, fileName, mimeType, cancellationToken);
+
+        public Task<Stream?> OpenReadAsync(string storageKey, CancellationToken cancellationToken) =>
+            storage.OpenReadAsync(storageKey, cancellationToken);
+
+        public Task DeleteAsync(string storageKey, CancellationToken cancellationToken) =>
+            throw new IOException("Simulated file deletion failure.");
     }
 
     private async Task<Guid> CreateInteractionAsync()

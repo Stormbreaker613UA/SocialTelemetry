@@ -15,6 +15,7 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
         Post("/interactions/{interactionId}/attachments");
         AllowAnonymous();
         AllowFileUploads();
+        MaxRequestBodySize(MaximumFileSizeBytes + 1024 * 1024);
     }
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
@@ -60,7 +61,7 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
             Id = Guid.NewGuid(),
             InteractionId = request.InteractionId,
             Type = request.Type,
-            TextContent = request.Type == AttachmentType.Text ? request.TextContent!.Trim() : null,
+            TextContent = request.Type == AttachmentType.Text ? request.TextContent?.Trim() : null,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
@@ -75,8 +76,21 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
             attachment.MimeType = request.File.ContentType;
         }
 
-        dbContext.InteractionAttachments.Add(attachment);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            dbContext.InteractionAttachments.Add(attachment);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            if (attachment.StorageKey is not null)
+            {
+                // Request cancellation must not prevent cleanup of an unreferenced file.
+                await attachmentStorage.DeleteAsync(attachment.StorageKey, CancellationToken.None);
+            }
+
+            throw;
+        }
 
         await Send.ResponseAsync(
             new Response(

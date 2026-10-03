@@ -15,7 +15,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var participantIds = request.ParticipantIds.Distinct().ToList();
+        var participantIds = request.ParticipantIds?.Distinct().ToList() ?? [];
 
         if (request.UserProfileId == Guid.Empty ||
             string.IsNullOrWhiteSpace(request.Title) ||
@@ -40,7 +40,9 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
 
         var existingParticipantCount = await dbContext.People
             .AsNoTracking()
-            .CountAsync(person => participantIds.Contains(person.Id), cancellationToken);
+            .CountAsync(
+                person => person.UserProfileId == request.UserProfileId && participantIds.Contains(person.Id),
+                cancellationToken);
 
         if (existingParticipantCount != participantIds.Count)
         {
@@ -55,7 +57,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
             Title = request.Title.Trim(),
             Description = request.Description.Trim(),
             UserThoughts = request.UserThoughts,
-            OccurredAt = request.OccurredAt,
+            OccurredAt = request.OccurredAt.ToUniversalTime(),
             CreatedAt = DateTimeOffset.UtcNow
         };
 

@@ -15,7 +15,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var participantIds = request.ParticipantIds.Distinct().ToList();
+        var participantIds = request.ParticipantIds?.Distinct().ToList() ?? [];
 
         if (string.IsNullOrWhiteSpace(request.Title) ||
             string.IsNullOrWhiteSpace(request.Description) ||
@@ -39,7 +39,9 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
 
         var existingParticipantCount = await dbContext.People
             .AsNoTracking()
-            .CountAsync(person => participantIds.Contains(person.Id), cancellationToken);
+            .CountAsync(
+                person => person.UserProfileId == interaction.UserProfileId && participantIds.Contains(person.Id),
+                cancellationToken);
 
         if (existingParticipantCount != participantIds.Count)
         {
@@ -50,16 +52,25 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
         interaction.Title = request.Title.Trim();
         interaction.Description = request.Description.Trim();
         interaction.UserThoughts = request.UserThoughts;
-        interaction.OccurredAt = request.OccurredAt;
+        interaction.OccurredAt = request.OccurredAt.ToUniversalTime();
 
-        dbContext.InteractionParticipants.RemoveRange(interaction.Participants);
-        interaction.Participants = participantIds
+        var removedParticipants = interaction.Participants
+            .Where(participant => !participantIds.Contains(participant.PersonId))
+            .ToList();
+        dbContext.InteractionParticipants.RemoveRange(removedParticipants);
+
+        var existingParticipantIds = interaction.Participants
+            .Select(participant => participant.PersonId)
+            .ToHashSet();
+        var addedParticipants = participantIds
+            .Where(personId => !existingParticipantIds.Contains(personId))
             .Select(personId => new InteractionParticipant
             {
                 InteractionId = interaction.Id,
                 PersonId = personId
             })
             .ToList();
+        dbContext.InteractionParticipants.AddRange(addedParticipants);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

@@ -56,8 +56,10 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
             return;
         }
 
+        HttpContext.Response.Headers.XContentTypeOptions = "nosniff";
         await Send.StreamAsync(
             content,
+            fileName: attachment.StorageKey,
             fileLengthBytes: content.Length,
             contentType: attachment.MimeType ?? "application/octet-stream",
             cancellation: cancellationToken);

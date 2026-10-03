@@ -175,6 +175,71 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Create_and_update_reject_participants_from_another_profile(bool update)
+    {
+        var (userProfileId, personId, _) = await CreatePeopleAsync();
+        var otherProfileId = await fixture.CreateUserProfileAsync();
+        var otherPersonId = await CreatePersonAsync(otherProfileId, "Other profile");
+        var interactionId = await CreateInteractionAsync(
+            CreateRequest(userProfileId, "Original", [personId], DateTimeOffset.UtcNow));
+        var request = CreateRequest(userProfileId, "Invalid", [otherPersonId], DateTimeOffset.UtcNow);
+        using var response = update
+            ? await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request)
+            : await fixture.Client.PostAsJsonAsync("/interactions", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_retains_existing_participants_and_normalizes_offset_timestamp()
+    {
+        var (userProfileId, firstPersonId, secondPersonId) = await CreatePeopleAsync();
+        var occurredAt = new DateTimeOffset(2026, 4, 1, 12, 0, 0, TimeSpan.FromHours(3));
+        var interactionId = await CreateInteractionAsync(CreateRequest(userProfileId, "Original", [firstPersonId], occurredAt));
+        var request = new UpdateInteraction.Request
+        {
+            Title = "Updated",
+            Description = "Updated description",
+            OccurredAt = occurredAt.AddHours(1),
+            ParticipantIds = [firstPersonId, secondPersonId, firstPersonId]
+        };
+
+        using var response = await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var interaction = await GetInteractionAsync(interactionId);
+        Assert.Equal(occurredAt.AddHours(1).ToUniversalTime(), interaction.OccurredAt);
+        Assert.Equal(2, interaction.Participants.Count);
+        Assert.Contains(interaction.Participants, participant => participant.Id == firstPersonId);
+        Assert.Contains(interaction.Participants, participant => participant.Id == secondPersonId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Create_and_update_reject_null_participant_collection(bool update)
+    {
+        var (userProfileId, personId, _) = await CreatePeopleAsync();
+        var interactionId = await CreateInteractionAsync(
+            CreateRequest(userProfileId, "Original", [personId], DateTimeOffset.UtcNow));
+        var body = new
+        {
+            UserProfileId = userProfileId,
+            Title = "Invalid",
+            Description = "Description",
+            OccurredAt = DateTimeOffset.UtcNow,
+            ParticipantIds = (Guid[]?)null
+        };
+        using var response = update
+            ? await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", body)
+            : await fixture.Client.PostAsJsonAsync("/interactions", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private async Task<(Guid UserProfileId, Guid FirstPersonId, Guid SecondPersonId)> CreatePeopleAsync()
     {
         var userProfileId = await fixture.CreateUserProfileAsync();

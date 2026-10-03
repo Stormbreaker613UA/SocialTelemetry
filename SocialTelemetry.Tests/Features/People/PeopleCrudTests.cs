@@ -137,6 +137,28 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Create_and_update_reject_invalid_name_or_relationship(bool update, bool invalidRelationship)
+    {
+        var userProfileId = await fixture.CreateUserProfileAsync();
+        var personId = await fixture.CreatePersonAsync(CreateRequest(userProfileId, "Original"));
+        var body = new
+        {
+            UserProfileId = userProfileId,
+            DisplayName = invalidRelationship ? "Valid name" : new string('a', 201),
+            RelationshipContext = invalidRelationship ? (RelationshipContext)99 : RelationshipContext.Friend
+        };
+        using var response = update
+            ? await fixture.Client.PutAsJsonAsync($"/people/{personId}", body)
+            : await fixture.Client.PostAsJsonAsync("/people", body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private static CreatePerson.Request CreateRequest(Guid userProfileId, string displayName) => new()
     {
         UserProfileId = userProfileId,
@@ -161,6 +183,10 @@ public sealed class PeopleApiFixture : IAsyncLifetime
     public string AttachmentStorageDirectory => attachmentStorageDirectory
         ?? throw new InvalidOperationException("The fixture has not been initialized.");
 
+    public WebApplicationFactory<Program> WithServices(Action<IServiceCollection> configureServices) =>
+        (application ?? throw new InvalidOperationException("The fixture has not been initialized."))
+        .WithWebHostBuilder(builder => builder.ConfigureServices(configureServices));
+
     public async Task InitializeAsync()
     {
         await database.StartAsync();
@@ -181,13 +207,24 @@ public sealed class PeopleApiFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        Client.Dispose();
-        application?.Dispose();
-        await database.DisposeAsync();
-
-        if (attachmentStorageDirectory is not null && Directory.Exists(attachmentStorageDirectory))
+        try
         {
-            Directory.Delete(attachmentStorageDirectory, recursive: true);
+            Client?.Dispose();
+            application?.Dispose();
+        }
+        finally
+        {
+            try
+            {
+                await database.DisposeAsync();
+            }
+            finally
+            {
+                if (attachmentStorageDirectory is not null && Directory.Exists(attachmentStorageDirectory))
+                {
+                    Directory.Delete(attachmentStorageDirectory, recursive: true);
+                }
+            }
         }
     }
 

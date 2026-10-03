@@ -1,10 +1,11 @@
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.Interactions.Delete;
 
-public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachmentStorage) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -15,12 +16,21 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
         var interaction = await dbContext.Interactions
+            .Include(interaction => interaction.Attachments)
             .SingleOrDefaultAsync(interaction => interaction.Id == request.Id, cancellationToken);
 
         if (interaction is null)
         {
             await Send.NotFoundAsync(cancellationToken);
             return;
+        }
+
+        foreach (var attachment in interaction.Attachments)
+        {
+            if (attachment.StorageKey is not null)
+            {
+                await attachmentStorage.DeleteAsync(attachment.StorageKey, cancellationToken);
+            }
         }
 
         dbContext.Interactions.Remove(interaction);

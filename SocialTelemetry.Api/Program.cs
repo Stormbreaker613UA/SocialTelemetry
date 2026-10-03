@@ -2,6 +2,8 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Serilog.Events;
+using Serilog.Filters;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Persistence;
@@ -14,12 +16,12 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
-        .Enrich.FromLogContext();
-
-    if (context.HostingEnvironment.IsDevelopment())
-    {
-        loggerConfiguration.WriteTo.Console();
-    }
+        .Enrich.FromLogContext()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        // Provider failure events can contain database details and private values.
+        .Filter.ByExcluding(Matching.FromSource("Microsoft.EntityFrameworkCore"))
+        .Filter.ByExcluding(Matching.FromSource("Npgsql"))
+        .WriteTo.Console();
 });
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
