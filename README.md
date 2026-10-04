@@ -1,159 +1,111 @@
 # SocialTelemetry
 
-> Observability for questionable social decisions.
+> SocialTelemetry — Observability for questionable social decisions.
 
-SocialTelemetry is a small side project born from a very simple engineering problem:
+SocialTelemetry is a local AI-assisted journal and personal AI advisor/interpreter for understanding social interactions.
 
-> Developer encountered an unfamiliar social situation.  
-> Instead of behaving like a normal person, he built software.
+The journal records people and notable interactions, keeps long-term context, and lets you attach notes, screenshots, images, and audio files. Confirmed facts stay separate from assumptions and AI interpretations.
 
-The idea is to keep structured context about people and social interactions, attach additional evidence such as text, screenshots, images, or audio, and use AI to help analyze what actually happened.
+The planned AI workflow helps explain literal meaning, tone, and possible social meaning; surfaces uncertainty and alternative explanations; and suggests replies or next steps. Follow-up questions and a Person Advisor will help explore an analysis and patterns across interactions.
 
-This is NOT an AI oracle that tells you what another person is thinking.
+AI interpretations are hypotheses, not facts. SocialTelemetry is not a mind reader or relationship oracle.
 
-The main rule is simple:
+## Current Status
+
+An experimental side project targeting single-user local use. The backend and ChatGPT connection foundation are implemented; AI analysis and the user interface are still ahead.
+
+Implemented:
+
+- **Backend:** .NET 10 / ASP.NET Core, FastEndpoints, Vertical Slice Architecture, EF Core, PostgreSQL, and Swagger / OpenAPI.
+- **People and context:** People CRUD, UserProfile, confirmed PersonFacts, and a separate persisted PersonInference model. Inference generation is not implemented yet.
+- **Journal:** Interactions with multiple participants.
+- **Attachments:** text, images, screenshots, and audio; metadata retrieval, file download, and deletion through local storage.
+- **Attachment recovery:** a crash-safe lifecycle with staging, Pending / Ready / Deleting states, startup reconciliation, and cleanup of old orphan files.
+- **API errors and logging:** global exception handling, ProblemDetails, and structured Serilog logging that avoids private content and credentials.
+- **ChatGPT connection:** OAuth Authorization Code + PKCE, protected local credential storage, token refresh, model discovery, and model selection.
+- **Tests:** xUnit, HTTP integration tests with PostgreSQL Testcontainers, temporary attachment directories, and fake provider responses for AI connection tests.
+
+The ChatGPT integration implementation is complete in automated tests, but **real-account manual verification is still pending**. AnalyzeInteraction, suggested profile updates, follow-up conversations, and Person Advisor are not implemented yet. The project is not production-ready.
+
+## Facts and Guesses
 
 > Facts are facts. AI guesses are guesses.
 
+AI-generated interpretations must never silently become confirmed PersonFacts. The planned suggestion workflow requires explicit user review:
+
+```text
+AI suggestion → User reviews → Accept / Edit + Accept / Reject
+                               ↓
+                     Only user-confirmed changes become facts
+```
+
+Otherwise, an AI guess gets saved as fact, used as evidence, and becomes a stronger AI guess. Bullshit feedback loop.
+
+We don't want that.
+
+Interaction text, person data, and attachments are untrusted data, never model instructions. Future AI context will use relevant records and bounded history rather than loading everything.
+
+## Architecture
+
+V1 intentionally uses one ASP.NET Core application project and one test project:
+
+- `SocialTelemetry.Api` — HTTP endpoints, domain models, persistence, local storage, and AI provider integration.
+- `SocialTelemetry.Tests` — automated application and integration tests.
+
+Features live under `Features/<Feature>/<UseCase>`. FastEndpoints handles HTTP, and small slices use EF Core directly. This keeps the application easy to follow and appropriate for its current scope.
+
+## Roadmap
+
+Next:
+
+1. Real ChatGPT connection smoke test
+2. AnalyzeInteraction + AiContextBuilder + structured AI output
+3. Suggested profile updates + follow-up
+4. Person Advisor
+5. Razor Pages UI
+6. SQLite local mode
+7. Self-contained Windows app
+8. Installer / GitHub Releases
+9. Manual update checker
+10. V1 stabilization
+
+Future / post-v1:
+
+- VRChat/social-platform people import
+- Other AI providers
+- Audio transcription
+- Multi-user/server mode expansion
+- Sync
+
 ## Origin Story
 
-### Incident
+> Developer encountered an unfamiliar social situation.\
+> Instead of behaving like a normal person, he built software.
 
-An engineer received an ambiguous social signal.
+| Incident review | Finding |
+|---|---|
+| Incident | An engineer received an ambiguous social signal. |
+| Expected behavior | Respond naturally. |
+| Actual behavior | Overanalysis. |
+| Root cause | Engineer. |
+| Corrective action | Build an ASP.NET Core application. |
 
-### Expected behavior
-
-Respond naturally.
-
-### Actual behavior
-
-Overanalysis.
-
-### Root Cause
-
-Engineer.
-
-### Corrective Action
-
-Build an ASP.NET Core application.
-
-### Engineering Commission
+Engineering Commission:
 
 - Lead Overthinking Engineer
 - ChatGPT — External Technical Consultant
 
 Decision: approved 2/2.
 
-## What It Does
-
-SocialTelemetry currently aims to support:
-
-- User profile
-- People profiles
-- Confirmed facts about people
-- Social interaction history
-- Text / screenshot / image / audio attachments
-- AI-assisted interaction analysis
-- Follow-up questions about an analysis
-- General AI advisor for a specific person
-- AI-suggested profile updates
-- User-controlled Accept / Edit / Reject for AI suggestions
-
-## Important Design Rule
-
-AI-generated interpretations must never silently become confirmed facts.
-
-```text
-AI assumption
-    ↓
-User reviews it
-    ↓
-Accept / Edit / Reject
-    ↓
-Only confirmed information becomes persistent knowledge
-```
-
-```text
-AI guess
-↓
-saved as fact
-↓
-used as evidence
-↓
-stronger AI guess
-↓
-bullshit feedback loop
-```
-
-We don't want that.
-
-## Tech Stack
-
-- .NET 10
-- ASP.NET Core
-- FastEndpoints
-- Vertical Slice Architecture
-- Entity Framework Core
-- PostgreSQL
-- OpenAI integration
-- Swagger / OpenAPI
-- xUnit
-
-## Current Architecture
-
-```text
-UserProfile
-    ↓
-People
-    ↓
-Interactions
-    ├── Description
-    ├── Participants
-    ├── Text
-    ├── Screenshots
-    ├── Images
-    └── Audio
-         ↓
-    AI Analysis
-         ↓
-    Observations
-    Interpretations
-    Uncertainty
-    Missing Context
-    Suggestions
-         ↓
-    User confirmation
-```
+It started as a joke. Then the joke got persistence, structured outputs, and a product roadmap.
 
 ## Philosophy
 
-This project should stay:
-
-- small
-- explicit
-- boring where possible
-- AI-assisted, not AI-controlled
-- user-controlled
-- uncertainty-aware
+Keep it small, explicit, boring where possible, AI-assisted, user-controlled, and honest about uncertainty.
 
 If a pattern is not required by the current feature set, it probably doesn't belong here.
 
-## Non-Goals
-
-For now:
-
-- No microservices
-- No Kafka
-- No RabbitMQ
-- No Azure Service Bus
-- No Redis
-- No event sourcing
-- No vector database
-- No RAG
-- No distributed relationship saga
-- No MarriageService
-- No Woman.Client
-- No automatic life management
+No microservices, messaging infrastructure, event sourcing, vector database, or RAG. No distributed relationship saga. No MarriageService. No Woman.Client. No automatic life management.
 
 Yet.
 
@@ -164,23 +116,6 @@ Human behavior is undocumented.
 External systems may introduce breaking changes without notice.
 
 Reality is not idempotent.
-
-## Project Status
-
-Experimental side project.
-
-Built mostly for:
-
-- learning
-- experimenting with AI integration
-- practicing VSA / FastEndpoints
-- improving AI-assisted development workflow
-- turning intrusive engineering thoughts into software
-
-No promises.
-No roadmap.
-No investors.
-No sanity.
 
 ## Final Note
 
