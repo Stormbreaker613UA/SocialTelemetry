@@ -25,3 +25,8 @@ coverage/
 
 # Local attachment storage
 SocialTelemetry.Api/attachments/
+
+# Protected local ChatGPT connection data (also excluded if the storage path is overridden)
+chatgpt-state.bin*
+chatgpt-state.lock
+chatgpt-keys/

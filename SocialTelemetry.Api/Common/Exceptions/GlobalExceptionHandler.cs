@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using SocialTelemetry.Api.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Common.Exceptions;
 
@@ -14,6 +15,7 @@ public sealed class GlobalExceptionHandler(
     {
         var (statusCode, title, detail) = exception switch
         {
+            AiProviderException providerException => (providerException.StatusCode, "AI connection or request failed.", providerException.Message),
             NotFoundException => (StatusCodes.Status404NotFound, "Resource not found.", "The requested resource was not found."),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict.", "The request conflicts with the current state of the resource."),
             BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge } =>
@@ -39,6 +41,12 @@ public sealed class GlobalExceptionHandler(
             Title = title,
             Detail = detail
         };
+        if (exception is AiProviderException aiException)
+        {
+            problemDetails.Extensions["code"] = aiException.Failure.ToString();
+            logger.LogWarning("AI operation failed with {AiFailure} for {RequestMethod} {RequestPath}",
+                aiException.Failure, httpContext.Request.Method, httpContext.Request.Path);
+        }
         var wasWritten = await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
