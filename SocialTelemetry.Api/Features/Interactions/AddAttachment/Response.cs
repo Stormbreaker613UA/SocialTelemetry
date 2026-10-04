@@ -6,6 +6,7 @@ public sealed record Response(
     Guid Id,
     Guid InteractionId,
     AttachmentType Type,
+    AttachmentStatus Status,
     string? TextContent,
     string? StorageKey,
     string? MimeType,

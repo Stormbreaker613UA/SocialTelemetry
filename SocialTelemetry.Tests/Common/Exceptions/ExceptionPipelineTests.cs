@@ -8,9 +8,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using Serilog.Core;
 using Serilog.Events;
 using SocialTelemetry.Api.Common.Exceptions;
+using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Tests.Common.Exceptions;
 
@@ -33,6 +35,10 @@ public sealed class ExceptionPipelineTests
             builder.UseSetting("ConnectionStrings:Default", "Host=localhost;Database=unused");
             builder.ConfigureServices(services =>
             {
+                // This pipeline-only host deliberately has no database.
+                var reconciliation = services.Single(service => service.ServiceType == typeof(IHostedService) &&
+                    service.ImplementationType == typeof(AttachmentReconciliationService));
+                services.Remove(reconciliation);
                 services.AddSingleton<ILogEventSink>(sink);
                 services.AddSingleton<IStartupFilter, FailureStartupFilter>();
             });

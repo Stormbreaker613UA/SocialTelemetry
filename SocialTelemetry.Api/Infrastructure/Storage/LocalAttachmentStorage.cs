@@ -3,8 +3,10 @@ namespace SocialTelemetry.Api.Infrastructure.Storage;
 public sealed class LocalAttachmentStorage : IAttachmentStorage
 {
     private readonly string storageDirectory;
+    private readonly string stagingDirectory;
+    private readonly ILogger<LocalAttachmentStorage> logger;
 
-    public LocalAttachmentStorage(IConfiguration configuration, IWebHostEnvironment webHostEnvironment)
+    public LocalAttachmentStorage(IConfiguration configuration, IWebHostEnvironment webHostEnvironment, ILogger<LocalAttachmentStorage> logger)
     {
         var configuredDirectory = configuration["AttachmentStorage:LocalDirectory"];
         var directory = string.IsNullOrWhiteSpace(configuredDirectory)
@@ -12,6 +14,8 @@ public sealed class LocalAttachmentStorage : IAttachmentStorage
             : configuredDirectory;
 
         storageDirectory = Path.GetFullPath(directory, webHostEnvironment.ContentRootPath);
+        stagingDirectory = Path.Combine(storageDirectory, ".staging");
+        this.logger = logger;
     }
 
     public async Task<string> SaveAsync(
@@ -23,31 +27,71 @@ public sealed class LocalAttachmentStorage : IAttachmentStorage
         ArgumentNullException.ThrowIfNull(content);
         cancellationToken.ThrowIfCancellationRequested();
 
-        Directory.CreateDirectory(storageDirectory);
+        EnsureSafeDirectories();
+        Directory.CreateDirectory(stagingDirectory);
 
         var storageKey = Guid.NewGuid().ToString("N");
-        var filePath = Path.GetFullPath(Path.Combine(storageDirectory, storageKey));
+        var filePath = GetFilePath(storageKey, staged: true);
 
         if (!IsWithinStorageDirectory(filePath))
         {
             throw new InvalidOperationException("The generated attachment path is outside the local storage directory.");
         }
 
-        await using var destination = new FileStream(
+        var destination = new FileStream(
             filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
             bufferSize: 81920, useAsync: true);
         try
         {
-            await content.CopyToAsync(destination, cancellationToken);
+            await using (destination)
+            {
+                await content.CopyToAsync(destination, cancellationToken);
+                await destination.FlushAsync(cancellationToken);
+            }
         }
         catch
         {
-            await destination.DisposeAsync();
-            File.Delete(filePath);
+            try
+            {
+                File.Delete(filePath);
+            }
+            catch (Exception cleanupException)
+            {
+                logger.LogWarning("Staged file cleanup failed for {StorageKey} ({ExceptionType})",
+                    storageKey, cleanupException.GetType().Name);
+            }
             throw;
         }
 
         return storageKey;
+    }
+
+    public Task<bool> CompleteUploadAsync(string storageKey, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var finalPath = GetFilePath(storageKey);
+        var stagedPath = GetFilePath(storageKey, staged: true);
+        if (File.Exists(finalPath))
+        {
+            DeleteFile(stagedPath);
+            return Task.FromResult(true);
+        }
+
+        if (!File.Exists(stagedPath))
+        {
+            return Task.FromResult(false);
+        }
+
+        // Both paths share a storage root so the rename stays on the same volume.
+        Directory.CreateDirectory(storageDirectory);
+        File.Move(stagedPath, finalPath);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> ExistsAsync(string storageKey, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(File.Exists(GetFilePath(storageKey)));
     }
 
     public Task<Stream?> OpenReadAsync(string storageKey, CancellationToken cancellationToken)
@@ -74,7 +118,44 @@ public sealed class LocalAttachmentStorage : IAttachmentStorage
     public Task DeleteAsync(string storageKey, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var filePath = GetFilePath(storageKey);
+        DeleteFile(GetFilePath(storageKey));
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteStagedAsync(string storageKey, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        DeleteFile(GetFilePath(storageKey, staged: true));
+        return Task.CompletedTask;
+    }
+
+    public IEnumerable<StoredAttachmentFile> EnumerateFiles() => EnumerateFiles(staged: false);
+    public IEnumerable<StoredAttachmentFile> EnumerateStagedFiles() => EnumerateFiles(staged: true);
+
+    private IEnumerable<StoredAttachmentFile> EnumerateFiles(bool staged)
+    {
+        EnsureSafeDirectories();
+        var directory = staged ? stagingDirectory : storageDirectory;
+        if (!Directory.Exists(directory))
+        {
+            yield break;
+        }
+
+        foreach (var filePath in Directory.EnumerateFiles(directory))
+        {
+            var storageKey = Path.GetFileName(filePath);
+            if (!Guid.TryParseExact(storageKey, "N", out _) ||
+                File.GetAttributes(filePath).HasFlag(FileAttributes.ReparsePoint))
+            {
+                continue;
+            }
+
+            yield return new StoredAttachmentFile(storageKey, File.GetLastWriteTimeUtc(filePath));
+        }
+    }
+
+    private static void DeleteFile(string filePath)
+    {
         try
         {
             File.Delete(filePath);
@@ -83,11 +164,9 @@ public sealed class LocalAttachmentStorage : IAttachmentStorage
         {
             // Deletion is idempotent even when the storage directory is already gone.
         }
-
-        return Task.CompletedTask;
     }
 
-    private string GetFilePath(string storageKey)
+    private string GetFilePath(string storageKey, bool staged = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storageKey);
 
@@ -96,7 +175,9 @@ public sealed class LocalAttachmentStorage : IAttachmentStorage
             throw new InvalidOperationException("The attachment storage key is invalid.");
         }
 
-        var filePath = Path.GetFullPath(Path.Combine(storageDirectory, storageKey));
+        EnsureSafeDirectories();
+        var directory = staged ? stagingDirectory : storageDirectory;
+        var filePath = Path.GetFullPath(Path.Combine(directory, storageKey));
 
         if (!IsWithinStorageDirectory(filePath))
         {
@@ -109,6 +190,17 @@ public sealed class LocalAttachmentStorage : IAttachmentStorage
         }
 
         return filePath;
+    }
+
+    private void EnsureSafeDirectories()
+    {
+        foreach (var directory in new[] { storageDirectory, stagingDirectory })
+        {
+            if (Directory.Exists(directory) && File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint))
+            {
+                throw new InvalidOperationException("Attachment storage directories cannot be symbolic links.");
+            }
+        }
     }
 
     private bool IsWithinStorageDirectory(string filePath)

@@ -34,6 +34,7 @@ builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
 builder.Services.AddScoped<IAiClient, OpenAiClient>();
 builder.Services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
+builder.Services.AddHostedService<AttachmentReconciliationService>();
 builder.Services.AddSingleton<AiContextBuilder>();
 
 var app = builder.Build();

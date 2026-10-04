@@ -24,6 +24,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
                 attachment.Id,
                 attachment.InteractionId,
                 attachment.Type,
+                attachment.Status,
                 attachment.MimeType,
                 attachment.Type == AttachmentType.Text ? attachment.TextContent : null,
                 attachment.CreatedAt))

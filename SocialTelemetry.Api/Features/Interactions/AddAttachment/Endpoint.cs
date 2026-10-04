@@ -6,7 +6,10 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.Interactions.AddAttachment;
 
-public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachmentStorage) : Endpoint<Request, Response>
+public sealed class Endpoint(
+    AppDbContext dbContext,
+    IAttachmentStorage attachmentStorage,
+    ILogger<Endpoint> logger) : Endpoint<Request, Response>
 {
     private const long MaximumFileSizeBytes = 10 * 1024 * 1024;
 
@@ -61,6 +64,7 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
             Id = Guid.NewGuid(),
             InteractionId = request.InteractionId,
             Type = request.Type,
+            Status = request.Type == AttachmentType.Text ? AttachmentStatus.Ready : AttachmentStatus.Pending,
             TextContent = request.Type == AttachmentType.Text ? request.TextContent?.Trim() : null,
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -80,15 +84,21 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
         {
             dbContext.InteractionAttachments.Add(attachment);
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            if (attachment.StorageKey is not null)
+            {
+                if (!await attachmentStorage.CompleteUploadAsync(attachment.StorageKey, cancellationToken))
+                {
+                    throw new IOException("The staged attachment file is missing.");
+                }
+
+                attachment.Status = AttachmentStatus.Ready;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
         }
         catch
         {
-            if (attachment.StorageKey is not null)
-            {
-                // Request cancellation must not prevent cleanup of an unreferenced file.
-                await attachmentStorage.DeleteAsync(attachment.StorageKey, CancellationToken.None);
-            }
-
+            await CleanupFailedUploadAsync(attachment);
             throw;
         }
 
@@ -97,12 +107,49 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
                 attachment.Id,
                 attachment.InteractionId,
                 attachment.Type,
+                attachment.Status,
                 attachment.TextContent,
                 attachment.StorageKey,
                 attachment.MimeType,
                 attachment.CreatedAt),
             201,
             cancellationToken);
+    }
+
+    private async Task CleanupFailedUploadAsync(InteractionAttachment attachment)
+    {
+        if (attachment.StorageKey is null)
+        {
+            return;
+        }
+
+        // Persist cleanup intent when possible; cancellation must not prevent recovery.
+        try
+        {
+            await dbContext.InteractionAttachments
+                .Where(existingAttachment => existingAttachment.Id == attachment.Id)
+                .ExecuteUpdateAsync(update => update.SetProperty(existingAttachment => existingAttachment.Status, AttachmentStatus.Deleting),
+                    CancellationToken.None);
+        }
+        catch (Exception cleanupException)
+        {
+            logger.LogWarning("Could not persist cleanup intent for Attachment {AttachmentId} ({ExceptionType})",
+                attachment.Id, cleanupException.GetType().Name);
+        }
+
+        try
+        {
+            await attachmentStorage.DeleteAsync(attachment.StorageKey, CancellationToken.None);
+            await attachmentStorage.DeleteStagedAsync(attachment.StorageKey, CancellationToken.None);
+            await dbContext.InteractionAttachments
+                .Where(existingAttachment => existingAttachment.Id == attachment.Id)
+                .ExecuteDeleteAsync(CancellationToken.None);
+        }
+        catch (Exception cleanupException)
+        {
+            logger.LogWarning("Cleanup incomplete for Attachment {AttachmentId} ({ExceptionType}); startup recovery will retry",
+                attachment.Id, cleanupException.GetType().Name);
+        }
     }
 
     private async Task SendBadRequestAsync(string message, CancellationToken cancellationToken)

@@ -201,11 +201,16 @@ public sealed class PeopleApiFixture : IAsyncLifetime
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(attachmentStorageDirectory);
 
-        application = new PeopleWebApplicationFactory(database.GetConnectionString(), attachmentStorageDirectory);
-        await using var scope = application.Services.CreateAsyncScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await dbContext.Database.MigrateAsync();
+        // Startup recovery queries attachments, so migrate before starting the HTTP host.
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(database.GetConnectionString())
+            .Options;
+        await using (var dbContext = new AppDbContext(options))
+        {
+            await dbContext.Database.MigrateAsync();
+        }
 
+        application = new PeopleWebApplicationFactory(database.GetConnectionString(), attachmentStorageDirectory);
         Client = application.CreateClient();
     }
 

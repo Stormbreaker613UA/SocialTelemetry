@@ -42,12 +42,14 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>();
         Assert.NotNull(attachment);
         Assert.Equal(AttachmentType.Text, attachment.Type);
+        Assert.Equal(AttachmentStatus.Ready, attachment.Status);
         Assert.Equal("They said they were running late.", attachment.TextContent);
         Assert.Null(attachment.StorageKey);
 
         var persistedAttachment = await fixture.FindAttachmentAsync(attachment.Id);
         Assert.NotNull(persistedAttachment);
         Assert.Equal("They said they were running late.", persistedAttachment.TextContent);
+        Assert.Equal(AttachmentStatus.Ready, persistedAttachment.Status);
     }
 
     [Fact]
@@ -64,6 +66,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>();
         Assert.NotNull(attachment);
         Assert.Equal(AttachmentType.Image, attachment.Type);
+        Assert.Equal(AttachmentStatus.Ready, attachment.Status);
         Assert.Equal("image/png", attachment.MimeType);
         Assert.NotNull(attachment.StorageKey);
 
@@ -71,9 +74,11 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         Assert.NotNull(persistedAttachment);
         Assert.Equal(attachment.StorageKey, persistedAttachment.StorageKey);
         Assert.Equal("image/png", persistedAttachment.MimeType);
+        Assert.Equal(AttachmentStatus.Ready, persistedAttachment.Status);
 
         var storedFilePath = Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey);
         Assert.Equal(fileBytes, await File.ReadAllBytesAsync(storedFilePath));
+        Assert.False(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, ".staging", attachment.StorageKey)));
     }
 
     [Fact]
@@ -301,20 +306,26 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
     }
 
-    [Fact]
-    public async Task Failed_metadata_save_removes_uploaded_file()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Failed_metadata_save_removes_uploaded_file(int failedSaveCall)
     {
         var interactionId = await CreateInteractionAsync();
-        var existingFiles = Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray();
+        var existingFiles = Directory.GetFiles(fixture.AttachmentStorageDirectory, "*", SearchOption.AllDirectories).Order().ToArray();
         using var application = fixture.WithServices(services =>
-            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(new FailedSaveInterceptor())));
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(new FailedSaveInterceptor(failedSaveCall))));
         using var client = application.CreateClient();
         using var form = CreateFileForm(AttachmentType.Image, [1], "private.png", "image/png");
 
         using var response = await client.PostAsync($"/interactions/{interactionId}/attachments", form);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-        Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray());
+        Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory, "*", SearchOption.AllDirectories).Order().ToArray());
+        await using var scope = fixture.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await dbContext.InteractionAttachments.AsNoTracking()
+            .AnyAsync(attachment => attachment.InteractionId == interactionId));
     }
 
     [Fact]
@@ -333,7 +344,9 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         using var failedResponse = await client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
 
         Assert.Equal(HttpStatusCode.InternalServerError, failedResponse.StatusCode);
-        Assert.NotNull(await fixture.FindAttachmentAsync(attachment.Id));
+        var failedAttachment = await fixture.FindAttachmentAsync(attachment.Id);
+        Assert.NotNull(failedAttachment);
+        Assert.Equal(AttachmentStatus.Deleting, failedAttachment.Status);
         Assert.True(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!)));
 
         using var retryResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
@@ -365,12 +378,12 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         using var application = fixture.WithServices(_ => { });
         using var scope = application.Services.CreateScope();
         var storage = scope.ServiceProvider.GetRequiredService<IAttachmentStorage>();
-        var existingFiles = Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray();
+        var existingFiles = Directory.GetFiles(fixture.AttachmentStorageDirectory, "*", SearchOption.AllDirectories).Order().ToArray();
         await using var content = new FailedReadStream();
 
         await Assert.ThrowsAsync<IOException>(() => storage.SaveAsync(content, "private.png", "image/png", CancellationToken.None));
 
-        Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory).Order().ToArray());
+        Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory, "*", SearchOption.AllDirectories).Order().ToArray());
     }
 
     private sealed class FailedReadStream : MemoryStream
@@ -382,11 +395,21 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         }
     }
 
-    private sealed class FailedSaveInterceptor : SaveChangesInterceptor
+    private sealed class FailedSaveInterceptor(int failedSaveCall) : SaveChangesInterceptor
     {
+        private int saveCallCount;
+
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
-            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("Simulated metadata save failure.");
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            saveCallCount++;
+            if (saveCallCount == failedSaveCall)
+            {
+                throw new InvalidOperationException("Simulated metadata save failure.");
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class FailedDeleteStorage(IAttachmentStorage storage) : IAttachmentStorage
@@ -396,6 +419,18 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
 
         public Task<Stream?> OpenReadAsync(string storageKey, CancellationToken cancellationToken) =>
             storage.OpenReadAsync(storageKey, cancellationToken);
+
+        public Task<bool> CompleteUploadAsync(string storageKey, CancellationToken cancellationToken) =>
+            storage.CompleteUploadAsync(storageKey, cancellationToken);
+
+        public Task<bool> ExistsAsync(string storageKey, CancellationToken cancellationToken) =>
+            storage.ExistsAsync(storageKey, cancellationToken);
+
+        public Task DeleteStagedAsync(string storageKey, CancellationToken cancellationToken) =>
+            storage.DeleteStagedAsync(storageKey, cancellationToken);
+
+        public IEnumerable<StoredAttachmentFile> EnumerateFiles() => storage.EnumerateFiles();
+        public IEnumerable<StoredAttachmentFile> EnumerateStagedFiles() => storage.EnumerateStagedFiles();
 
         public Task DeleteAsync(string storageKey, CancellationToken cancellationToken) =>
             throw new IOException("Simulated file deletion failure.");

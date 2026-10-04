@@ -24,12 +24,13 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
             .Select(attachment => new
             {
                 attachment.Type,
+                attachment.Status,
                 attachment.StorageKey,
                 attachment.MimeType
             })
             .SingleOrDefaultAsync(cancellationToken);
 
-        if (attachment is null)
+        if (attachment is null || attachment.Status != AttachmentStatus.Ready)
         {
             await Send.NotFoundAsync(cancellationToken);
             return;

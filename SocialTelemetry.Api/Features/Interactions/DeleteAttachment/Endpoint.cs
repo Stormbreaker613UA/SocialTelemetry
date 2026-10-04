@@ -1,5 +1,6 @@
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
+using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 
@@ -28,12 +29,15 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
             return;
         }
 
+        attachment.Status = AttachmentStatus.Deleting;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
         if (attachment.StorageKey is not null)
         {
             await attachmentStorage.DeleteAsync(attachment.StorageKey, cancellationToken);
+            await attachmentStorage.DeleteStagedAsync(attachment.StorageKey, cancellationToken);
         }
 
-        // Keep metadata available for a retry if local file deletion fails.
         dbContext.InteractionAttachments.Remove(attachment);
         await dbContext.SaveChangesAsync(cancellationToken);
 
