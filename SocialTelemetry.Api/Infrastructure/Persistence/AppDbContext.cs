@@ -16,6 +16,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<InteractionAttachment> InteractionAttachments => Set<InteractionAttachment>();
     public DbSet<InteractionAnalysis> InteractionAnalyses => Set<InteractionAnalysis>();
     public DbSet<AnalysisConversationMessage> AnalysisConversationMessages => Set<AnalysisConversationMessage>();
+    public DbSet<SuggestedProfileUpdate> SuggestedProfileUpdates => Set<SuggestedProfileUpdate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
