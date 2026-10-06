@@ -65,9 +65,11 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
         if (string.IsNullOrWhiteSpace(completed.ProviderId) || completed.ProviderId.Length > 200 ||
             string.IsNullOrWhiteSpace(completed.Model) || completed.Model.Length > 200)
             throw new AiProviderException(AiFailure.InvalidStructuredResponse);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Acquire before reading: committed source changes are visible after any wait for a writer.
+            await dbContext.LockAnalysisContextAsync(cancellationToken);
             BuiltAnalysisContext current;
             try
             {

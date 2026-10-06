@@ -126,10 +126,13 @@ public sealed class Endpoint(
         // Persist cleanup intent when possible; cancellation must not prevent recovery.
         try
         {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(CancellationToken.None);
+            await dbContext.LockAnalysisContextAsync(CancellationToken.None);
             await dbContext.InteractionAttachments
                 .Where(existingAttachment => existingAttachment.Id == attachment.Id)
                 .ExecuteUpdateAsync(update => update.SetProperty(existingAttachment => existingAttachment.Status, AttachmentStatus.Deleting),
                     CancellationToken.None);
+            await transaction.CommitAsync(CancellationToken.None);
         }
         catch (Exception cleanupException)
         {
@@ -139,11 +142,14 @@ public sealed class Endpoint(
 
         try
         {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(CancellationToken.None);
+            await dbContext.LockAnalysisContextAsync(CancellationToken.None);
             await attachmentStorage.DeleteAsync(attachment.StorageKey, CancellationToken.None);
             await attachmentStorage.DeleteStagedAsync(attachment.StorageKey, CancellationToken.None);
             await dbContext.InteractionAttachments
                 .Where(existingAttachment => existingAttachment.Id == attachment.Id)
                 .ExecuteDeleteAsync(CancellationToken.None);
+            await transaction.CommitAsync(CancellationToken.None);
         }
         catch (Exception cleanupException)
         {

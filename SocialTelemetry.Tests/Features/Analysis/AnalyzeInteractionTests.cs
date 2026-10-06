@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
 using DomainUserProfile = SocialTelemetry.Api.Domain.Users.UserProfile;
@@ -307,6 +308,107 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     }
 
     [Theory]
+    [InlineData("user")]
+    [InlineData("person")]
+    [InlineData("fact")]
+    [InlineData("fact-add")]
+    [InlineData("fact-delete")]
+    [InlineData("inference")]
+    [InlineData("interaction")]
+    [InlineData("participant")]
+    [InlineData("evidence")]
+    [InlineData("evidence-add")]
+    [InlineData("evidence-delete")]
+    [InlineData("history")]
+    public async Task Source_commit_during_final_persistence_rejects_stale_analysis(string changed)
+    {
+        var data = await SeedAsync();
+        var inferenceCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new StubAiClient { OnValidation = count => { if (count == 1) inferenceCompleted.TrySetResult(); } };
+        using var app = CreateApp(provider);
+        using var client = CreateClient(app);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var sourceContext = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var sourceTransaction = await sourceContext.Database.BeginTransactionAsync(deadline.Token);
+        await sourceContext.LockAnalysisContextAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)sourceContext.Database.GetDbConnection()).ProcessID;
+
+        var analysisRequest = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
+        await inferenceCompleted.Task.WaitAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(sourcePid, 0, deadline.Token);
+
+        // The final phase is waiting at the database guard. Commit a source change before releasing it.
+        await ChangeAnalysisSourceAsync(sourceContext, data, changed, deadline.Token);
+        await sourceTransaction.CommitAsync(deadline.Token);
+        using var response = await analysisRequest;
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("StaleContext", await response.Content.ReadAsStringAsync(Cancellation));
+        await AssertNoAnalysisAsync(data.InteractionId);
+    }
+
+    [Theory]
+    [InlineData("fact")]
+    [InlineData("evidence-add")]
+    public async Task Source_writes_cannot_commit_between_final_fingerprint_check_and_analysis_commit(string changed)
+    {
+        var data = await SeedAsync();
+        var fingerprintChecked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishPersistence = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new StubAiClient { OnValidationAsync = async (count, cancellationToken) =>
+        {
+            if (count != 2) return;
+            fingerprintChecked.TrySetResult();
+            await finishPersistence.Task.WaitAsync(cancellationToken);
+        } };
+        using var app = CreateApp(provider);
+        using var client = CreateClient(app);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var analysisRequest = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
+        try
+        {
+            await fingerprintChecked.Task.WaitAsync(deadline.Token);
+            await using var sourceScope = fixture.CreateAsyncScope();
+            var sourceContext = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await sourceContext.Database.OpenConnectionAsync(deadline.Token);
+            var sourcePid = ((NpgsqlConnection)sourceContext.Database.GetDbConnection()).ProcessID;
+            var sourceWrite = ChangeAnalysisSourceAsync(sourceContext, data, changed, deadline.Token);
+            await WaitForGuardWaiterAsync(0, sourcePid, deadline.Token);
+            Assert.False(sourceWrite.IsCompleted);
+
+            finishPersistence.TrySetResult();
+            using var response = await analysisRequest;
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            await sourceWrite;
+            Assert.Equal(1, await sourceContext.InteractionAnalyses.AsNoTracking()
+                .CountAsync(analysis => analysis.InteractionId == data.InteractionId, deadline.Token));
+        }
+        finally
+        {
+            finishPersistence.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public async Task Person_timestamp_outside_analysis_context_does_not_acquire_the_guard()
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var guardScope = fixture.CreateAsyncScope();
+        var guardContext = guardScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var guardTransaction = await guardContext.Database.BeginTransactionAsync(deadline.Token);
+        await guardContext.LockAnalysisContextAsync(deadline.Token);
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var sourceContext = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var person = await sourceContext.People.SingleAsync(person => person.Id == data.PersonId, deadline.Token);
+        person.UpdatedAt = DateTimeOffset.UtcNow;
+        await sourceContext.SaveChangesAsync(deadline.Token);
+    }
+
+    [Theory]
     [InlineData(AiFailure.ProviderUnavailable, HttpStatusCode.ServiceUnavailable)]
     [InlineData(AiFailure.IncompleteResponse, HttpStatusCode.BadGateway)]
     [InlineData(AiFailure.ExecutionInvalidated, HttpStatusCode.Conflict)]
@@ -524,6 +626,73 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         Assert.False(await dbContext.SuggestedProfileUpdates.AnyAsync(suggestion => suggestion.InteractionAnalysis.InteractionId == interactionId, Cancellation));
     }
 
+    private async Task WaitForGuardWaiterAsync(int blockerPid, int waiterPid, CancellationToken cancellationToken)
+    {
+        await using var scope = fixture.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity
+                WHERE query LIKE '%AnalysisContextGuards%'
+                  AND cardinality(pg_blocking_pids(pid)) > 0
+                  AND (@blocker = 0 OR @blocker = ANY(pg_blocking_pids(pid)))
+                  AND (@waiter = 0 OR pid = @waiter))
+            """, (NpgsqlConnection)dbContext.Database.GetDbConnection());
+        command.Parameters.AddWithValue("blocker", blockerPid);
+        command.Parameters.AddWithValue("waiter", waiterPid);
+        // Synchronize on an observed database lock wait, not an elapsed sleep.
+        while (!Equals(await command.ExecuteScalarAsync(cancellationToken), true))
+            await Task.Yield();
+    }
+
+    private static async Task ChangeAnalysisSourceAsync(AppDbContext dbContext, SeedData data, string changed, CancellationToken cancellationToken)
+    {
+        switch (changed)
+        {
+            case "user":
+                (await dbContext.UserProfiles.SingleAsync(user => user.Id == data.UserId, cancellationToken)).Boundaries = "Changed";
+                break;
+            case "person":
+                (await dbContext.People.SingleAsync(person => person.Id == data.PersonId, cancellationToken)).Notes = "Changed";
+                break;
+            case "fact":
+                (await dbContext.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, cancellationToken)).Value = "Changed";
+                break;
+            case "fact-add":
+                dbContext.PersonFacts.Add(new PersonFact { Id = Guid.NewGuid(), PersonId = data.PersonId, Value = "New confirmed fact", CreatedAt = DateTimeOffset.UtcNow });
+                break;
+            case "fact-delete":
+                dbContext.PersonFacts.Remove(await dbContext.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, cancellationToken));
+                break;
+            case "inference":
+                (await dbContext.PersonInferences.SingleAsync(inference => inference.PersonId == data.PersonId, cancellationToken)).Value = "Changed hypothesis";
+                break;
+            case "interaction":
+                (await dbContext.Interactions.SingleAsync(interaction => interaction.Id == data.InteractionId, cancellationToken)).Description = "Changed";
+                break;
+            case "participant":
+                dbContext.InteractionParticipants.Add(new InteractionParticipant { InteractionId = data.InteractionId, PersonId = data.OtherPersonId });
+                break;
+            case "evidence":
+                (await dbContext.InteractionAttachments.SingleAsync(attachment => attachment.Id == data.TextId, cancellationToken)).Status = AttachmentStatus.Deleting;
+                break;
+            case "evidence-add":
+                dbContext.InteractionAttachments.Add(new InteractionAttachment { Id = Guid.NewGuid(), InteractionId = data.InteractionId,
+                    Type = AttachmentType.Text, TextContent = "New synthetic evidence", CreatedAt = DateTimeOffset.UtcNow });
+                break;
+            case "evidence-delete":
+                dbContext.InteractionAttachments.Remove(await dbContext.InteractionAttachments.SingleAsync(attachment => attachment.Id == data.TextId, cancellationToken));
+                break;
+            case "history":
+                dbContext.Interactions.Add(NewInteraction(data.UserId, data.PersonId, "New earlier interaction", data.OccurredAt.AddDays(-1)));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(changed));
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<InteractionAttachment> AddAttachmentAsync(Guid interactionId, AttachmentType type, AttachmentStatus status,
         string? storageKey = null, string? mimeType = null)
     {
@@ -589,6 +758,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         public int? InvalidateOnValidation { get; init; }
         public CancellationToken LifetimeToken { get; init; }
         public Action<int>? OnValidation { get; init; }
+        public Func<int, CancellationToken, Task>? OnValidationAsync { get; init; }
         public AiTextRequest? Request { get; private set; }
         public InteractionAnalysisContext? Context { get; private set; }
         public string? Output { get; set; }
@@ -614,13 +784,13 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
             return new AiTextResponse(Output ?? JsonSerializer.Serialize(result, AiContextBuilder.JsonOptions), "actual-provider", "requested", "actual-returned")
             { LifetimeCancellationToken = LifetimeToken };
         }
-        public Task ValidateExecutionAsync(AiTextResponse result, CancellationToken cancellationToken)
+        public async Task ValidateExecutionAsync(AiTextResponse result, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Validations++;
             OnValidation?.Invoke(Validations);
+            if (OnValidationAsync is not null) await OnValidationAsync(Validations, cancellationToken);
             if (Validations == InvalidateOnValidation) throw new AiProviderException(AiFailure.ExecutionInvalidated);
-            return Task.CompletedTask;
         }
     }
 
