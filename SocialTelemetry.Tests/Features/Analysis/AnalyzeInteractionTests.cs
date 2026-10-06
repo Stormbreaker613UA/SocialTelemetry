@@ -332,7 +332,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         await using var sourceScope = fixture.CreateAsyncScope();
         var sourceContext = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
         await using var sourceTransaction = await sourceContext.Database.BeginTransactionAsync(deadline.Token);
-        await sourceContext.LockAnalysisContextAsync(deadline.Token);
+        await sourceContext.LockAnalysisContextAsync(data.UserId, deadline.Token);
         var sourcePid = ((NpgsqlConnection)sourceContext.Database.GetDbConnection()).ProcessID;
 
         var analysisRequest = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
@@ -400,12 +400,315 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         await using var guardScope = fixture.CreateAsyncScope();
         var guardContext = guardScope.ServiceProvider.GetRequiredService<AppDbContext>();
         await using var guardTransaction = await guardContext.Database.BeginTransactionAsync(deadline.Token);
-        await guardContext.LockAnalysisContextAsync(deadline.Token);
+        await guardContext.LockAnalysisContextAsync(data.UserId, deadline.Token);
         await using var sourceScope = fixture.CreateAsyncScope();
         var sourceContext = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var person = await sourceContext.People.SingleAsync(person => person.Id == data.PersonId, deadline.Token);
         person.UpdatedAt = DateTimeOffset.UtcNow;
         await sourceContext.SaveChangesAsync(deadline.Token);
+    }
+
+    [Fact]
+    public async Task Analysis_for_one_profile_does_not_block_other_profile_writes_or_analysis()
+    {
+        var data = await SeedAsync();
+        var fingerprintChecked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishPersistence = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new StubAiClient { OnValidationAsync = async (count, cancellationToken) =>
+        {
+            if (count != 2) return;
+            fingerprintChecked.TrySetResult();
+            await finishPersistence.Task.WaitAsync(cancellationToken);
+        } };
+        using var app = CreateApp(provider);
+        using var otherApp = CreateApp(new StubAiClient());
+        using var client = CreateClient(app);
+        using var otherClient = CreateClient(otherApp);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var analysis = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
+        try
+        {
+            await fingerprintChecked.Task.WaitAsync(deadline.Token);
+            await using var scope = fixture.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var foreignPerson = await dbContext.People.SingleAsync(person => person.UserProfileId == data.ForeignUserId, deadline.Token);
+            foreignPerson.Notes = "Independent profile change";
+            dbContext.PersonFacts.Add(new PersonFact { Id = Guid.NewGuid(), PersonId = foreignPerson.Id,
+                Value = "Independent confirmed fact", CreatedAt = DateTimeOffset.UtcNow });
+            await dbContext.SaveChangesAsync(deadline.Token);
+            using var otherAnalysis = await otherClient.PostAsJsonAsync($"/interactions/{data.ForeignInteractionId}/analyze", new { }, deadline.Token);
+            Assert.Equal(HttpStatusCode.Created, otherAnalysis.StatusCode);
+            Assert.False(analysis.IsCompleted);
+        }
+        finally
+        {
+            finishPersistence.TrySetResult();
+        }
+        using var response = await analysis;
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Multi_profile_saves_lock_in_key_order_regardless_of_tracking_order()
+    {
+        var data = await SeedAsync();
+        var profiles = new[] { data.UserId, data.ForeignUserId }.Order().ToArray();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var blockerScope = fixture.CreateAsyncScope();
+        var blocker = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var transaction = await blocker.Database.BeginTransactionAsync(deadline.Token);
+        await blocker.LockAnalysisContextAsync(profiles[0], deadline.Token);
+        var blockerPid = ((NpgsqlConnection)blocker.Database.GetDbConnection()).ProcessID;
+        await using var firstScope = fixture.CreateAsyncScope();
+        await using var secondScope = fixture.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var second = secondScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        foreach (var profileId in profiles.Reverse())
+            (await first.UserProfiles.SingleAsync(profile => profile.Id == profileId, deadline.Token)).Boundaries = "First write";
+        foreach (var profileId in profiles)
+            (await second.UserProfiles.SingleAsync(profile => profile.Id == profileId, deadline.Token)).Goals = "Second write";
+        await first.Database.OpenConnectionAsync(deadline.Token);
+        await second.Database.OpenConnectionAsync(deadline.Token);
+        var firstSave = first.SaveChangesAsync(deadline.Token);
+        var secondSave = second.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(blockerPid, ((NpgsqlConnection)first.Database.GetDbConnection()).ProcessID, deadline.Token);
+        await WaitForGuardWaiterAsync(blockerPid, ((NpgsqlConnection)second.Database.GetDbConnection()).ProcessID, deadline.Token);
+
+        // Neither writer may grab the higher key while waiting for the lower one.
+        await using (var probeScope = fixture.CreateAsyncScope())
+        {
+            var probe = probeScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await using var probeTransaction = await probe.Database.BeginTransactionAsync(deadline.Token);
+            await probe.LockAnalysisContextAsync(profiles[1], deadline.Token);
+            await probeTransaction.CommitAsync(deadline.Token);
+        }
+        await transaction.CommitAsync(deadline.Token);
+        await Task.WhenAll(firstSave, secondSave);
+    }
+
+    [Fact]
+    public async Task Concurrent_first_use_creates_one_profile_guard()
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var firstScope = fixture.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await first.Database.ExecuteSqlInterpolatedAsync($"""
+            DELETE FROM "AnalysisContextGuards" WHERE "UserProfileId" = {data.UserId}
+            """, deadline.Token);
+        await using var firstTransaction = await first.Database.BeginTransactionAsync(deadline.Token);
+        await first.LockAnalysisContextAsync(data.UserId, deadline.Token);
+        var firstPid = ((NpgsqlConnection)first.Database.GetDbConnection()).ProcessID;
+        await using var secondScope = fixture.CreateAsyncScope();
+        var second = secondScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var secondTransaction = await second.Database.BeginTransactionAsync(deadline.Token);
+        var secondLock = second.LockAnalysisContextAsync(data.UserId, deadline.Token);
+        await WaitForGuardWaiterAsync(firstPid, 0, deadline.Token);
+        Assert.False(secondLock.IsCompleted);
+        await firstTransaction.CommitAsync(deadline.Token);
+        await secondLock;
+        await secondTransaction.CommitAsync(deadline.Token);
+        Assert.Single(await first.Database.SqlQuery<Guid>($"""
+            SELECT "UserProfileId" AS "Value" FROM "AnalysisContextGuards" WHERE "UserProfileId" = {data.UserId}
+            """).ToListAsync(deadline.Token));
+    }
+
+    [Theory]
+    [InlineData("fact", false)]
+    [InlineData("fact", true)]
+    [InlineData("inference", false)]
+    [InlineData("inference", true)]
+    [InlineData("evidence", false)]
+    [InlineData("evidence", true)]
+    public async Task Reparented_children_coordinate_original_and_destination_profiles(string child, bool destination)
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var blockerScope = fixture.CreateAsyncScope();
+        var blocker = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var transaction = await blocker.Database.BeginTransactionAsync(deadline.Token);
+        await blocker.LockAnalysisContextAsync(destination ? data.ForeignUserId : data.UserId, deadline.Token);
+        var blockerPid = ((NpgsqlConnection)blocker.Database.GetDbConnection()).ProcessID;
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var source = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var foreignPersonId = await source.People.AsNoTracking().Where(person => person.UserProfileId == data.ForeignUserId)
+            .Select(person => person.Id).SingleAsync(deadline.Token);
+        switch (child)
+        {
+            case "fact":
+                (await source.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, deadline.Token)).PersonId = foreignPersonId;
+                break;
+            case "inference":
+                var inference = await source.PersonInferences.SingleAsync(inference => inference.PersonId == data.PersonId, deadline.Token);
+                inference.PersonId = foreignPersonId;
+                inference.SourceInteractionId = data.ForeignInteractionId;
+                break;
+            case "evidence":
+                (await source.InteractionAttachments.SingleAsync(attachment => attachment.Id == data.TextId, deadline.Token)).InteractionId = data.ForeignInteractionId;
+                break;
+        }
+        await source.Database.OpenConnectionAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)source.Database.GetDbConnection()).ProcessID;
+        var save = source.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(blockerPid, sourcePid, deadline.Token);
+        Assert.False(save.IsCompleted);
+        await transaction.CommitAsync(deadline.Token);
+        await save;
+    }
+
+    [Theory]
+    [InlineData("fact")]
+    [InlineData("inference")]
+    [InlineData("evidence")]
+    public async Task Detached_child_deletes_resolve_ownership_without_parent_navigation(string child)
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var blockerScope = fixture.CreateAsyncScope();
+        var blocker = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var transaction = await blocker.Database.BeginTransactionAsync(deadline.Token);
+        await blocker.LockAnalysisContextAsync(data.UserId, deadline.Token);
+        var blockerPid = ((NpgsqlConnection)blocker.Database.GetDbConnection()).ProcessID;
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var source = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        switch (child)
+        {
+            case "fact":
+                var factId = await source.PersonFacts.AsNoTracking().Where(fact => fact.PersonId == data.PersonId)
+                    .Select(fact => fact.Id).SingleAsync(deadline.Token);
+                source.PersonFacts.Remove(new PersonFact { Id = factId });
+                break;
+            case "inference":
+                var inferenceId = await source.PersonInferences.AsNoTracking().Where(inference => inference.PersonId == data.PersonId)
+                    .Select(inference => inference.Id).SingleAsync(deadline.Token);
+                source.PersonInferences.Remove(new PersonInference { Id = inferenceId });
+                break;
+            case "evidence":
+                source.InteractionAttachments.Remove(new InteractionAttachment { Id = data.TextId });
+                break;
+        }
+        await source.Database.OpenConnectionAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)source.Database.GetDbConnection()).ProcessID;
+        var save = source.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(blockerPid, sourcePid, deadline.Token);
+        await transaction.CommitAsync(deadline.Token);
+        await save;
+    }
+
+    [Fact]
+    public async Task Waiting_child_write_rechecks_ownership_after_parent_moves_to_another_profile()
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var moverScope = fixture.CreateAsyncScope();
+        var mover = moverScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var moveTransaction = await mover.Database.BeginTransactionAsync(deadline.Token);
+        await mover.LockAnalysisContextAsync(data.UserId, deadline.Token);
+        var moverPid = ((NpgsqlConnection)mover.Database.GetDbConnection()).ProcessID;
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var source = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await source.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, deadline.Token)).Value = "Changed after ownership move";
+        await source.Database.OpenConnectionAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)source.Database.GetDbConnection()).ProcessID;
+        var save = source.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(moverPid, sourcePid, deadline.Token);
+
+        (await mover.People.SingleAsync(person => person.Id == data.PersonId, deadline.Token)).UserProfileId = data.ForeignUserId;
+        await mover.SaveChangesAsync(deadline.Token);
+        await using var destinationScope = fixture.CreateAsyncScope();
+        var destination = destinationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var destinationTransaction = await destination.Database.BeginTransactionAsync(deadline.Token);
+        var destinationPid = ((NpgsqlConnection)destination.Database.GetDbConnection()).ProcessID;
+        var destinationLock = destination.LockAnalysisContextAsync(data.ForeignUserId, deadline.Token);
+        await WaitForGuardWaiterAsync(moverPid, destinationPid, deadline.Token);
+        await moveTransaction.CommitAsync(deadline.Token);
+        await destinationLock;
+        await WaitForGuardWaiterAsync(destinationPid, sourcePid, deadline.Token);
+        Assert.False(save.IsCompleted);
+        await destinationTransaction.CommitAsync(deadline.Token);
+        await save;
+    }
+
+    [Theory]
+    [InlineData("interaction")]
+    [InlineData("person")]
+    [InlineData("profile")]
+    public async Task Untracked_cascade_deletes_coordinate_affected_linked_profiles(string deleted)
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using (var setupScope = fixture.CreateAsyncScope())
+        {
+            var setup = setupScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var foreignPersonId = await setup.People.AsNoTracking().Where(person => person.UserProfileId == data.ForeignUserId)
+                .Select(person => person.Id).SingleAsync(deadline.Token);
+            if (deleted == "person")
+                setup.InteractionParticipants.Add(new InteractionParticipant { InteractionId = data.ForeignInteractionId, PersonId = data.PersonId });
+            else
+                setup.PersonInferences.Add(new PersonInference { Id = Guid.NewGuid(), PersonId = foreignPersonId,
+                    SourceInteractionId = data.InteractionId, Value = "Unconfirmed hypothesis", CreatedAt = DateTimeOffset.UtcNow });
+            await setup.SaveChangesAsync(deadline.Token);
+        }
+        await using var blockerScope = fixture.CreateAsyncScope();
+        var blocker = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var transaction = await blocker.Database.BeginTransactionAsync(deadline.Token);
+        await blocker.LockAnalysisContextAsync(data.ForeignUserId, deadline.Token);
+        var blockerPid = ((NpgsqlConnection)blocker.Database.GetDbConnection()).ProcessID;
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var source = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        switch (deleted)
+        {
+            case "interaction": source.Interactions.Remove(new Interaction { Id = data.InteractionId }); break;
+            case "person": source.People.Remove(new Person { Id = data.PersonId }); break;
+            case "profile": source.UserProfiles.Remove(new DomainUserProfile { Id = data.UserId }); break;
+        }
+        await source.Database.OpenConnectionAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)source.Database.GetDbConnection()).ProcessID;
+        var save = source.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(blockerPid, sourcePid, deadline.Token);
+        await transaction.CommitAsync(deadline.Token);
+        await save;
+    }
+
+    [Fact]
+    public async Task Stale_tracked_child_resolves_its_current_database_parent()
+    {
+        var data = await SeedAsync();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var sourceScope = fixture.CreateAsyncScope();
+        var source = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var fact = await source.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, deadline.Token);
+        Guid foreignPersonId;
+        await using (var moveScope = fixture.CreateAsyncScope())
+        {
+            var mover = moveScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            foreignPersonId = await mover.People.AsNoTracking().Where(person => person.UserProfileId == data.ForeignUserId)
+                .Select(person => person.Id).SingleAsync(deadline.Token);
+            (await mover.PersonFacts.SingleAsync(stored => stored.Id == fact.Id, deadline.Token)).PersonId = foreignPersonId;
+            await mover.SaveChangesAsync(deadline.Token);
+        }
+        fact.Value = "Change through previously loaded record";
+        await using var blockerScope = fixture.CreateAsyncScope();
+        var blocker = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var transaction = await blocker.Database.BeginTransactionAsync(deadline.Token);
+        await blocker.LockAnalysisContextAsync(data.ForeignUserId, deadline.Token);
+        var blockerPid = ((NpgsqlConnection)blocker.Database.GetDbConnection()).ProcessID;
+        await source.Database.OpenConnectionAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)source.Database.GetDbConnection()).ProcessID;
+        var save = source.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(blockerPid, sourcePid, deadline.Token);
+        await transaction.CommitAsync(deadline.Token);
+        await save;
+        Assert.Equal(foreignPersonId, await source.PersonFacts.AsNoTracking().Where(stored => stored.Id == fact.Id)
+            .Select(stored => stored.PersonId).SingleAsync(deadline.Token));
     }
 
     [Theory]

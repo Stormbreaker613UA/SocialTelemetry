@@ -1,11 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Domain.Users;
 
 namespace SocialTelemetry.Api.Infrastructure.Persistence;
 
-public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<Person> People => Set<Person>();
@@ -18,39 +19,44 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AnalysisConversationMessage> AnalysisConversationMessages => Set<AnalysisConversationMessage>();
     public DbSet<SuggestedProfileUpdate> SuggestedProfileUpdates => Set<SuggestedProfileUpdate>();
 
-    public async Task LockAnalysisContextAsync(CancellationToken cancellationToken)
+    public async Task LockAnalysisContextAsync(Guid userProfileId, CancellationToken cancellationToken)
     {
         // Bulk source writes must acquire this protection explicitly; tracked async saves do so below.
         if (Database.CurrentTransaction is null)
             throw new InvalidOperationException("Analysis context protection requires a transaction.");
 
-        // Updating the singleton row holds database protection until commit, including collection changes.
-        var affectedRows = await Set<AnalysisContextGuard>().Where(guard => guard.Id == 1)
-            .ExecuteUpdateAsync(update => update.SetProperty(guard => guard.Id, guard => guard.Id), cancellationToken);
+        // PostgreSQL and SQLite share this upsert syntax. The unique key makes first use race-safe;
+        // the no-op update protects this profile until commit. SQL stays inside persistence.
+        var affectedRows = await Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "AnalysisContextGuards" ("UserProfileId") VALUES ({userProfileId})
+            ON CONFLICT ("UserProfileId") DO UPDATE SET "UserProfileId" = EXCLUDED."UserProfileId"
+            """, cancellationToken);
         if (affectedRows != 1)
-            throw new InvalidOperationException("The analysis context guard is missing. Apply database migrations.");
+            throw new InvalidOperationException("Could not acquire analysis context protection.");
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        if (!HasAnalysisSourceChanges())
+        var sourceChanges = AnalysisSourceChanges();
+        if (sourceChanges.Length == 0)
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
 
         if (Database.CurrentTransaction is not null)
         {
-            await LockAnalysisContextAsync(cancellationToken);
+            await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
-        await LockAnalysisContextAsync(cancellationToken);
+        await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
         var affectedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return affectedRows;
     }
 
-    private bool HasAnalysisSourceChanges()
+    private EntityEntry[] AnalysisSourceChanges()
     {
+        var changes = new List<EntityEntry>();
         foreach (var entry in ChangeTracker.Entries())
         {
             string[] contextProperties = entry.Entity switch
@@ -72,10 +78,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             };
 
             if (contextProperties.Length == 0) continue;
-            if (entry.State is EntityState.Added or EntityState.Deleted) return true;
-            if (entry.State == EntityState.Modified && contextProperties.Any(property => entry.Property(property).IsModified)) return true;
+            if (entry.State is EntityState.Added or EntityState.Deleted ||
+                (entry.State == EntityState.Modified && contextProperties.Any(property => entry.Property(property).IsModified)))
+                changes.Add(entry);
         }
-        return false;
+        return changes.ToArray();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -87,7 +94,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasKey(participant => new { participant.InteractionId, participant.PersonId });
 
         modelBuilder.Entity<AnalysisContextGuard>().ToTable("AnalysisContextGuards");
-        modelBuilder.Entity<AnalysisContextGuard>().Property(guard => guard.Id).ValueGeneratedNever();
-        modelBuilder.Entity<AnalysisContextGuard>().HasData(new AnalysisContextGuard { Id = 1 });
+        modelBuilder.Entity<AnalysisContextGuard>().HasKey(guard => guard.UserProfileId);
+        modelBuilder.Entity<AnalysisContextGuard>().Property(guard => guard.UserProfileId).ValueGeneratedNever();
     }
 }

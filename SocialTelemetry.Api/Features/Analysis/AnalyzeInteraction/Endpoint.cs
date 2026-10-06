@@ -69,7 +69,7 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
         try
         {
             // Acquire before reading: committed source changes are visible after any wait for a writer.
-            await dbContext.LockAnalysisContextAsync(cancellationToken);
+            await dbContext.LockAnalysisContextAsync(original.Context.User.Id, cancellationToken);
             BuiltAnalysisContext current;
             try
             {

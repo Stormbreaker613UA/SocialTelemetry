@@ -127,7 +127,7 @@ public sealed class Endpoint(
         try
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(CancellationToken.None);
-            await dbContext.LockAnalysisContextAsync(CancellationToken.None);
+            await dbContext.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
             await dbContext.InteractionAttachments
                 .Where(existingAttachment => existingAttachment.Id == attachment.Id)
                 .ExecuteUpdateAsync(update => update.SetProperty(existingAttachment => existingAttachment.Status, AttachmentStatus.Deleting),
@@ -143,7 +143,7 @@ public sealed class Endpoint(
         try
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(CancellationToken.None);
-            await dbContext.LockAnalysisContextAsync(CancellationToken.None);
+            await dbContext.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
             await attachmentStorage.DeleteAsync(attachment.StorageKey, CancellationToken.None);
             await attachmentStorage.DeleteStagedAsync(attachment.StorageKey, CancellationToken.None);
             await dbContext.InteractionAttachments
