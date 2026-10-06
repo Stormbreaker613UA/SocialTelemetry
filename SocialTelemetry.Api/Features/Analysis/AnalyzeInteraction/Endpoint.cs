@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
@@ -19,6 +20,7 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
     {
         Post("/interactions/{interactionId}/analyze");
         AllowAnonymous();
+        Options(route => route.WithMetadata(new RequireLocalAiRequestAttribute()));
     }
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)

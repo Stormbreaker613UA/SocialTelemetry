@@ -7,6 +7,7 @@ Updated: 2026-10-06
 - **AI Pass 7.1 — COMPLETE.** OAuth Authorization Code + PKCE, protected credentials, serialized refresh, connection lifecycle, and model discovery/selection passed automated and real-account verification.
 - F1 refresh-rotation safety and F2 neutral selected-model/capability/execution-provenance boundaries are complete.
 - **AI Pass 7.2 — AnalyzeInteraction COMPLETE.** `POST /interactions/{interactionId}/analyze` returns a typed persisted analysis; local requests require `X-SocialTelemetry-Local: 1`.
+- Post-audit A1/A4 corrections are complete: endpoint metadata selects local-request protection; unterminated SSE events cannot complete inference. A2/A3 remain pending before 7.2.1.
 - Provider-neutral `AiContextBuilder` supplies owned UserProfile/participant context, separates confirmed facts from inferences, and preserves unknown speakers rather than inventing attribution.
 - Context is bounded: 10 participants, latest 20 facts/10 relevant inferences per Person, and at most 5 earlier interactions with overlapping participants and no unrelated People; 64,000 total context characters.
 - Text and Ready image/screenshot evidence are supported through attachment storage: 10 attachments, 12,000 characters per text attachment, 3 images, 5 MiB/image, 10 MiB images total. Audio is rejected explicitly.
@@ -17,18 +18,18 @@ Updated: 2026-10-06
 - SHA-256 context/evidence fingerprints are checked again in a short persistence transaction. Changed, failed, cancelled, incomplete, or invalid executions cannot become successful analyses.
 - F5 is complete: session generations/lifetime cancellation invalidate in-flight and late results on disconnect; reconnect cannot revive an old execution. No credential lock spans inference.
 - Migration `20261006155153_AddAnalysisContextProvenance` adds nullable PromptVersion/ContextFingerprint only. All five migrations are applied; the Compose database is up to date with no model mismatch.
-- Automated verification: **202 total / 202 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
+- Automated verification: **221 total / 221 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
 - Live synthetic text and screenshot analyses passed with `chatgpt-plan` / `gpt-5.6-sol`; typed results and persisted provider/model/schema/prompt/fingerprint were verified. Natural refresh occurred without expiry manipulation. Synthetic records/files were removed through normal deletion workflows; observed logs contained no evidence/prompts/tokens.
 - Tooling remains .NET SDK `10.0.401` (`global.json`, latestPatch, no prereleases), `net10.0`, xUnit v3/MTP v2, and Docker Compose `postgres:18` (18.6, healthy).
 - Root verification: `dotnet restore`, `dotnet build SocialTelemetry.slnx`, `dotnet test --solution SocialTelemetry.slnx --no-build`, and `docker compose config`.
 
 ## Current Task
 
-Next checkpoint: **AI Pass 7.2.1 — Audio ingestion / persisted transcription.** Implementation has not started.
+Next task: **A2/A3 corrective pass — commit-time context freshness and execution validity.** Complete it before AI Pass 7.2.1 Audio, which has not started.
 
 ## Immediate Next Steps
 
-1. Read the relevant specification before the next pass; keep transcription separate from social analysis.
+1. Resolve A2/A3 in a separate focused pass and verify the full build/test suite before Audio.
 2. Add audio ingestion/transcription only when requested, persist valid transcripts, and reuse them rather than repeatedly transcribing the same evidence.
 3. Preserve speaker attribution and capability-based provider boundaries. Do not assume ChatGPT-plan inference supplies transcription.
 

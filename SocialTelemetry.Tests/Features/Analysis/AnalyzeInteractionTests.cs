@@ -371,6 +371,45 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         Assert.Equal(HttpStatusCode.Forbidden, protectedRequest.StatusCode);
     }
 
+    [Theory]
+    [InlineData("analyze", true)]
+    [InlineData("ANALYZE", true)]
+    [InlineData("AnAlYzE", true)]
+    [InlineData("analyze/", true)]
+    [InlineData("analyze", false)]
+    [InlineData("ANALYZE", false)]
+    [InlineData("AnAlYzE", false)]
+    [InlineData("analyze/", false)]
+    public async Task Equivalent_analysis_routes_require_local_header_and_allowed_origin(string routeSuffix, bool missingHeader)
+    {
+        var data = await SeedAsync();
+        var provider = new StubAiClient();
+        using var app = CreateApp(provider);
+        using var client = CreateClient(app);
+        var route = $"/interactions/{data.InteractionId}/{routeSuffix}";
+        client.DefaultRequestHeaders.Add("Origin", "http://127.0.0.1:5059");
+
+        using var allowedResponse = await client.PostAsJsonAsync(route, new { }, Cancellation);
+        Assert.Equal(HttpStatusCode.Created, allowedResponse.StatusCode);
+        Assert.Equal(1, provider.Calls);
+
+        if (missingHeader)
+        {
+            client.DefaultRequestHeaders.Remove("X-SocialTelemetry-Local");
+        }
+        else
+        {
+            client.DefaultRequestHeaders.Remove("Origin");
+            client.DefaultRequestHeaders.Add("Origin", "https://untrusted.example");
+        }
+
+        using var rejectedResponse = await client.PostAsJsonAsync(route, new { }, Cancellation);
+        Assert.Equal(HttpStatusCode.Forbidden, rejectedResponse.StatusCode);
+        var problem = await rejectedResponse.Content.ReadFromJsonAsync<JsonElement>(Cancellation);
+        Assert.Equal("LocalRequestRequired", problem.GetProperty("code").GetString());
+        Assert.Equal(1, provider.Calls);
+    }
+
     [Fact]
     public async Task Execution_invalidated_after_save_rolls_back_analysis_and_pending_suggestions()
     {

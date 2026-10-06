@@ -64,7 +64,7 @@ var app = builder.Build();
 app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
 app.UseExceptionHandler();
 app.UseWhen(context => context.Request.Path.StartsWithSegments("/ai-connection") ||
-    (context.Request.Method == "POST" && context.Request.Path.Value?.EndsWith("/analyze", StringComparison.Ordinal) == true),
+    context.GetEndpoint()?.Metadata.GetMetadata<RequireLocalAiRequestAttribute>() is not null,
     localConnection => localConnection.UseMiddleware<LocalAiConnectionMiddleware>());
 // OpenAI requires an HTTP 127.0.0.1 callback. Other API routes keep their HTTPS behavior.
 app.UseWhen(context => !context.Request.Path.StartsWithSegments("/ai-connection"), api => api.UseHttpsRedirection());

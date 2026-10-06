@@ -190,8 +190,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
                     eventData.AppendLine(line[5..].TrimStart(' '));
                 }
             }
-            var lastEvent = ProcessEvent(eventData, output);
-            if (lastEvent.Completed) return (output.ToString(), lastEvent.ReturnedModel);
+            // EOF does not terminate an SSE event; pending data cannot establish completion.
             throw new AiProviderException(AiFailure.IncompleteResponse);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

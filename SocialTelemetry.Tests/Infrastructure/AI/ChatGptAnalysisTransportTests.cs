@@ -13,6 +13,7 @@ public sealed class ChatGptAnalysisTransportTests
 
     [Theory]
     [InlineData(null)]
+    [InlineData("text/event-stream")]
     [InlineData("TEXT/EVENT-STREAM")]
     public async Task Completed_event_stream_is_valid_without_a_header_or_with_case_insensitive_media_type(string? mediaType)
     {
@@ -28,6 +29,8 @@ public sealed class ChatGptAnalysisTransportTests
     [Theory]
     [InlineData(null, "{\"status\":\"completed\",\"output\":\"private-output\"}", AiFailure.IncompleteResponse)]
     [InlineData(null, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"private-output\"}\n\n", AiFailure.IncompleteResponse)]
+    [InlineData(null, "arbitrary text", AiFailure.IncompleteResponse)]
+    [InlineData(null, "<html><body>Provider unavailable</body></html>", AiFailure.IncompleteResponse)]
     [InlineData("application/json", "{\"status\":\"completed\"}", AiFailure.MalformedResponse)]
     public async Task Missing_header_does_not_allow_json_or_incomplete_output_to_become_success(
         string? mediaType, string body, AiFailure expected)
@@ -36,6 +39,33 @@ public sealed class ChatGptAnalysisTransportTests
         await ConnectAnalysisModelAsync(app);
         app.Server.InferenceMediaType = mediaType;
         app.Server.StreamBody = body;
+        await using var scope = app.Services.CreateAsyncScope();
+        var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
+        var exception = await Assert.ThrowsAsync<AiProviderException>(() =>
+            client.GenerateTextAsync(new AiTextRequest("Instructions", "Input"), Cancellation));
+        Assert.Equal(expected, exception.Failure);
+        Assert.DoesNotContain("private-output", app.Logs.Text);
+    }
+
+    [Theory]
+    [InlineData(null, "", false, AiFailure.IncompleteResponse)]
+    [InlineData("text/event-stream", "", false, AiFailure.IncompleteResponse)]
+    [InlineData(null, "\n", false, AiFailure.IncompleteResponse)]
+    [InlineData("text/event-stream", "\n", false, AiFailure.IncompleteResponse)]
+    [InlineData(null, "", true, AiFailure.IncompleteResponse)]
+    [InlineData("text/event-stream", "", true, AiFailure.IncompleteResponse)]
+    [InlineData(null, "\n\n", true, AiFailure.MalformedResponse)]
+    [InlineData("text/event-stream", "\n\n", true, AiFailure.MalformedResponse)]
+    public async Task Incomplete_terminal_event_cannot_complete_inference(
+        string? mediaType, string delimiter, bool truncatedJson, AiFailure expected)
+    {
+        using var app = new ChatGptTestApp();
+        await ConnectAnalysisModelAsync(app);
+        app.Server.InferenceMediaType = mediaType;
+        var terminalEvent = "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}";
+        if (truncatedJson) terminalEvent = terminalEvent[..^2];
+        app.Server.StreamBody = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"private-output\"}\n\n" + terminalEvent + delimiter;
+
         await using var scope = app.Services.CreateAsyncScope();
         var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
         var exception = await Assert.ThrowsAsync<AiProviderException>(() =>
