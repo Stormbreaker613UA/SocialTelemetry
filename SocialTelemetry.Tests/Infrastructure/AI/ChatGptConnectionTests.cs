@@ -17,7 +17,7 @@ public sealed class ChatGptConnectionTests
     public async Task Connection_uses_documented_PKCE_contract_and_protects_credentials()
     {
         using var app = new ChatGptTestApp();
-        var disconnected = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        var disconnected = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(disconnected);
         Assert.False(disconnected.Connected);
         var status = await app.ConnectAsync();
@@ -40,7 +40,7 @@ public sealed class ChatGptConnectionTests
         Assert.Equal(authorization["code_challenge"].ToString(),
             WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(exchange["code_verifier"]))));
         Assert.False(exchange.ContainsKey("client_secret"));
-        var protectedBytes = await File.ReadAllBytesAsync(Path.Combine(app.DataDirectory, "chatgpt-state.bin"));
+        var protectedBytes = await File.ReadAllBytesAsync(Path.Combine(app.DataDirectory, "chatgpt-state.bin"), TestContext.Current.CancellationToken);
         Assert.DoesNotContain("private-access-", Encoding.UTF8.GetString(protectedBytes));
         var protector = CreateProtector(app);
         var stored = Encoding.UTF8.GetString(protector.Unprotect(protectedBytes));
@@ -74,10 +74,10 @@ public sealed class ChatGptConnectionTests
             "duplicate-state" => app.CallbackUrl() + "&state=extra",
             _ => app.CallbackUrl()
         };
-        using var response = await app.Client.GetAsync(url);
+        using var response = await app.Client.GetAsync(url, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        Assert.DoesNotContain("private-", await response.Content.ReadAsStringAsync());
+        Assert.DoesNotContain("private-", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal(0, app.Server.ExchangeCount);
         Assert.DoesNotContain("private-", app.Logs.Text);
     }
@@ -93,10 +93,10 @@ public sealed class ChatGptConnectionTests
         using var app = new ChatGptTestApp();
         app.Server.IdentityFault = fault;
         await app.BeginAsync();
-        using var response = await app.Client.GetAsync(app.CallbackUrl());
+        using var response = await app.Client.GetAsync(app.CallbackUrl(), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
-        Assert.Contains("InvalidIdentity", await response.Content.ReadAsStringAsync());
-        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        Assert.Contains("InvalidIdentity", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         Assert.False(status.Connected);
         Assert.DoesNotContain("private-", app.Logs.Text);
@@ -107,18 +107,18 @@ public sealed class ChatGptConnectionTests
     {
         using var app = new ChatGptTestApp();
         var initial = await app.ConnectAsync();
-        using var replay = await app.Client.GetAsync(app.CallbackUrl());
+        using var replay = await app.Client.GetAsync(app.CallbackUrl(), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
         Assert.Equal(1, app.Server.ExchangeCount);
         await app.BeginAsync();
-        using var changedClient = await app.Client.GetAsync(app.CallbackUrl(clientId: "oaiapp_other"));
+        using var changedClient = await app.Client.GetAsync(app.CallbackUrl(clientId: "oaiapp_other"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, changedClient.StatusCode);
         Assert.Equal(1, app.Server.ExchangeCount);
         await app.BeginAsync();
         app.Server.Subject = "different-private-subject";
-        using var changedSubject = await app.Client.GetAsync(app.CallbackUrl(clientId: null));
+        using var changedSubject = await app.Client.GetAsync(app.CallbackUrl(clientId: null), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadGateway, changedSubject.StatusCode);
-        var preserved = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        var preserved = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(preserved);
         Assert.Equal(initial.ConnectionId, preserved.ConnectionId);
         Assert.True(preserved.Connected);
@@ -132,7 +132,7 @@ public sealed class ChatGptConnectionTests
         var status = await app.ConnectAsync();
         Assert.True(status.Connected);
         Assert.False(status.InferencePermissionAvailable);
-        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         await app.BeginAsync(new { RequestConsent = true });
         Assert.NotNull(app.Browser.LastUri);
@@ -148,9 +148,9 @@ public sealed class ChatGptConnectionTests
         using var app = new ChatGptTestApp();
         app.Server.TokenError = "invalid_grant";
         await app.BeginAsync();
-        using var callback = await app.Client.GetAsync(app.CallbackUrl());
+        using var callback = await app.Client.GetAsync(app.CallbackUrl(), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, callback.StatusCode);
-        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         var savedAccount = Assert.Single(status.Accounts);
         Assert.False(savedAccount.Connected);
@@ -169,18 +169,18 @@ public sealed class ChatGptConnectionTests
         Assert.NotNull(app.Browser.LastUri);
         var hostId = QueryHelpers.ParseQuery(app.Browser.LastUri.Query)["ext_agent_host_id"].ToString();
         app.Server.RevokeStatus = providerAvailable ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable;
-        using var response = await app.Client.DeleteAsync("/ai-connection/chatgpt");
+        using var response = await app.Client.DeleteAsync("/ai-connection/chatgpt", TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var disconnected = await response.Content.ReadFromJsonAsync<ChatGptDisconnectResult>();
+        var disconnected = await response.Content.ReadFromJsonAsync<ChatGptDisconnectResult>(TestContext.Current.CancellationToken);
         Assert.NotNull(disconnected);
         Assert.Equal(providerAvailable, disconnected.RemoteRevocationConfirmed);
         Assert.Equal(providerAvailable ? 1 : 2, app.Server.RevokeCount);
-        var stored = Encoding.UTF8.GetString(CreateProtector(app).Unprotect(await File.ReadAllBytesAsync(Path.Combine(app.DataDirectory, "chatgpt-state.bin"))));
+        var stored = Encoding.UTF8.GetString(CreateProtector(app).Unprotect(await File.ReadAllBytesAsync(Path.Combine(app.DataDirectory, "chatgpt-state.bin"), TestContext.Current.CancellationToken)));
         Assert.DoesNotContain("private-access-", stored);
         Assert.DoesNotContain("private-refresh-", stored);
         Assert.Contains("oaiapp_test", stored);
         using var restarted = new ChatGptTestApp(app);
-        var status = await restarted.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        var status = await restarted.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         Assert.False(status.Connected);
         Assert.Equal(connected.ConnectionId, status.ConnectionId);
@@ -249,16 +249,16 @@ public sealed class ChatGptConnectionTests
         if (fault == "keys-unavailable") app.Server.JwksStatus = HttpStatusCode.ServiceUnavailable;
         if (fault == "keys-timeout") app.Server.CancelJwks = true;
 
-        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("ReconnectRequired", await response.Content.ReadAsStringAsync());
+        Assert.Contains("ReconnectRequired", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, app.Server.RefreshCount);
-        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         Assert.False(status.Connected);
         Assert.Equal(connected.ConnectionId, status.ConnectionId);
-        using var retry = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+        using var retry = await app.Client.GetAsync("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, retry.StatusCode);
         Assert.Equal(1, app.Server.RefreshCount);
         await app.BeginAsync();
@@ -281,11 +281,11 @@ public sealed class ChatGptConnectionTests
         using var restarted = new ChatGptTestApp(app);
         app.Server.DiscoveryStatus = HttpStatusCode.ServiceUnavailable;
 
-        using var response = await restarted.Client.GetAsync("/ai-connection/chatgpt/models");
+        using var response = await restarted.Client.GetAsync("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(1, app.Server.RefreshCount);
-        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         Assert.False(status.Connected);
         Assert.DoesNotContain("private-", app.Logs.Text);
@@ -303,10 +303,10 @@ public sealed class ChatGptConnectionTests
         app.Clock.Advance(TimeSpan.FromHours(2));
         app.Server.TokenError = error;
         app.Server.TokenErrorStatus = temporary ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.BadRequest;
-        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
         Assert.False(response.IsSuccessStatusCode);
-        Assert.DoesNotContain("private-", await response.Content.ReadAsStringAsync());
-        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        Assert.DoesNotContain("private-", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         Assert.Equal(temporary, status.Connected);
         Assert.DoesNotContain("private-", app.Logs.Text);
@@ -317,12 +317,12 @@ public sealed class ChatGptConnectionTests
     {
         using var app = new ChatGptTestApp();
         await app.ConnectAsync();
-        var models = await app.Client.GetFromJsonAsync<ChatGptModelCatalog>("/ai-connection/chatgpt/models");
+        var models = await app.Client.GetFromJsonAsync<ChatGptModelCatalog>("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
         Assert.NotNull(models);
         Assert.Equal("model-a", Assert.Single(models.Models).Id);
         await app.SelectModelAsync();
         app.Server.ModelsBody = "{\"models\":[]}";
-        var unavailable = await app.Client.GetFromJsonAsync<ChatGptModelCatalog>("/ai-connection/chatgpt/models");
+        var unavailable = await app.Client.GetFromJsonAsync<ChatGptModelCatalog>("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
         Assert.NotNull(unavailable);
         Assert.Empty(unavailable.Models);
         Assert.Equal("model-a", unavailable.SelectedModel);
@@ -346,10 +346,10 @@ public sealed class ChatGptConnectionTests
         await app.ConnectAsync();
         app.Server.ModelsStatus = (HttpStatusCode)providerStatus;
         app.Server.ModelsBody = body;
-        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models", TestContext.Current.CancellationToken);
         Assert.Equal(expectedStatus, (int)response.StatusCode);
-        Assert.DoesNotContain("private-", await response.Content.ReadAsStringAsync());
-        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        Assert.DoesNotContain("private-", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status", TestContext.Current.CancellationToken);
         Assert.NotNull(status);
         Assert.True(status.Connected);
         Assert.DoesNotContain("private-", app.Logs.Text);
@@ -367,7 +367,7 @@ public sealed class ChatGptConnectionTests
         if (fault == "origin") app.Client.DefaultRequestHeaders.Add("Origin", "https://untrusted.example");
         if (fault == "remote") app.RemoteAddress = IPAddress.Parse("192.0.2.1");
         if (fault == "host") app.Client.DefaultRequestHeaders.Host = "untrusted.example";
-        using var response = await app.Client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { });
+        using var response = await app.Client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Null(app.Browser.LastUri);
     }

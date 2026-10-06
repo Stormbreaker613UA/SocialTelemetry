@@ -46,12 +46,12 @@ public sealed class ExceptionPipelineTests
         using var client = application.CreateClient();
         client.DefaultRequestHeaders.Accept.ParseAdd(accept);
 
-        using var response = await client.GetAsync($"/test/failure/{failure}?private={FailureStartupFilter.PrivateMarker}");
+        using var response = await client.GetAsync($"/test/failure/{failure}?private={FailureStartupFilter.PrivateMarker}", TestContext.Current.CancellationToken);
 
         Assert.Equal(expectedStatus, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        var body = await response.Content.ReadAsStringAsync();
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(TestContext.Current.CancellationToken);
         Assert.NotNull(problem);
         Assert.Equal((int)expectedStatus, problem.Status);
         Assert.DoesNotContain(FailureStartupFilter.PrivateMarker, body);

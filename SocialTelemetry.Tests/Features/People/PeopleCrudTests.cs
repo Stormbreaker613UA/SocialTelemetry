@@ -32,11 +32,11 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
         var userProfileId = await fixture.CreateUserProfileAsync();
         var request = CreateRequest(userProfileId, "Morgan");
 
-        using var response = await fixture.Client.PostAsJsonAsync("/people", request);
+        using var response = await fixture.Client.PostAsJsonAsync("/people", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var createdPerson = await response.Content.ReadFromJsonAsync<CreatePerson.Response>();
+        var createdPerson = await response.Content.ReadFromJsonAsync<CreatePerson.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(createdPerson);
 
         var persistedPerson = await fixture.FindPersonAsync(createdPerson.Id);
@@ -51,11 +51,11 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
         var userProfileId = await fixture.CreateUserProfileAsync();
         var personId = await fixture.CreatePersonAsync(CreateRequest(userProfileId, "Casey"));
 
-        using var response = await fixture.Client.GetAsync($"/people/{personId}");
+        using var response = await fixture.Client.GetAsync($"/people/{personId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var person = await response.Content.ReadFromJsonAsync<GetPerson.Response>();
+        var person = await response.Content.ReadFromJsonAsync<GetPerson.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(person);
         Assert.Equal(personId, person.Id);
         Assert.Equal("Casey", person.DisplayName);
@@ -65,7 +65,7 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
     [Fact]
     public async Task GetById_returns_not_found_for_unknown_person()
     {
-        using var response = await fixture.Client.GetAsync($"/people/{Guid.NewGuid()}");
+        using var response = await fixture.Client.GetAsync($"/people/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -77,11 +77,11 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
         await fixture.CreatePersonAsync(CreateRequest(userProfileId, "Taylor"));
         await fixture.CreatePersonAsync(CreateRequest(userProfileId, "Alex"));
 
-        using var response = await fixture.Client.GetAsync($"/people?UserProfileId={userProfileId}");
+        using var response = await fixture.Client.GetAsync($"/people?UserProfileId={userProfileId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var people = await response.Content.ReadFromJsonAsync<GetPeople.Response>();
+        var people = await response.Content.ReadFromJsonAsync<GetPeople.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(people);
         Assert.Collection(
             people.People,
@@ -106,7 +106,7 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
             Notes = "Updated notes"
         };
 
-        using var response = await fixture.Client.PutAsJsonAsync($"/people/{personId}", request);
+        using var response = await fixture.Client.PutAsJsonAsync($"/people/{personId}", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -123,7 +123,7 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
         var userProfileId = await fixture.CreateUserProfileAsync();
         var personId = await fixture.CreatePersonAsync(CreateRequest(userProfileId, "Jordan"));
 
-        using var response = await fixture.Client.DeleteAsync($"/people/{personId}");
+        using var response = await fixture.Client.DeleteAsync($"/people/{personId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(await fixture.FindPersonAsync(personId));
@@ -132,7 +132,7 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
     [Fact]
     public async Task Delete_returns_not_found_for_unknown_person()
     {
-        using var response = await fixture.Client.DeleteAsync($"/people/{Guid.NewGuid()}");
+        using var response = await fixture.Client.DeleteAsync($"/people/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -153,8 +153,8 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
             RelationshipContext = invalidRelationship ? (RelationshipContext)99 : RelationshipContext.Friend
         };
         using var response = update
-            ? await fixture.Client.PutAsJsonAsync($"/people/{personId}", body)
-            : await fixture.Client.PostAsJsonAsync("/people", body);
+            ? await fixture.Client.PutAsJsonAsync($"/people/{personId}", body, TestContext.Current.CancellationToken)
+            : await fixture.Client.PostAsJsonAsync("/people", body, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

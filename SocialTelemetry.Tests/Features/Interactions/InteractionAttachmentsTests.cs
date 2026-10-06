@@ -35,11 +35,11 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
             { new StringContent("They said they were running late."), "TextContent" }
         };
 
-        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form);
+        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>();
+        var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(attachment);
         Assert.Equal(AttachmentType.Text, attachment.Type);
         Assert.Equal(AttachmentStatus.Ready, attachment.Status);
@@ -59,11 +59,11 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var fileBytes = new byte[] { 1, 2, 3, 4 };
         using var form = CreateFileForm(AttachmentType.Image, fileBytes, "photo.png", "image/png");
 
-        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form);
+        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>();
+        var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(attachment);
         Assert.Equal(AttachmentType.Image, attachment.Type);
         Assert.Equal(AttachmentStatus.Ready, attachment.Status);
@@ -77,7 +77,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         Assert.Equal(AttachmentStatus.Ready, persistedAttachment.Status);
 
         var storedFilePath = Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey);
-        Assert.Equal(fileBytes, await File.ReadAllBytesAsync(storedFilePath));
+        Assert.Equal(fileBytes, await File.ReadAllBytesAsync(storedFilePath, TestContext.Current.CancellationToken));
         Assert.False(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, ".staging", attachment.StorageKey)));
     }
 
@@ -90,7 +90,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
             { new StringContent("No interaction exists."), "TextContent" }
         };
 
-        using var response = await fixture.Client.PostAsync($"/interactions/{Guid.NewGuid()}/attachments", form);
+        using var response = await fixture.Client.PostAsync($"/interactions/{Guid.NewGuid()}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -101,7 +101,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var interactionId = await CreateInteractionAsync();
         using var form = CreateFileForm(AttachmentType.Text, [1], "note.txt", "text/plain");
 
-        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form);
+        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -116,7 +116,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
             { new StringContent("Unsupported attachment"), "TextContent" }
         };
 
-        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form);
+        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -126,14 +126,14 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
     {
         var interactionId = await CreateInteractionAsync();
         var unrelatedFilePath = Path.Combine(fixture.AttachmentStorageDirectory, "unrelated.txt");
-        await File.WriteAllTextAsync(unrelatedFilePath, "keep this file");
+        await File.WriteAllTextAsync(unrelatedFilePath, "keep this file", TestContext.Current.CancellationToken);
 
         using var form = CreateFileForm(AttachmentType.Screenshot, [5, 6], "../../outside.png", "image/png");
-        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form);
+        using var response = await fixture.Client.PostAsync($"/interactions/{interactionId}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>();
+        var attachment = await response.Content.ReadFromJsonAsync<AddAttachment.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(attachment);
         Assert.NotNull(attachment.StorageKey);
         Assert.DoesNotContain("..", attachment.StorageKey);
@@ -145,7 +145,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         Assert.False(relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
         Assert.True(File.Exists(storedFilePath));
         Assert.True(File.Exists(unrelatedFilePath));
-        Assert.Equal("keep this file", await File.ReadAllTextAsync(unrelatedFilePath));
+        Assert.Equal("keep this file", await File.ReadAllTextAsync(unrelatedFilePath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -154,11 +154,11 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var interactionId = await CreateInteractionAsync();
         var attachment = await AddTextAttachmentAsync(interactionId, "They called after work.");
 
-        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var metadata = await response.Content.ReadFromJsonAsync<GetAttachment.Response>();
+        var metadata = await response.Content.ReadFromJsonAsync<GetAttachment.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(metadata);
         Assert.Equal(attachment.Id, metadata.Id);
         Assert.Equal(AttachmentType.Text, metadata.Type);
@@ -172,11 +172,11 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var interactionId = await CreateInteractionAsync();
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Audio, [7, 8], "audio/mpeg");
 
-        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var metadata = await response.Content.ReadFromJsonAsync<GetAttachment.Response>();
+        var metadata = await response.Content.ReadFromJsonAsync<GetAttachment.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(metadata);
         Assert.Equal(AttachmentType.Audio, metadata.Type);
         Assert.Equal("audio/mpeg", metadata.MimeType);
@@ -190,13 +190,13 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var fileBytes = new byte[] { 9, 10, 11 };
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, fileBytes, "image/png");
 
-        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content");
+        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
         Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
-        Assert.Equal(fileBytes, await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal(fileBytes, await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -205,7 +205,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var interactionId = await CreateInteractionAsync();
         var attachment = await AddTextAttachmentAsync(interactionId, "This is database content.");
 
-        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content");
+        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -217,7 +217,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var secondInteractionId = await CreateInteractionAsync();
         var attachment = await AddTextAttachmentAsync(firstInteractionId, "Only on the first interaction.");
 
-        using var response = await fixture.Client.GetAsync($"/interactions/{secondInteractionId}/attachments/{attachment.Id}");
+        using var response = await fixture.Client.GetAsync($"/interactions/{secondInteractionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -228,7 +228,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var interactionId = await CreateInteractionAsync();
         var attachment = await AddTextAttachmentAsync(interactionId, "Temporary note.");
 
-        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
@@ -241,7 +241,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Screenshot, [12, 13], "image/png");
         var filePath = Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!);
 
-        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
@@ -253,7 +253,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
     {
         var interactionId = await CreateInteractionAsync();
 
-        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{Guid.NewGuid()}");
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -267,12 +267,12 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var firstFilePath = Path.Combine(fixture.AttachmentStorageDirectory, firstAttachment.StorageKey!);
         var secondFilePath = Path.Combine(fixture.AttachmentStorageDirectory, secondAttachment.StorageKey!);
 
-        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{firstAttachment.Id}");
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{firstAttachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.False(File.Exists(firstFilePath));
         Assert.True(File.Exists(secondFilePath));
-        Assert.Equal(new byte[] { 3, 4 }, await File.ReadAllBytesAsync(secondFilePath));
+        Assert.Equal(new byte[] { 3, 4 }, await File.ReadAllBytesAsync(secondFilePath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -283,12 +283,12 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
         var otherAttachment = await AddFileAttachmentAsync(otherInteractionId, AttachmentType.Image, [2], "image/png");
 
-        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}");
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
         Assert.False(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!)));
-        Assert.Equal(new byte[] { 2 }, await File.ReadAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, otherAttachment.StorageKey!)));
+        Assert.Equal(new byte[] { 2 }, await File.ReadAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, otherAttachment.StorageKey!), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -298,10 +298,10 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
         File.Delete(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!));
 
-        using var downloadResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content");
+        using var downloadResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}/attachments/{attachment.Id}/content", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, downloadResponse.StatusCode);
 
-        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
     }
@@ -318,14 +318,14 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         using var client = application.CreateClient();
         using var form = CreateFileForm(AttachmentType.Image, [1], "private.png", "image/png");
 
-        using var response = await client.PostAsync($"/interactions/{interactionId}/attachments", form);
+        using var response = await client.PostAsync($"/interactions/{interactionId}/attachments", form, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal(existingFiles, Directory.GetFiles(fixture.AttachmentStorageDirectory, "*", SearchOption.AllDirectories).Order().ToArray());
         await using var scope = fixture.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.False(await dbContext.InteractionAttachments.AsNoTracking()
-            .AnyAsync(attachment => attachment.InteractionId == interactionId));
+            .AnyAsync(attachment => attachment.InteractionId == interactionId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -341,7 +341,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         });
         using var client = application.CreateClient();
 
-        using var failedResponse = await client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var failedResponse = await client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.InternalServerError, failedResponse.StatusCode);
         var failedAttachment = await fixture.FindAttachmentAsync(attachment.Id);
@@ -349,7 +349,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         Assert.Equal(AttachmentStatus.Deleting, failedAttachment.Status);
         Assert.True(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!)));
 
-        using var retryResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}");
+        using var retryResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode);
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
     }
@@ -361,7 +361,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         using var scope = application.Services.CreateScope();
         var storage = scope.ServiceProvider.GetRequiredService<IAttachmentStorage>();
         var unrelatedFile = Path.Combine(fixture.AttachmentStorageDirectory, "keep.txt");
-        await File.WriteAllTextAsync(unrelatedFile, "Unrelated content");
+        await File.WriteAllTextAsync(unrelatedFile, "Unrelated content", TestContext.Current.CancellationToken);
 
         foreach (var key in new[] { "../keep.txt", "..\\keep.txt", "keep.txt", unrelatedFile })
         {
@@ -369,7 +369,7 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
             await Assert.ThrowsAsync<InvalidOperationException>(() => storage.DeleteAsync(key, CancellationToken.None));
         }
 
-        Assert.Equal("Unrelated content", await File.ReadAllTextAsync(unrelatedFile));
+        Assert.Equal("Unrelated content", await File.ReadAllTextAsync(unrelatedFile, TestContext.Current.CancellationToken));
     }
 
     [Fact]

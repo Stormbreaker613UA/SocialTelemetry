@@ -28,7 +28,7 @@ public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IC
         }
 
         using var beforeRecovery = await fixture.Client.GetAsync(
-            $"/interactions/{attachment.InteractionId}/attachments/{attachment.Id}/content");
+            $"/interactions/{attachment.InteractionId}/attachments/{attachment.Id}/content", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, beforeRecovery.StatusCode);
 
         await ReconcileAsync();
@@ -45,9 +45,9 @@ public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IC
         Assert.Equal(AttachmentStatus.Ready, recoveredAttachment.Status);
         Assert.False(File.Exists(GetFilePath(attachment.StorageKey!, staged: true)));
         using var download = await fixture.Client.GetAsync(
-            $"/interactions/{attachment.InteractionId}/attachments/{attachment.Id}/content");
+            $"/interactions/{attachment.InteractionId}/attachments/{attachment.Id}/content", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, download.StatusCode);
-        Assert.Equal(new byte[] { 1, 2, 3 }, await download.Content.ReadAsByteArrayAsync());
+        Assert.Equal(new byte[] { 1, 2, 3 }, await download.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -111,13 +111,13 @@ public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IC
         await WriteFileAsync(attachment.StorageKey!, staged: false);
         File.SetLastWriteTimeUtc(GetFilePath(attachment.StorageKey!, staged: false), DateTime.UtcNow.AddHours(-2));
         var unrelatedFile = Path.Combine(fixture.AttachmentStorageDirectory, "keep.txt");
-        await File.WriteAllTextAsync(unrelatedFile, "Unrelated data");
+        await File.WriteAllTextAsync(unrelatedFile, "Unrelated data", TestContext.Current.CancellationToken);
         File.SetLastWriteTimeUtc(unrelatedFile, DateTime.UtcNow.AddHours(-2));
 
         await ReconcileAsync();
 
         Assert.True(File.Exists(GetFilePath(attachment.StorageKey!, staged: false)));
-        Assert.Equal("Unrelated data", await File.ReadAllTextAsync(unrelatedFile));
+        Assert.Equal("Unrelated data", await File.ReadAllTextAsync(unrelatedFile, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IC
         using var restartedApplication = fixture.WithServices(_ => { });
         using var client = restartedApplication.CreateClient();
         using var response = await client.GetAsync(
-            $"/interactions/{attachment.InteractionId}/attachments/{attachment.Id}/content");
+            $"/interactions/{attachment.InteractionId}/attachments/{attachment.Id}/content", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var recoveredAttachment = await fixture.FindAttachmentAsync(attachment.Id);

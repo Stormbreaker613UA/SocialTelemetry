@@ -29,10 +29,10 @@ public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<P
         firstContext.InteractionAnalyses.Add(firstAnalysis);
         secondContext.InteractionAnalyses.Add(secondAnalysis);
 
-        await Task.WhenAll(firstContext.SaveChangesAsync(), secondContext.SaveChangesAsync());
+        await Task.WhenAll(firstContext.SaveChangesAsync(TestContext.Current.CancellationToken), secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
 
         var storedAnalyses = await firstContext.InteractionAnalyses.AsNoTracking()
-            .Where(analysis => analysis.InteractionId == interactionId).ToListAsync();
+            .Where(analysis => analysis.InteractionId == interactionId).ToListAsync(TestContext.Current.CancellationToken);
         Assert.Equal(2, storedAnalyses.Count);
         foreach (var analysis in storedAnalyses)
         {
@@ -73,12 +73,12 @@ public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<P
                 CreateSuggestion(firstAnalysis, personId),
                 CreateSuggestion(secondAnalysis, personId),
                 CreateSuggestion(otherAnalysis, otherPersonId));
-            await dbContext.SaveChangesAsync();
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         if (deleteInteraction)
         {
-            using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}");
+            using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
         else
@@ -86,31 +86,31 @@ public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<P
             // Analysis endpoints do not exist yet; exercise the database cascade directly.
             await using var scope = fixture.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await dbContext.InteractionAnalyses.Where(analysis => analysis.Id == firstAnalysis.Id).ExecuteDeleteAsync();
+            await dbContext.InteractionAnalyses.Where(analysis => analysis.Id == firstAnalysis.Id).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         }
 
         Guid[] removedAnalysisIds = deleteInteraction ? [firstAnalysis.Id, secondAnalysis.Id] : [firstAnalysis.Id];
         await using var verificationScope = fixture.CreateAsyncScope();
         var verificationContext = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.False(await verificationContext.InteractionAnalyses.AsNoTracking()
-            .AnyAsync(analysis => removedAnalysisIds.Contains(analysis.Id)));
+            .AnyAsync(analysis => removedAnalysisIds.Contains(analysis.Id), TestContext.Current.CancellationToken));
         Assert.False(await verificationContext.AnalysisConversationMessages.AsNoTracking()
-            .AnyAsync(message => removedAnalysisIds.Contains(message.InteractionAnalysisId)));
+            .AnyAsync(message => removedAnalysisIds.Contains(message.InteractionAnalysisId), TestContext.Current.CancellationToken));
         Assert.False(await verificationContext.SuggestedProfileUpdates.AsNoTracking()
-            .AnyAsync(suggestion => removedAnalysisIds.Contains(suggestion.InteractionAnalysisId)));
-        Assert.True(await verificationContext.InteractionAnalyses.AsNoTracking().AnyAsync(analysis => analysis.Id == otherAnalysis.Id));
+            .AnyAsync(suggestion => removedAnalysisIds.Contains(suggestion.InteractionAnalysisId), TestContext.Current.CancellationToken));
+        Assert.True(await verificationContext.InteractionAnalyses.AsNoTracking().AnyAsync(analysis => analysis.Id == otherAnalysis.Id, TestContext.Current.CancellationToken));
         Assert.True(await verificationContext.AnalysisConversationMessages.AsNoTracking()
-            .AnyAsync(message => message.InteractionAnalysisId == otherAnalysis.Id));
+            .AnyAsync(message => message.InteractionAnalysisId == otherAnalysis.Id, TestContext.Current.CancellationToken));
         Assert.True(await verificationContext.SuggestedProfileUpdates.AsNoTracking()
-            .AnyAsync(suggestion => suggestion.InteractionAnalysisId == otherAnalysis.Id));
+            .AnyAsync(suggestion => suggestion.InteractionAnalysisId == otherAnalysis.Id, TestContext.Current.CancellationToken));
         Assert.Equal(!deleteInteraction, await verificationContext.InteractionAnalyses.AsNoTracking()
-            .AnyAsync(analysis => analysis.Id == secondAnalysis.Id));
+            .AnyAsync(analysis => analysis.Id == secondAnalysis.Id, TestContext.Current.CancellationToken));
         Assert.Equal(!deleteInteraction, await verificationContext.AnalysisConversationMessages.AsNoTracking()
-            .AnyAsync(message => message.InteractionAnalysisId == secondAnalysis.Id));
+            .AnyAsync(message => message.InteractionAnalysisId == secondAnalysis.Id, TestContext.Current.CancellationToken));
         Assert.Equal(!deleteInteraction, await verificationContext.SuggestedProfileUpdates.AsNoTracking()
-            .AnyAsync(suggestion => suggestion.InteractionAnalysisId == secondAnalysis.Id));
+            .AnyAsync(suggestion => suggestion.InteractionAnalysisId == secondAnalysis.Id, TestContext.Current.CancellationToken));
         Assert.Equal(!deleteInteraction, await verificationContext.Interactions.AsNoTracking()
-            .AnyAsync(interaction => interaction.Id == interactionId));
+            .AnyAsync(interaction => interaction.Id == interactionId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -134,21 +134,21 @@ public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<P
                     CreatedAt = DateTimeOffset.UtcNow
                 });
             }
-            await dbContext.SaveChangesAsync();
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        using var response = await fixture.Client.DeleteAsync($"/people/{personId}");
+        using var response = await fixture.Client.DeleteAsync($"/people/{personId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await using var verificationScope = fixture.CreateAsyncScope();
         var verificationContext = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
-        Assert.False(await verificationContext.SuggestedProfileUpdates.AsNoTracking().AnyAsync(suggestion => suggestion.PersonId == personId));
-        Assert.False(await verificationContext.PersonInferences.AsNoTracking().AnyAsync(inference => inference.PersonId == personId));
-        Assert.False(await verificationContext.InteractionParticipants.AsNoTracking().AnyAsync(participant => participant.PersonId == personId));
-        Assert.True(await verificationContext.SuggestedProfileUpdates.AsNoTracking().AnyAsync(suggestion => suggestion.PersonId == otherPersonId));
-        Assert.True(await verificationContext.PersonInferences.AsNoTracking().AnyAsync(inference => inference.PersonId == otherPersonId));
-        Assert.True(await verificationContext.InteractionAnalyses.AsNoTracking().AnyAsync(storedAnalysis => storedAnalysis.Id == analysis.Id));
-        Assert.True(await verificationContext.AnalysisConversationMessages.AsNoTracking().AnyAsync(message => message.InteractionAnalysisId == analysis.Id));
+        Assert.False(await verificationContext.SuggestedProfileUpdates.AsNoTracking().AnyAsync(suggestion => suggestion.PersonId == personId, TestContext.Current.CancellationToken));
+        Assert.False(await verificationContext.PersonInferences.AsNoTracking().AnyAsync(inference => inference.PersonId == personId, TestContext.Current.CancellationToken));
+        Assert.False(await verificationContext.InteractionParticipants.AsNoTracking().AnyAsync(participant => participant.PersonId == personId, TestContext.Current.CancellationToken));
+        Assert.True(await verificationContext.SuggestedProfileUpdates.AsNoTracking().AnyAsync(suggestion => suggestion.PersonId == otherPersonId, TestContext.Current.CancellationToken));
+        Assert.True(await verificationContext.PersonInferences.AsNoTracking().AnyAsync(inference => inference.PersonId == otherPersonId, TestContext.Current.CancellationToken));
+        Assert.True(await verificationContext.InteractionAnalyses.AsNoTracking().AnyAsync(storedAnalysis => storedAnalysis.Id == analysis.Id, TestContext.Current.CancellationToken));
+        Assert.True(await verificationContext.AnalysisConversationMessages.AsNoTracking().AnyAsync(message => message.InteractionAnalysisId == analysis.Id, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -163,23 +163,23 @@ public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<P
         var firstContext = firstScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var secondContext = secondScope.ServiceProvider.GetRequiredService<AppDbContext>();
         firstContext.SuggestedProfileUpdates.Add(suggestion);
-        await firstContext.SaveChangesAsync();
-        var staleSuggestion = await secondContext.SuggestedProfileUpdates.SingleAsync(storedSuggestion => storedSuggestion.Id == suggestion.Id);
+        await firstContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var staleSuggestion = await secondContext.SuggestedProfileUpdates.SingleAsync(storedSuggestion => storedSuggestion.Id == suggestion.Id, TestContext.Current.CancellationToken);
         Assert.Equal(SuggestionStatus.Pending, staleSuggestion.Status);
         Assert.Null(staleSuggestion.AcceptedValue);
         Assert.Null(staleSuggestion.ReviewedAt);
-        Assert.False(await firstContext.PersonFacts.AsNoTracking().AnyAsync(fact => fact.PersonId == personId));
+        Assert.False(await firstContext.PersonFacts.AsNoTracking().AnyAsync(fact => fact.PersonId == personId, TestContext.Current.CancellationToken));
 
         suggestion.Status = decision;
         suggestion.AcceptedValue = decision == SuggestionStatus.Accepted ? "User-edited value" : null;
         suggestion.ReviewedAt = DateTimeOffset.UtcNow;
-        await firstContext.SaveChangesAsync();
+        await firstContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         staleSuggestion.Status = SuggestionStatus.Rejected;
         staleSuggestion.ReviewedAt = DateTimeOffset.UtcNow;
-        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => secondContext.SaveChangesAsync());
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
 
         var reviewedSuggestion = await firstContext.SuggestedProfileUpdates.AsNoTracking()
-            .SingleAsync(storedSuggestion => storedSuggestion.Id == suggestion.Id);
+            .SingleAsync(storedSuggestion => storedSuggestion.Id == suggestion.Id, TestContext.Current.CancellationToken);
         Assert.Equal(decision, reviewedSuggestion.Status);
         Assert.Equal("Original suggestion", reviewedSuggestion.SuggestedValue);
         Assert.Equal(suggestion.AcceptedValue, reviewedSuggestion.AcceptedValue);

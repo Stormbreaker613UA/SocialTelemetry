@@ -14,9 +14,11 @@ Updated: 2026-10-06
 - All four existing EF migrations applied successfully; no model mismatch or new migration.
 - Live smoke passed: startup, browser OAuth/callback, permission, models, selection (`gpt-5.6-sol`), restart persistence, disconnect/revocation, reconnect, safe errors, local-request protection, and cleanup. Exit code 0.
 - Automated AI tests use fake provider responses; the live connection smoke was performed separately.
+- .NET SDK pinned to stable `10.0.401` in `global.json`, with `latestPatch` servicing roll-forward and prereleases disabled; both projects remain `net10.0`.
+- Direct dependencies reviewed: EF Core/Design/Relational aligned to `10.0.12`, Npgsql provider updated to `10.0.3`; other packages are already current stable versions.
 - Testing stack migrated to xUnit v3 (`xunit.v3.mtp-v2` 4.0.1), MTP v2, and `coverlet.MTP` 10.1.0; existing HTTP/Testcontainers packages are unchanged.
 - Root test command: `dotnet test --solution SocialTelemetry.slnx --no-build`; discovery adds `--list-tests`; coverage adds `--coverlet --coverlet-output-format cobertura --results-directory coverage`.
-- Migration discovery/run: 135 tests, all passed, none failed/skipped. Build has no errors; 166 new xUnit1051 warnings recommend test-context cancellation tokens in existing async calls. Tests were not weakened or broadly rewritten to hide these warnings.
+- Tooling verification: 135 tests discovered/passed, none failed/skipped; build: 0 warnings / 0 errors. Existing async test calls now pass test-context cancellation tokens; assertions and intentional cancellation scenarios are unchanged.
 - AnalyzeInteraction / AiContextBuilder implementation has NOT started.
 
 ## Current Task

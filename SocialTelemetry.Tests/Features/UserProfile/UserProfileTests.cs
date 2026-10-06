@@ -27,14 +27,14 @@ public sealed class UserProfileTests : IClassFixture<PeopleApiFixture>, IAsyncLi
     {
         var userProfileId = await fixture.CreateUserProfileAsync("Morgan");
 
-        using var response = await fixture.Client.GetAsync("/user-profile");
+        using var response = await fixture.Client.GetAsync("/user-profile", TestContext.Current.CancellationToken);
 
         if (response.StatusCode != HttpStatusCode.OK)
         {
-            Assert.Fail(await response.Content.ReadAsStringAsync());
+            Assert.Fail(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         }
 
-        var userProfile = await response.Content.ReadFromJsonAsync<GetUserProfile.Response>();
+        var userProfile = await response.Content.ReadFromJsonAsync<GetUserProfile.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(userProfile);
         Assert.Equal(userProfileId, userProfile.Id);
         Assert.Equal("Morgan", userProfile.DisplayName);
@@ -55,18 +55,18 @@ public sealed class UserProfileTests : IClassFixture<PeopleApiFixture>, IAsyncLi
             AiInstructions = "Ask for context"
         };
 
-        using var updateResponse = await fixture.Client.PutAsJsonAsync("/user-profile", request);
+        using var updateResponse = await fixture.Client.PutAsJsonAsync("/user-profile", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
 
-        using var getResponse = await fixture.Client.GetAsync("/user-profile");
+        using var getResponse = await fixture.Client.GetAsync("/user-profile", TestContext.Current.CancellationToken);
 
         if (getResponse.StatusCode != HttpStatusCode.OK)
         {
-            Assert.Fail(await getResponse.Content.ReadAsStringAsync());
+            Assert.Fail(await getResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         }
 
-        var userProfile = await getResponse.Content.ReadFromJsonAsync<GetUserProfile.Response>();
+        var userProfile = await getResponse.Content.ReadFromJsonAsync<GetUserProfile.Response>(TestContext.Current.CancellationToken);
 
         Assert.NotNull(userProfile);
         Assert.Equal(userProfileId, userProfile.Id);

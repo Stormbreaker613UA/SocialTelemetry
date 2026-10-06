@@ -28,11 +28,11 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         var (userProfileId, firstPersonId, _) = await CreatePeopleAsync();
         var request = CreateRequest(userProfileId, "Coffee", [firstPersonId], DateTimeOffset.UtcNow);
 
-        using var response = await fixture.Client.PostAsJsonAsync("/interactions", request);
+        using var response = await fixture.Client.PostAsJsonAsync("/interactions", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var interaction = await response.Content.ReadFromJsonAsync<CreateInteraction.Response>();
+        var interaction = await response.Content.ReadFromJsonAsync<CreateInteraction.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(interaction);
 
         var savedInteraction = await GetInteractionAsync(interaction.Id);
@@ -47,11 +47,11 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         var (userProfileId, firstPersonId, secondPersonId) = await CreatePeopleAsync();
         var request = CreateRequest(userProfileId, "Dinner", [firstPersonId, secondPersonId], DateTimeOffset.UtcNow);
 
-        using var response = await fixture.Client.PostAsJsonAsync("/interactions", request);
+        using var response = await fixture.Client.PostAsJsonAsync("/interactions", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var interaction = await response.Content.ReadFromJsonAsync<CreateInteraction.Response>();
+        var interaction = await response.Content.ReadFromJsonAsync<CreateInteraction.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(interaction);
 
         var savedInteraction = await GetInteractionAsync(interaction.Id);
@@ -67,7 +67,7 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         var userProfileId = await fixture.CreateUserProfileAsync();
         var request = CreateRequest(userProfileId, "Missing participant", [Guid.NewGuid()], DateTimeOffset.UtcNow);
 
-        using var response = await fixture.Client.PostAsJsonAsync("/interactions", request);
+        using var response = await fixture.Client.PostAsJsonAsync("/interactions", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -79,11 +79,11 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         var interactionId = await CreateInteractionAsync(
             CreateRequest(userProfileId, "Walk", [firstPersonId, secondPersonId], DateTimeOffset.UtcNow));
 
-        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}");
+        using var response = await fixture.Client.GetAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var interaction = await response.Content.ReadFromJsonAsync<GetInteraction.Response>();
+        var interaction = await response.Content.ReadFromJsonAsync<GetInteraction.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(interaction);
         Assert.Equal(interactionId, interaction.Id);
         Assert.Equal(2, interaction.Participants.Count);
@@ -97,11 +97,11 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             CreateRequest(userProfileId, "Matching", [firstPersonId], DateTimeOffset.UtcNow));
         await CreateInteractionAsync(CreateRequest(userProfileId, "Other", [secondPersonId], DateTimeOffset.UtcNow));
 
-        using var response = await fixture.Client.GetAsync($"/people/{firstPersonId}/interactions");
+        using var response = await fixture.Client.GetAsync($"/people/{firstPersonId}/interactions", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var interactions = await response.Content.ReadFromJsonAsync<GetInteractionsForPerson.Response>();
+        var interactions = await response.Content.ReadFromJsonAsync<GetInteractionsForPerson.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(interactions);
         var interaction = Assert.Single(interactions.Interactions);
         Assert.Equal(matchingInteractionId, interaction.Id);
@@ -116,11 +116,11 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         var newerInteractionId = await CreateInteractionAsync(
             CreateRequest(userProfileId, "Newer", [firstPersonId], new DateTimeOffset(2026, 1, 2, 12, 0, 0, TimeSpan.Zero)));
 
-        using var response = await fixture.Client.GetAsync($"/people/{firstPersonId}/interactions");
+        using var response = await fixture.Client.GetAsync($"/people/{firstPersonId}/interactions", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var interactions = await response.Content.ReadFromJsonAsync<GetInteractionsForPerson.Response>();
+        var interactions = await response.Content.ReadFromJsonAsync<GetInteractionsForPerson.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(interactions);
         Assert.Collection(
             interactions.Interactions,
@@ -144,7 +144,7 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             ParticipantIds = [secondPersonId]
         };
 
-        using var response = await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request);
+        using var response = await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -162,11 +162,11 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         var interactionId = await CreateInteractionAsync(
             CreateRequest(userProfileId, "Delete me", [firstPersonId], DateTimeOffset.UtcNow));
 
-        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}");
+        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
 
-        using var getResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}");
+        using var getResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -193,13 +193,13 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             dbContext.PersonInferences.AddRange(inferences);
-            await dbContext.SaveChangesAsync();
+            await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}");
+        using var deleteResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
 
-        using var getResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}");
+        using var getResponse = await fixture.Client.GetAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 
         await using var verificationScope = fixture.CreateAsyncScope();
@@ -208,7 +208,7 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             .AsNoTracking()
             .Where(inference => inference.PersonId == personId)
             .Select(inference => inference.Id)
-            .ToListAsync();
+            .ToListAsync(TestContext.Current.CancellationToken);
         var expectedInferenceIds = inferences
             .Where(inference => inference.SourceInteractionId != interactionId)
             .Select(inference => inference.Id)
@@ -216,13 +216,13 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
 
         Assert.Equal(expectedInferenceIds.Order(), remainingInferenceIds.Order());
         Assert.True(await verificationContext.Interactions.AsNoTracking()
-            .AnyAsync(interaction => interaction.Id == otherInteractionId));
+            .AnyAsync(interaction => interaction.Id == otherInteractionId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task GetById_returns_not_found_for_unknown_interaction()
     {
-        using var response = await fixture.Client.GetAsync($"/interactions/{Guid.NewGuid()}");
+        using var response = await fixture.Client.GetAsync($"/interactions/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -239,8 +239,8 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             CreateRequest(userProfileId, "Original", [personId], DateTimeOffset.UtcNow));
         var request = CreateRequest(userProfileId, "Invalid", [otherPersonId], DateTimeOffset.UtcNow);
         using var response = update
-            ? await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request)
-            : await fixture.Client.PostAsJsonAsync("/interactions", request);
+            ? await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request, TestContext.Current.CancellationToken)
+            : await fixture.Client.PostAsJsonAsync("/interactions", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -259,7 +259,7 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             ParticipantIds = [firstPersonId, secondPersonId, firstPersonId]
         };
 
-        using var response = await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request);
+        using var response = await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var interaction = await GetInteractionAsync(interactionId);
@@ -286,8 +286,8 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             ParticipantIds = (Guid[]?)null
         };
         using var response = update
-            ? await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", body)
-            : await fixture.Client.PostAsJsonAsync("/interactions", body);
+            ? await fixture.Client.PutAsJsonAsync($"/interactions/{interactionId}", body, TestContext.Current.CancellationToken)
+            : await fixture.Client.PostAsJsonAsync("/interactions", body, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

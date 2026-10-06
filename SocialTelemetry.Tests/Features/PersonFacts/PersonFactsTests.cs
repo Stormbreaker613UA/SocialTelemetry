@@ -29,11 +29,11 @@ public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
             Source = "Said so"
         };
 
-        using var response = await fixture.Client.PostAsJsonAsync($"/people/{personId}/facts", request);
+        using var response = await fixture.Client.PostAsJsonAsync($"/people/{personId}/facts", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var fact = await response.Content.ReadFromJsonAsync<AddFact.Response>();
+        var fact = await response.Content.ReadFromJsonAsync<AddFact.Response>(TestContext.Current.CancellationToken);
         Assert.NotNull(fact);
         Assert.Equal(personId, fact.PersonId);
         Assert.Equal("Prefers tea", fact.Value);
@@ -49,7 +49,7 @@ public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
             Value = "Prefers tea"
         };
 
-        using var response = await fixture.Client.PostAsJsonAsync($"/people/{personId}/facts", request);
+        using var response = await fixture.Client.PostAsJsonAsync($"/people/{personId}/facts", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -67,7 +67,7 @@ public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
             Source = "Confirmed later"
         };
 
-        using var response = await fixture.Client.PutAsJsonAsync($"/people/{personId}/facts/{factId}", request);
+        using var response = await fixture.Client.PutAsJsonAsync($"/people/{personId}/facts/{factId}", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -83,7 +83,7 @@ public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
         var personId = await CreatePersonAsync("Jordan");
         var factId = await AddFactAsync(personId, "Temporary fact");
 
-        using var response = await fixture.Client.DeleteAsync($"/people/{personId}/facts/{factId}");
+        using var response = await fixture.Client.DeleteAsync($"/people/{personId}/facts/{factId}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Empty(await GetFactsAsync(personId));
@@ -100,7 +100,7 @@ public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
             Value = "Missing fact"
         };
 
-        using var response = await fixture.Client.PutAsJsonAsync($"/people/{personId}/facts/{request.Id}", request);
+        using var response = await fixture.Client.PutAsJsonAsync($"/people/{personId}/facts/{request.Id}", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
