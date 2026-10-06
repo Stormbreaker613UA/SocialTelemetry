@@ -1,48 +1,47 @@
 # SocialTelemetry Current State
 
-Updated: 2026-10-05
+Updated: 2026-10-06
 
 ## Current Checkpoint
 
-- AI Pass 7.1 implementation exists; live-account verification remains pending.
-- ChatGPT plan OAuth / Authorization Code + PKCE exists.
-- Protected local credential storage and serialized token refresh exist.
-- Connection status / disconnect and model discovery / selection exist.
-- Automated AI tests use fake provider responses and do not call the real provider.
-- Recorded 7.1 verification (2026-10-04): 129/129 tests passed; build passed with no warnings or errors.
-- Tests have not been rerun for this documentation-only synchronization.
-- AnalyzeInteraction / AiContextBuilder implementation has not started.
+- **AI Pass 7.1 — COMPLETE.** No remaining technical blocker to starting 7.2.
+- Provider-neutral AI foundation and ChatGPT OAuth Authorization Code + PKCE are complete.
+- Protected local credential storage, serialized refresh, connection status/disconnect, and model discovery/selection are complete.
+- F1 is complete: post-rotation identity validation failure clears the unusable session and requires reconnect, preserving registration/host identity.
+- F2 is complete: neutral selected-model metadata/capabilities and completed-result provider/requested/returned-model provenance exist.
+- Automated verification: 135 total / 135 passed / 0 failed / 0 skipped; build: 0 warnings / 0 errors.
+- Docker Compose PostgreSQL development environment works: `postgres:18`, verified version 18.6, healthy.
+- All four existing EF migrations applied successfully; no model mismatch or new migration.
+- Live smoke passed: startup, browser OAuth/callback, permission, models, selection (`gpt-5.6-sol`), restart persistence, disconnect/revocation, reconnect, safe errors, local-request protection, and cleanup. Exit code 0.
+- Automated AI tests use fake provider responses; the live connection smoke was performed separately.
+- AnalyzeInteraction / AiContextBuilder implementation has NOT started.
 
 ## Current Task
 
-Finish documentation synchronization. Next is the architecture audit of existing AI Pass 7.1 against `AGENTS.md` and `SocialTelemetry_Spec.md`; that audit is pending.
-
-Audit priorities:
-
-- Provider neutrality and no OpenAI/ChatGPT-specific DTO leakage outside the provider adapter.
-- Future Local AI compatibility.
-- Capability-based behavior.
-- Provider-neutral model selection boundaries.
-- Only concrete changes required before 7.2; no speculative redesign.
+Next checkpoint: **AI Pass 7.2 — AnalyzeInteraction.**
 
 ## Immediate Next Steps
 
-1. Documentation synchronization.
-2. Architecture audit of existing AI Pass 7.1 against `AGENTS.md` and `SocialTelemetry_Spec.md`.
-3. Apply only changes genuinely required before 7.2.
-4. Build and run tests.
-5. Perform the real-account ChatGPT 7.1 manual smoke test.
-6. Mark 7.1 complete only after the smoke test succeeds.
-7. Start Pass 7.2 AnalyzeInteraction.
+1. Build provider-neutral `AiContextBuilder` with bounded, owned context: UserProfile, participants/People, confirmed facts, relevant inferences, current Interaction, and selected/relevant previous interactions where appropriate.
+2. Include optional focused `UserQuestion`, text evidence, screenshot/image evidence, and speaker-aware normalized evidence.
+3. Implement deferred F3 concretely: capability validation and application-owned image/structured-output contracts; never silently discard unsupported evidence.
+4. Produce validated, structured uncertainty-aware results, including translation, literal meaning, social meaning, and tone when relevant.
+5. Preserve execution provenance and explicit prompt/schema versioning; protect against stale, failed, cancelled, incomplete, or invalid results.
+6. Resolve F5 connection-lifetime/late-result safety before exposing analysis persistence.
+7. Build and run relevant/full tests for the implemented scope. Do not expand v1 scope.
 
-## Important Pending Verification
+## Accepted Verification Exceptions
 
-- The real-account ChatGPT manual smoke test has NOT been completed.
-- AI Pass 7.1 must NOT be considered fully complete until that smoke test succeeds.
-- Automated tests verify fake-provider behavior; they do not establish live ChatGPT connectivity.
+These are accepted NOT EXERCISED checks, not blockers to closing 7.1:
+
+- Natural token refresh was not observed; token expiry was not manipulated. Refresh behavior has automated coverage.
+- Tiny live inference was not exercised because no safe HTTP/manual execution surface exists yet.
+- Neutral selected-model metadata was not manually exercised over HTTP because no endpoint exposes it; automated coverage exists.
 
 ## Guardrails
 
-- `AGENTS.md` defines coding and agent-execution rules.
-- `SocialTelemetry_Spec.md` remains the source of truth for product scope, architecture, roadmap, and accepted decisions.
-- This file records the current checkpoint and immediate work only; update it as verification and tasks progress.
+- `AGENTS.md` defines coding/agent rules; `SocialTelemetry_Spec.md` defines product/architecture/roadmap decisions.
+- `AI_7_1_Architecture_Audit.md` is a historical audit; F1/F2 are resolved, F3/F5 belong to 7.2, and F4 waits for another provider.
+- Keep provider independence, ownership, bounded context, evidence boundaries, and facts versus AI inferences intact.
+- Store only validated results; keep credentials, prompts, and private evidence out of logs and checkpoint documents.
+- No speculative framework, architecture redesign, or premature implementation of later passes.

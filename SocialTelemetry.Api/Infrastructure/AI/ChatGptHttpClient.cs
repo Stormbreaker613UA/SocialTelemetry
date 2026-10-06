@@ -126,7 +126,8 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         return result;
     }
 
-    internal async Task<AiTextResponse> GenerateAsync(string accessToken, string model, AiTextRequest input, CancellationToken cancellationToken)
+    internal async Task<(string Text, string? ReturnedModel)> GenerateAsync(
+        string accessToken, string model, AiTextRequest input, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(2));
@@ -161,7 +162,8 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
                 if (receivedCharacters > 2 * 1024 * 1024) throw new AiProviderException(AiFailure.MalformedResponse);
                 if (line.Length == 0)
                 {
-                    if (ProcessEvent(eventData, output)) return new AiTextResponse(output.ToString(), model);
+                    var completion = ProcessEvent(eventData, output);
+                    if (completion.Completed) return (output.ToString(), completion.ReturnedModel);
                     eventData.Clear();
                 }
                 else if (line.StartsWith("data:", StringComparison.Ordinal))
@@ -169,7 +171,8 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
                     eventData.AppendLine(line[5..].TrimStart(' '));
                 }
             }
-            if (ProcessEvent(eventData, output)) return new AiTextResponse(output.ToString(), model);
+            var lastEvent = ProcessEvent(eventData, output);
+            if (lastEvent.Completed) return (output.ToString(), lastEvent.ReturnedModel);
             throw new AiProviderException(AiFailure.IncompleteResponse);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -182,9 +185,9 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         }
     }
 
-    private static bool ProcessEvent(StringBuilder eventData, StringBuilder output)
+    private static (bool Completed, string? ReturnedModel) ProcessEvent(StringBuilder eventData, StringBuilder output)
     {
-        if (eventData.Length == 0) return false;
+        if (eventData.Length == 0) return (false, null);
         var data = eventData.ToString().TrimEnd();
         if (data == "[DONE]") throw new AiProviderException(AiFailure.IncompleteResponse);
         var body = ParseJson(data);
@@ -195,7 +198,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         {
             if (!body.TryGetProperty("response", out var response) || OptionalString(response, "status") != "completed" || output.Length == 0)
                 throw new AiProviderException(AiFailure.MalformedResponse);
-            return true;
+            return (true, OptionalString(response, "model"));
         }
         else if (type == "response.incomplete") throw new AiProviderException(AiFailure.IncompleteResponse);
         else if (type is "response.failed" or "error")
@@ -203,7 +206,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
             var error = body.TryGetProperty("response", out var response) ? response : body;
             ThrowProviderError(HttpStatusCode.BadRequest, ErrorCode(error));
         }
-        return false;
+        return (false, null);
     }
 
     private async Task<JsonElement> GetDiscoveryAsync(CancellationToken cancellationToken)

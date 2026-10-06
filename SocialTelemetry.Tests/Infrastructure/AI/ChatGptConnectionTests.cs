@@ -222,6 +222,7 @@ public sealed class ChatGptConnectionTests
         using var app = new ChatGptTestApp();
         await app.ConnectAsync();
         app.Clock.Advance(TimeSpan.FromHours(2));
+        app.Server.IncludeIdTokenOnRefresh = true;
         using var cancellation = new CancellationTokenSource();
         app.Server.CancelDuringRefresh = cancellation;
         var connection = app.Services.GetRequiredService<ChatGptConnection>();
@@ -229,6 +230,65 @@ public sealed class ChatGptConnectionTests
         await connection.GetModelsAsync(CancellationToken.None);
         Assert.Equal(1, app.Server.RefreshCount);
         Assert.Equal("private-access-2", app.Server.LastBearer);
+    }
+
+    [Theory]
+    [InlineData("subject")]
+    [InlineData("keys-unavailable")]
+    [InlineData("keys-timeout")]
+    public async Task Failed_replacement_identity_validation_requires_reconnect_without_reusing_old_token(string fault)
+    {
+        using var app = new ChatGptTestApp();
+        var connected = await app.ConnectAsync();
+        var initialAuthorization = app.Browser.LastUri;
+        Assert.NotNull(initialAuthorization);
+        var originalHostId = QueryHelpers.ParseQuery(initialAuthorization.Query)["ext_agent_host_id"].ToString();
+        app.Clock.Advance(TimeSpan.FromHours(2));
+        app.Server.IncludeIdTokenOnRefresh = true;
+        if (fault == "subject") app.Server.Subject = "another-private-subject";
+        if (fault == "keys-unavailable") app.Server.JwksStatus = HttpStatusCode.ServiceUnavailable;
+        if (fault == "keys-timeout") app.Server.CancelJwks = true;
+
+        using var response = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("ReconnectRequired", await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, app.Server.RefreshCount);
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        Assert.NotNull(status);
+        Assert.False(status.Connected);
+        Assert.Equal(connected.ConnectionId, status.ConnectionId);
+        using var retry = await app.Client.GetAsync("/ai-connection/chatgpt/models");
+        Assert.Equal(HttpStatusCode.Conflict, retry.StatusCode);
+        Assert.Equal(1, app.Server.RefreshCount);
+        await app.BeginAsync();
+        var newAuthorization = app.Browser.LastUri;
+        Assert.NotNull(newAuthorization);
+        var authorization = QueryHelpers.ParseQuery(newAuthorization.Query);
+        Assert.Equal(originalHostId, authorization["ext_agent_host_id"].ToString());
+        Assert.Equal("oaiapp_test", authorization["client_id"].ToString());
+        Assert.False(authorization.ContainsKey("id_token_hint"));
+        Assert.DoesNotContain("private-", app.Logs.Text);
+    }
+
+    [Fact]
+    public async Task Discovery_failure_after_rotation_clears_saved_credentials()
+    {
+        using var app = new ChatGptTestApp();
+        await app.ConnectAsync();
+        app.Clock.Advance(TimeSpan.FromHours(2));
+        app.Server.IncludeIdTokenOnRefresh = true;
+        using var restarted = new ChatGptTestApp(app);
+        app.Server.DiscoveryStatus = HttpStatusCode.ServiceUnavailable;
+
+        using var response = await restarted.Client.GetAsync("/ai-connection/chatgpt/models");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(1, app.Server.RefreshCount);
+        var status = await app.Client.GetFromJsonAsync<ChatGptConnectionStatus>("/ai-connection/chatgpt/status");
+        Assert.NotNull(status);
+        Assert.False(status.Connected);
+        Assert.DoesNotContain("private-", app.Logs.Text);
     }
 
     [Theory]

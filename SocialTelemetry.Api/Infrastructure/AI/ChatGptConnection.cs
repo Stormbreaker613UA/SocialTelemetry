@@ -235,12 +235,6 @@ public sealed class ChatGptConnection(
                 ["refresh_token"] = tokens.RefreshToken,
                 ["resource"] = ChatGptProtocol.Resource
             }, refresh: true, refreshTimeout.Token);
-            if (replacement.IdToken is not null)
-            {
-                var subject = await provider.ValidateIdentityAsync(replacement.IdToken, account.ClientId, nonce: null, refreshTimeout.Token);
-                if (subject != account.Subject) throw new AiProviderException(AiFailure.InvalidIdentity);
-            }
-            replacement.IdToken ??= tokens.IdToken;
         }
         catch (AiProviderException exception) when (exception.Failure is AiFailure.ReconnectRequired or AiFailure.InvalidIdentity or AiFailure.MalformedResponse or AiFailure.InvalidClient)
         {
@@ -250,6 +244,25 @@ public sealed class ChatGptConnection(
         }
         catch (AiProviderException) { throw new AiProviderException(AiFailure.RefreshFailed); }
         catch (OperationCanceledException) { throw new AiProviderException(AiFailure.RefreshFailed); }
+
+        try
+        {
+            if (replacement.IdToken is not null)
+            {
+                var subject = await provider.ValidateIdentityAsync(replacement.IdToken, account.ClientId, nonce: null, refreshTimeout.Token);
+                if (subject != account.Subject) throw new AiProviderException(AiFailure.InvalidIdentity);
+            }
+        }
+        catch
+        {
+            // The replacement refresh token may have rotated. Never retry the consumed one.
+            account.Tokens = null;
+            await store.SaveAsync(state, CancellationToken.None);
+            logger.LogWarning("ChatGPT replacement identity validation failed; connection {ConnectionId} requires reconnect", account.Id);
+            throw new AiProviderException(AiFailure.ReconnectRequired);
+        }
+
+        replacement.IdToken ??= tokens.IdToken;
         account.Tokens = replacement;
         await store.SaveAsync(state, CancellationToken.None);
         logger.LogInformation("ChatGPT credentials refreshed for connection {ConnectionId}", account.Id);

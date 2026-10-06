@@ -1446,7 +1446,7 @@ Crash-consistent attachment lifecycle / reconciliation
 Global exception handling + Serilog
 Pre-AI domain hardening
 ChatGPT-plan AI connection foundation (7.1)
-129/129 automated tests green at the 7.1 checkpoint
+135/135 automated tests green at the completed 7.1 checkpoint
 ```
 
 AI 7.1 currently includes:
@@ -1461,9 +1461,9 @@ local-request protection
 no live OpenAI calls in automated tests
 ```
 
-The 7.1 real-account manual smoke test is still pending. Do not claim the live account flow is verified until that succeeds.
+AI Pass 7.1 is complete: F1 refresh-rotation safety and F2 provider-neutral selected-model/provenance fixes are implemented. The real-account OAuth connection lifecycle smoke passed on 2026-10-06, including model selection, restart persistence, disconnect/revocation, reconnect, and safe errors. Natural refresh, tiny live inference, and HTTP selected-model metadata were accepted NOT EXERCISED checks; this does not establish live inference verification. Build passed with 0 warnings/errors and all 135 tests passed.
 
-Next required order:
+Roadmap order (steps 1–6 complete; next is 7.2 AnalyzeInteraction, not yet started):
 
 ```text
 1. Documentation synchronization

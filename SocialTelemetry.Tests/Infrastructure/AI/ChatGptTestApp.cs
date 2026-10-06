@@ -157,6 +157,10 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
     public string Subject { get; set; } = "private-subject";
     public string Scope { get; set; } = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
     public string? IdentityFault { get; set; }
+    public bool IncludeIdTokenOnRefresh { get; set; }
+    public HttpStatusCode DiscoveryStatus { get; set; } = HttpStatusCode.OK;
+    public HttpStatusCode JwksStatus { get; set; } = HttpStatusCode.OK;
+    public bool CancelJwks { get; set; }
     public string? TokenError { get; set; }
     public HttpStatusCode TokenErrorStatus { get; set; } = HttpStatusCode.BadRequest;
     public HttpStatusCode ModelsStatus { get; set; } = HttpStatusCode.OK;
@@ -175,6 +179,8 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
         var uri = request.RequestUri ?? throw new InvalidOperationException("Missing test URI.");
         LastBearer = request.Headers.Authorization?.Parameter;
         if (uri.AbsoluteUri == "https://auth.openai.com/.well-known/openid-configuration")
+        {
+            if (DiscoveryStatus != HttpStatusCode.OK) return Json(new { error = "private-provider-detail" }, DiscoveryStatus);
             return Json(new
             {
                 issuer = "https://auth.openai.com",
@@ -183,8 +189,11 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
                 jwks_uri = "https://auth.openai.com/.well-known/jwks.json",
                 revocation_endpoint = "https://auth.openai.com/test/revoke"
             });
+        }
         if (uri.AbsoluteUri == "https://auth.openai.com/.well-known/jwks.json")
         {
+            if (CancelJwks) throw new OperationCanceledException(cancellationToken);
+            if (JwksStatus != HttpStatusCode.OK) return Json(new { error = "private-provider-detail" }, JwksStatus);
             var parameters = rsa.ExportParameters(false);
             return Json(new { keys = new[] { new { kty = "RSA", kid = "test-key", use = "sig", alg = "RS256",
                 n = Base64UrlEncoder.Encode(parameters.Modulus), e = Base64UrlEncoder.Encode(parameters.Exponent) } } });
@@ -215,7 +224,7 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
             {
                 access_token = "private-access-" + tokenNumber,
                 refresh_token = refreshToken,
-                id_token = refreshing ? null : CreateIdToken(clientId, nonce),
+                id_token = !refreshing || IncludeIdTokenOnRefresh ? CreateIdToken(clientId, nonce) : null,
                 token_type = "Bearer",
                 expires_in = 3600,
                 scope = Scope

@@ -21,6 +21,9 @@ public sealed class ChatGptPlanAiClientTests
         var result = await client.GenerateTextAsync(new AiTextRequest("private-instructions", "private-input"), CancellationToken.None);
 
         Assert.Equal("private-output", result.Text);
+        Assert.Equal("chatgpt-plan", result.ProviderId);
+        Assert.Equal("model-a", result.RequestedModel);
+        Assert.Null(result.ReturnedModel);
         Assert.Equal("model-a", result.Model);
         Assert.NotNull(app.Server.LastInferenceBody);
         using var body = JsonDocument.Parse(app.Server.LastInferenceBody);
@@ -35,6 +38,47 @@ public sealed class ChatGptPlanAiClientTests
             Assert.False(body.RootElement.TryGetProperty(forbidden, out _));
         Assert.Equal("private-access-1", app.Server.LastBearer);
         Assert.DoesNotContain("private-", app.Logs.Text);
+    }
+
+    [Fact]
+    public async Task Selected_model_exposes_only_confirmed_neutral_capabilities()
+    {
+        using var app = new ChatGptTestApp();
+        await app.ConnectAsync();
+        await app.SelectModelAsync();
+        await using var scope = app.Services.CreateAsyncScope();
+        var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
+
+        var selected = await client.GetSelectedModelAsync(CancellationToken.None);
+
+        Assert.Equal("chatgpt-plan", selected.ProviderId);
+        Assert.Equal("model-a", selected.ModelId);
+        Assert.Equal(AiCapability.Text, Assert.Single(selected.Capabilities));
+        Assert.True(selected.Supports(AiCapability.Text));
+        Assert.False(selected.Supports(AiCapability.Vision));
+        Assert.False(selected.Supports(AiCapability.StructuredOutput));
+        Assert.False(selected.Supports((AiCapability)999));
+        Assert.Equal(0, app.Server.InferenceCount);
+    }
+
+    [Fact]
+    public async Task Completed_inference_preserves_requested_and_returned_model_provenance()
+    {
+        using var app = new ChatGptTestApp();
+        await app.ConnectAsync();
+        await app.SelectModelAsync();
+        app.Server.StreamBody = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"private-output\"}\n\n" +
+            "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\"model-returned\"}}\n\n";
+        await using var scope = app.Services.CreateAsyncScope();
+        var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
+
+        var result = await client.GenerateTextAsync(new AiTextRequest("Instructions", "Input"), CancellationToken.None);
+
+        Assert.Equal("chatgpt-plan", result.ProviderId);
+        Assert.Equal("model-a", result.RequestedModel);
+        Assert.Equal("model-returned", result.ReturnedModel);
+        Assert.Equal("model-returned", result.Model);
+        Assert.Equal("private-output", result.Text);
     }
 
     [Theory]
