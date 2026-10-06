@@ -191,7 +191,7 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         (application ?? throw new InvalidOperationException("The fixture has not been initialized."))
         .Services.CreateAsyncScope();
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await database.StartAsync();
 
@@ -214,7 +214,7 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         Client = application.CreateClient();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         try
         {

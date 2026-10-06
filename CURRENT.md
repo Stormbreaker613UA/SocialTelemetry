@@ -9,11 +9,14 @@ Updated: 2026-10-06
 - Protected local credential storage, serialized refresh, connection status/disconnect, and model discovery/selection are complete.
 - F1 is complete: post-rotation identity validation failure clears the unusable session and requires reconnect, preserving registration/host identity.
 - F2 is complete: neutral selected-model metadata/capabilities and completed-result provider/requested/returned-model provenance exist.
-- Automated verification: 135 total / 135 passed / 0 failed / 0 skipped; build: 0 warnings / 0 errors.
+- 7.1 completion verification (before the test-stack migration): 135 total / 135 passed / 0 failed / 0 skipped; build: 0 warnings / 0 errors.
 - Docker Compose PostgreSQL development environment works: `postgres:18`, verified version 18.6, healthy.
 - All four existing EF migrations applied successfully; no model mismatch or new migration.
 - Live smoke passed: startup, browser OAuth/callback, permission, models, selection (`gpt-5.6-sol`), restart persistence, disconnect/revocation, reconnect, safe errors, local-request protection, and cleanup. Exit code 0.
 - Automated AI tests use fake provider responses; the live connection smoke was performed separately.
+- Testing stack migrated to xUnit v3 (`xunit.v3.mtp-v2` 4.0.1), MTP v2, and `coverlet.MTP` 10.1.0; existing HTTP/Testcontainers packages are unchanged.
+- Root test command: `dotnet test --solution SocialTelemetry.slnx --no-build`; discovery adds `--list-tests`; coverage adds `--coverlet --coverlet-output-format cobertura --results-directory coverage`.
+- Migration discovery/run: 135 tests, all passed, none failed/skipped. Build has no errors; 166 new xUnit1051 warnings recommend test-context cancellation tokens in existing async calls. Tests were not weakened or broadly rewritten to hide these warnings.
 - AnalyzeInteraction / AiContextBuilder implementation has NOT started.
 
 ## Current Task

@@ -15,9 +15,9 @@ public sealed class UserProfileTests : IClassFixture<PeopleApiFixture>, IAsyncLi
         this.fixture = fixture;
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await fixture.ClearUserProfilesAsync();
     }
