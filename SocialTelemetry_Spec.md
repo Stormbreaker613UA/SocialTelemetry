@@ -61,7 +61,7 @@ self-generated bullshit loop
 
 ### User / UserProfile
 
-Represents the owner of the account — the person receiving advice.
+Represents the human receiving advice and owns their SocialTelemetry context. Authentication/account identity remains separate; see section 33's future server direction.
 
 Possible fields:
 
@@ -1395,6 +1395,8 @@ This layout is conceptual, not a requirement to hard-code these paths now. Keep 
 
 Local mode must not require Docker, PostgreSQL, or a separately installed .NET runtime for an end user. The published Windows app should be self-contained.
 
+Future remote-server desktop access and authenticated multi-user hosting are post-v1 directions defined in section 33; they do not change these v1 runtime targets.
+
 ---
 
 ## 29. UI Product Direction
@@ -1438,6 +1440,8 @@ GitHub Releases
 ```
 
 The installer updates/replaces program binaries but preserves `%LocalAppData%\SocialTelemetry` user data and already-downloaded local AI models.
+
+The thin desktop host may later also connect to a remote SocialTelemetry server; see section 33. Remote-client authentication and server infrastructure are outside v1.
 
 ### Optional one-click local AI setup
 
@@ -1638,6 +1642,87 @@ Data/product expansion
 ```
 
 External integrations should map into the existing domain rather than creating parallel Discord/VRChat/Facebook-specific Person or Interaction models.
+
+### Future server / multi-user / desktop-client direction
+
+This is accepted **post-v1 direction**, not current implementation or additional v1 scope. The existing roadmap order remains unchanged.
+
+Three eventual deployment modes:
+
+```text
+Local desktop
+→ local ASP.NET Core host → SQLite → local or cloud AI
+
+Local desktop connected to remote server
+→ remote SocialTelemetry API → authenticated user → PostgreSQL
+→ hosted or external AI
+
+Hosted server
+→ browser / desktop / other client → SocialTelemetry API → PostgreSQL
+→ hosted AI or user-selected provider
+```
+
+**Identity and ownership.** Future authentication identity is separate from social profile data:
+
+```text
+ApplicationUser (authentication/account identity)
+        1:1
+         ↓
+UserProfile (social profile and AI context)
+├── People
+│   ├── Facts
+│   └── Inferences
+└── Interactions
+    ├── Participants
+    ├── Attachments
+    ├── Analyses
+    │   └── Follow-up messages
+    └── SuggestedProfileUpdates
+```
+
+`ApplicationUser` owns login identity, email, password/external-login identity, claims/roles, and authentication/session concerns. `UserProfile` retains DisplayName, AboutMe, CommunicationStyle, Goals, Preferences, Boundaries, and AiInstructions. Do not put authentication credentials in `UserProfile`.
+
+`UserProfile` is the domain ownership root. Future server authorization and cross-link validation must enforce matching profiles on both sides: InteractionParticipant's Interaction/Person, PersonInference's Person/SourceInteraction, and SuggestedProfileUpdate's Person/InteractionAnalysis. Attachments, analyses, history, and AI context must remain within that ownership boundary. This direction does not require new constraints now beyond current v1 requirements.
+
+**Authentication direction.** ASP.NET Core Identity + OpenIddict is the preferred conceptual .NET-native stack for future server mode. It is separate from ChatGPT/provider authorization. Keycloak may be considered for a larger always-on multi-client/multi-user deployment if a dedicated external identity service is justified; it is not an accepted dependency now.
+
+**Desktop modes.** `SocialTelemetry.Desktop` may eventually offer `Local` and `Connect to server`:
+
+```text
+Local
+WebView2 → local ASP.NET Core host → SQLite → local/cloud AI
+
+Connect to server
+WebView2/Desktop client → OIDC Authorization Code + PKCE login
+→ remote SocialTelemetry API → PostgreSQL → hosted/configured AI
+```
+
+The desktop project remains a thin host/client. Domain logic, AI feature logic, persistence rules, and product business/UI logic must not be duplicated there. The local-first product retains an API-compatible remote-server path without requiring self-HTTP calls in same-process local mode.
+
+**Hosted AI.** A future server may run an open-source model on GPU infrastructure, potentially larger than the local desktop baseline:
+
+```text
+SocialTelemetry Server → provider-neutral AI boundary → self-hosted model endpoint
+```
+
+AnalyzeInteraction, Follow-up, and Person Advisor must remain reusable without provider-specific rewrites. No GPU infrastructure, model-serving framework, queue, or orchestration technology is selected by this direction.
+
+**Future operational concerns.** A real hosted multi-user product would need authentication/authorization, per-user isolation and provider settings, quotas/rate limits, usage/accounting, optional billing, hosted inference, operational monitoring/backups, and inference queueing/scheduling if GPU contention requires it. These are future concerns, not a mandate for Redis, queues, billing, multi-tenancy frameworks, or SaaS infrastructure in v1.
+
+**Context coordination.** AnalysisContextGuard coordination remains scoped to the existing `UserProfileId`:
+
+```text
+UserProfile A → guard/revision A
+UserProfile B → guard/revision B
+```
+
+Unrelated profiles must not serialize context writes through one global guard. No TenantId or SaaS abstraction is needed for this scope.
+
+The local-first v1 should preserve clean seams: UserProfile ownership, provider-neutral AI, thin desktop hosting, an API-compatible server path, and authentication identity separate from social context.
+
+> Future compatibility does not justify implementing future infrastructure early.
+
+Implement server/SaaS infrastructure only when the product moves in that direction.
 
 ---
 
