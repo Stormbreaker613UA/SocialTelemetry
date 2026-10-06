@@ -7,7 +7,7 @@ Updated: 2026-10-06
 - **AI Pass 7.1 — COMPLETE.** OAuth Authorization Code + PKCE, protected credentials, serialized refresh, connection lifecycle, and model discovery/selection passed automated and real-account verification.
 - F1 refresh-rotation safety and F2 neutral selected-model/capability/execution-provenance boundaries are complete.
 - **AI Pass 7.2 — AnalyzeInteraction COMPLETE.** `POST /interactions/{interactionId}/analyze` returns a typed persisted analysis; local requests require `X-SocialTelemetry-Local: 1`.
-- Post-audit A1/A2/A4 corrections are complete: endpoint request protection, commit-time context freshness, and SSE framing. A3 remains pending before 7.2.1.
+- Astra REQUIRED findings A1–A4 are resolved: endpoint request protection, commit-time context freshness, execution validity through commit, and SSE framing.
 - Provider-neutral `AiContextBuilder` supplies owned UserProfile/participant context, separates confirmed facts from inferences, and preserves unknown speakers rather than inventing attribution.
 - Context is bounded: 10 participants, latest 20 facts/10 relevant inferences per Person, and at most 5 earlier interactions with overlapping participants and no unrelated People; 64,000 total context characters.
 - Text and Ready image/screenshot evidence are supported through attachment storage: 10 attachments, 12,000 characters per text attachment, 3 images, 5 MiB/image, 10 MiB images total. Audio is rejected explicitly.
@@ -17,21 +17,21 @@ Updated: 2026-10-06
 - Versions: `interaction-analysis-v1` schema and `analyze-interaction-v1` prompt. Persisted provenance comes from completed execution, not a later selected-model lookup.
 - SHA-256 context/evidence fingerprints are rechecked under per-UserProfile database guards shared with relevant source writes through commit. Guards are created on demand and acquired in key order; unrelated profiles do not contend. Inference remains outside database protection.
 - F5 is complete: session generations/lifetime cancellation invalidate in-flight and late results on disconnect; reconnect cannot revive an old execution. No credential lock spans inference.
+- A3 uses a provider-neutral execution lease retaining shared credential-store protection from final session validation through save/commit. Disconnect/reconnect from another host cannot invalidate that protected commit.
 - Latest migration `20261006184215_ScopeAnalysisContextGuardPerProfile` replaces only the coordination table with profile-scoped keys. All seven migrations are applied; the Compose database is up to date with no model mismatch.
-- Automated verification: **253 total / 253 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
+- Automated verification: **262 total / 262 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
 - Live synthetic text and screenshot analyses passed with `chatgpt-plan` / `gpt-5.6-sol`; typed results and persisted provider/model/schema/prompt/fingerprint were verified. Natural refresh occurred without expiry manipulation. Synthetic records/files were removed through normal deletion workflows; observed logs contained no evidence/prompts/tokens.
 - Tooling remains .NET SDK `10.0.401` (`global.json`, latestPatch, no prereleases), `net10.0`, xUnit v3/MTP v2, and Docker Compose `postgres:18` (18.6, healthy).
 - Root verification: `dotnet restore`, `dotnet build SocialTelemetry.slnx`, `dotnet test --solution SocialTelemetry.slnx --no-build`, and `docker compose config`.
 
 ## Current Task
 
-Next task: **A3 corrective pass — execution validity through commit.** Complete it before AI Pass 7.2.1 Audio, which has not started.
+Next checkpoint: **AI Pass 7.2.1 — Audio ingestion / persisted transcription.** Audio has not started.
 
 ## Immediate Next Steps
 
-1. Resolve A3 in a separate focused pass and verify the full build/test suite before Audio.
-2. Add audio ingestion/transcription only when requested, persist valid transcripts, and reuse them rather than repeatedly transcribing the same evidence.
-3. Preserve speaker attribution and capability-based provider boundaries. Do not assume ChatGPT-plan inference supplies transcription.
+1. Add audio ingestion/transcription only when requested, persist valid transcripts, and reuse them rather than repeatedly transcribing the same evidence.
+2. Preserve speaker attribution and capability-based provider boundaries. Do not assume ChatGPT-plan inference supplies transcription.
 
 ## Guardrails
 
@@ -40,3 +40,4 @@ Next task: **A3 corrective pass — execution validity through commit.** Complet
 - Keep provider independence, ownership, bounded context, evidence boundaries, and facts versus AI inferences intact.
 - Store only validated results; keep credentials, raw prompts, private evidence, and provider envelopes out of logs/checkpoint documents.
 - No speculative framework, architecture redesign, or early implementation of Follow-up, Accept/Edit/Reject, Advisor, UI, SQLite, or Local AI.
+- Audit A5 (bounded provider-response reads) remains deferred; it was not changed by the A3 pass.

@@ -216,6 +216,28 @@ public sealed class ChatGptConnection(
     internal async Task ValidateSessionAsync(Guid sessionId, CancellationToken cancellationToken)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
+        await ValidateLockedSessionAsync(sessionId, cancellationToken);
+    }
+
+    internal async Task<IAiExecutionLease> AcquireExecutionLeaseAsync(Guid sessionId,
+        CancellationToken lifetimeCancellationToken, CancellationToken cancellationToken)
+    {
+        var storageLock = await store.LockAsync(cancellationToken);
+        var lease = new ExecutionLease(this, sessionId, lifetimeCancellationToken, storageLock);
+        try
+        {
+            await lease.ValidateAsync(cancellationToken);
+            return lease;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
+    private async Task ValidateLockedSessionAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
         var state = await store.ReadAsync(cancellationToken);
         var account = state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId);
         if (account?.Tokens?.SessionId != sessionId)
@@ -223,6 +245,27 @@ public sealed class ChatGptConnection(
             InvalidateLifetime(sessionId);
             throw new AiProviderException(AiFailure.ExecutionInvalidated);
         }
+    }
+
+    private sealed class ExecutionLease(ChatGptConnection connection, Guid sessionId,
+        CancellationToken lifetimeCancellationToken, IDisposable storageLock) : IAiExecutionLease
+    {
+        private IDisposable? heldLock = storageLock;
+
+        public async Task ValidateAsync(CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(heldLock is null, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (lifetimeCancellationToken.IsCancellationRequested)
+                throw new AiProviderException(AiFailure.ExecutionInvalidated);
+            // The shared file lock stays held: another host cannot disconnect/reconnect between
+            // this persisted-generation check and the caller's database commit.
+            await connection.ValidateLockedSessionAsync(sessionId, cancellationToken);
+            if (lifetimeCancellationToken.IsCancellationRequested)
+                throw new AiProviderException(AiFailure.ExecutionInvalidated);
+        }
+
+        public void Dispose() => Interlocked.Exchange(ref heldLock, null)?.Dispose();
     }
 
     private void InvalidateLifetime(Guid? sessionId)

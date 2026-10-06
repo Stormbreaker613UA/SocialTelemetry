@@ -80,7 +80,9 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
                 throw new AiProviderException(AiFailure.StaleContext);
             }
             if (current.Fingerprint != original.Fingerprint) throw new AiProviderException(AiFailure.StaleContext);
-            await aiClient.ValidateExecutionAsync(completed, cancellationToken);
+            // Acquire after the context check so no credential lock spans inference or waiting
+            // for the database guard. Retain the lease through save and commit.
+            using var executionLease = await aiClient.AcquireExecutionLeaseAsync(completed, cancellationToken);
             var analysis = new InteractionAnalysis
             {
                 Id = Guid.NewGuid(), InteractionId = request.InteractionId, Summary = result.Summary,
@@ -97,7 +99,7 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
                     CreatedAt = analysis.CreatedAt
                 });
             await dbContext.SaveChangesAsync(cancellationToken);
-            await aiClient.ValidateExecutionAsync(completed, cancellationToken);
+            await executionLease.ValidateAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return analysis;
         }

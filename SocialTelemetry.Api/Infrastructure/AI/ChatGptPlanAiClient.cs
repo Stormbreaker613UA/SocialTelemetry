@@ -59,4 +59,7 @@ public sealed class ChatGptPlanAiClient(ChatGptConnection connection, ChatGptHtt
         if (result.LifetimeCancellationToken.IsCancellationRequested)
             throw new AiProviderException(AiFailure.ExecutionInvalidated);
     }
+
+    public Task<IAiExecutionLease> AcquireExecutionLeaseAsync(AiTextResponse result, CancellationToken cancellationToken) =>
+        connection.AcquireExecutionLeaseAsync(result.ExecutionId, result.LifetimeCancellationToken, cancellationToken);
 }
