@@ -330,6 +330,21 @@ Interaction analysis
 
 Do not re-transcribe the same unchanged audio on every re-analysis if a usable persisted transcript already exists. Transcription is a separate capability; its provider may differ from the analysis provider. Persist the transcript before analysis and fail clearly if no compatible transcription path is available.
 
+The accepted reference local transcription implementation is `whisper.cpp`, using multilingual Whisper. The current default model candidate is `Whisper large-v3-turbo-q5_0`. The runtime, model, and quantization are configurable implementation choices, not domain dependencies. Local transcription must work without a paid API, and its persisted transcript must be usable by any selected analysis provider. Qwen is not responsible for raw audio transcription.
+
+Users should be able to review and correct a persisted transcript before analysis, especially for names, slang, mixed languages, noise, and informal speech. A corrected transcript remains normalized evidence, separate from raw audio and AI interpretation. Never silently overwrite the original audio; preserve available speaker attribution without guessing missing identities.
+
+Supported architectural combinations include:
+
+```text
+whisper.cpp local transcription → Qwen local analysis
+whisper.cpp local transcription → ChatGPT analysis
+cloud transcription → Local AI analysis
+future provider-native audio path → capability validation → analysis
+```
+
+Transcription and analysis must not require the same provider. A future capability-supported native audio path does not replace the required local persisted-transcript path. See section 19 for the recommended Local AI baseline and section 30 for its planned setup flow.
+
 ### Speaker attribution
 
 Normalized conversation evidence should preserve who said what whenever that information is available. This matters for pasted chat text, exports, screenshots, and transcripts. The system must avoid silently attributing the user's words to another participant or vice versa.
@@ -961,6 +976,7 @@ SocialTelemetry AI
 └── Local / OpenAI-compatible endpoints
     ├── Ollama
     ├── LM Studio
+    ├── llama.cpp server
     └── other compatible runtimes
 ```
 
@@ -982,6 +998,30 @@ A selected provider/model that lacks a required capability should fail clearly a
 The existing `IAiClient` / provider abstraction should remain provider-neutral. `ChatGptPlanAiClient` is one adapter. Do not refactor working code merely to make folder names symmetrical; add additional adapters when they are actually implemented.
 
 Provider-specific integrations may use official SDKs or compatible HTTP APIs internally, but the rest of SocialTelemetry should not depend on those SDK contracts.
+
+### Local AI v1 reference path
+
+Local AI is a required v1 path for users with no ChatGPT/paid AI subscription or API key, or who do not want to send private content to a cloud provider. The target is a practical free local baseline demonstrating the complete product workflow, subject to suitable hardware; matching frontier cloud-model quality is not required. After runtimes and models are installed, local analysis/transcription must work offline without a cloud dependency. Initial runtime/model downloads are separate setup steps.
+
+The accepted default/recommended analysis model is **`Qwen3-VL-8B-Instruct`**, with **`Q6_K`** quantization. This reference baseline is intended for text, screenshots/images, social-context interpretation, and structured SocialTelemetry analysis output. Verify those capabilities and the product result contract when implementing/testing the adapter.
+
+Qwen is a recommended preset, not an architectural dependency. Keep APIs, context/result contracts, and capability checks provider-neutral; replacing the recommended model must not require rewriting AnalyzeInteraction, Follow-up, Person Advisor, or the domain. Model names and quantization choices belong in configuration/presets, not product logic.
+
+Advanced users must also be able to connect compatible local servers such as llama.cpp server, Ollama, LM Studio, and other practical OpenAI-compatible endpoints. The v1 support policy is one recommended/tested baseline, not certification or benchmarking of every model/server. Users may choose larger models on stronger hardware or smaller/lower-quantized models on weaker hardware, accepting their own quality/hardware trade-offs. Compatibility does not imply Vision or StructuredOutput support; validate required capabilities and never silently discard evidence.
+
+User-facing direction (not final UI copy):
+
+```text
+Free Local AI
+Recommended: Qwen3-VL-8B-Instruct Q6_K
+Local transcription: Whisper / whisper.cpp (see section 6)
+Supports: text, screenshots/images, voice/audio through transcription
+No subscription or API key required.
+
+Advanced: Connect your own compatible local AI.
+```
+
+These are accepted v1 targets, not claims that Local AI or Whisper setup is currently implemented. Section 6 owns transcription/transcript rules; sections 28 and 30 own local storage and distribution/setup.
 
 ---
 
@@ -1338,13 +1378,20 @@ Target local data layout:
 ├── socialtelemetry.db
 ├── attachments\
 ├── ai\
-│   ├── runtime / managed local-AI state when installed by SocialTelemetry
-│   └── models / downloaded local models
+│   ├── runtime\
+│   │   ├── inference\
+│   │   └── transcription\
+│   ├── models\
+│   │   ├── analysis\
+│   │   └── transcription\
+│   └── configuration\
 ├── protected AI credentials
 └── settings / runtime state
 ```
 
 Program binaries should remain separate from user data/local models so application updates do not require re-downloading models and do not risk overwriting user data.
+
+This layout is conceptual, not a requirement to hard-code these paths now. Keep program binaries, user data/attachments, model weights, runtime state, and settings/configuration separate; application and installer updates must preserve them. The free local AI baseline is defined in section 19.
 
 Local mode must not require Docker, PostgreSQL, or a separately installed .NET runtime for an end user. The published Windows app should be self-contained.
 
@@ -1398,16 +1445,16 @@ The installer or first-run setup should offer a user-friendly optional local AI 
 
 ```text
 Install SocialTelemetry
-→ choose "Set up free local AI"
+→ optionally choose "Set up free local AI"
 → download/configure supported local inference runtime
-→ download a recommended model separately from the app binaries
-→ verify/configure the model
-→ register it as a Local AI provider
-→ run a connection/inference check
+→ download the recommended Qwen model separately
+→ download/configure whisper.cpp if local audio support is selected
+→ download the recommended Whisper model separately
+→ verify/configure local inference and selected transcription support
 → ready
 ```
 
-Do **not** make the main installer itself multi-gigabyte by embedding model weights directly. Runtime/model downloads should be optional and separately managed. Advanced users should also be able to connect an existing Ollama, LM Studio, or other supported local/OpenAI-compatible endpoint.
+Do **not** embed multi-gigabyte model weights in the main installer executable. Program binaries, inference/transcription runtimes, and model weights are separate components. Runtime/model downloads are optional and separately managed; app updates must not require re-downloading installed weights, and installer updates must not overwrite user models or local data. Use the configurable reference presets from sections 19 and 6; advanced users may connect existing compatible endpoints instead of managed setup.
 
 The UI should not require ordinary users to understand raw model IDs or endpoint details for the recommended path. Prefer simple choices such as `Recommended`, `Fast / low-memory`, `Higher quality`, or `Vision capable`, with advanced model selection available separately.
 
@@ -1499,6 +1546,8 @@ Roadmap order (steps 1–6 complete; next is 7.2 AnalyzeInteraction, not yet sta
 
 AI provider independence is a cross-cutting requirement for every AI pass. Implementing ChatGPT first must not cause vendor lock-in. **Local AI is required for v1** as the no-subscription/no-API-key path. Additional cloud providers (OpenAI API key, Gemini, Grok/xAI, Anthropic, etc.) are post-v1 extensions unless one becomes useful earlier; they must be addable without rewriting the feature/domain layers.
 
+The Qwen/Whisper reference choices concretize already-planned v1 work; they add no subsystem or roadmap reordering. The sequence remains 7.2 AnalyzeInteraction → 7.2.1 audio ingestion/persisted transcription → later Local AI provider implementation → later one-click setup during desktop/installer work. See sections 19, 6, and 30 for those accepted targets; this note does not advance implementation status.
+
 ---
 
 ## 32. Privacy / Context Boundaries
@@ -1549,6 +1598,8 @@ Installer + manual updater
 Architecture walkthrough / decision documentation
 ```
 
+The required free local baseline includes text/vision analysis and local persisted transcription as defined in sections 19 and 6. Recommended model/runtime presets are replaceable; the capability and evidence boundaries remain provider-neutral.
+
 ### Planned post-v1 extensions
 
 ```text
@@ -1560,9 +1611,7 @@ Additional cloud AI providers
 - other providers when useful
 
 Advanced local AI
-- more local model/runtime choices
-- local vision models
-- local Whisper/whisper.cpp transcription
+- additional tested model/runtime presets beyond the v1 reference baseline
 - speaker diarization / richer audio metadata
 
 External People Sources / Importers
