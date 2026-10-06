@@ -2,80 +2,99 @@
 
 > SocialTelemetry — Observability for questionable social decisions.
 
-SocialTelemetry is a local AI-assisted journal and personal AI advisor/interpreter for understanding social interactions.
+SocialTelemetry is a local-first AI-assisted social interaction journal and personal advisor/interpreter.
 
-The journal records people and notable interactions, keeps long-term context, and lets you attach notes, screenshots, images, and audio files. Confirmed facts stay separate from assumptions and AI interpretations.
+It records People, Interactions, evidence, and long-term context. It is useful beyond dating: friends, work, interviews, negotiations, and VR/social situations all involve communication that can be hard to interpret.
 
-The planned AI workflow helps explain literal meaning, tone, and possible social meaning; surfaces uncertainty and alternative explanations; and suggests replies or next steps. Follow-up questions and a Person Advisor will help explore an analysis and patterns across interactions.
+AI helps explain literal meaning, tone, and possible social context; surface uncertainty, alternative explanations, and missed signals; and suggest replies or next steps.
 
 AI interpretations are hypotheses, not facts. SocialTelemetry is not a mind reader or relationship oracle.
-
-## Current Status
-
-An experimental side project targeting single-user local use. The backend and ChatGPT connection foundation are implemented; AI analysis and the user interface are still ahead.
-
-Implemented:
-
-- **Backend:** .NET 10 / ASP.NET Core, FastEndpoints, Vertical Slice Architecture, EF Core, PostgreSQL, and Swagger / OpenAPI.
-- **People and context:** People CRUD, UserProfile, confirmed PersonFacts, and a separate persisted PersonInference model. Inference generation is not implemented yet.
-- **Journal:** Interactions with multiple participants.
-- **Attachments:** text, images, screenshots, and audio; metadata retrieval, file download, and deletion through local storage.
-- **Attachment recovery:** a crash-safe lifecycle with staging, Pending / Ready / Deleting states, startup reconciliation, and cleanup of old orphan files.
-- **API errors and logging:** global exception handling, ProblemDetails, and structured Serilog logging that avoids private content and credentials.
-- **ChatGPT connection:** OAuth Authorization Code + PKCE, protected local credential storage, token refresh, model discovery, and model selection.
-- **Tests:** xUnit, HTTP integration tests with PostgreSQL Testcontainers, temporary attachment directories, and fake provider responses for AI connection tests.
-
-The ChatGPT integration implementation is complete in automated tests, but **real-account manual verification is still pending**. AnalyzeInteraction, suggested profile updates, follow-up conversations, and Person Advisor are not implemented yet. The project is not production-ready.
 
 ## Facts and Guesses
 
 > Facts are facts. AI guesses are guesses.
 
-AI-generated interpretations must never silently become confirmed PersonFacts. The planned suggestion workflow requires explicit user review:
+Confirmed facts stay separate from AI inferences. Suggestions must not silently mutate confirmed knowledge; the intended review model is:
 
 ```text
 AI suggestion → User reviews → Accept / Edit + Accept / Reject
                                ↓
-                     Only user-confirmed changes become facts
+                     Only user-confirmed changes become profile knowledge
 ```
 
 Otherwise, an AI guess gets saved as fact, used as evidence, and becomes a stronger AI guess. Bullshit feedback loop.
 
 We don't want that.
 
-Interaction text, person data, and attachments are untrusted data, never model instructions. Future AI context will use relevant records and bounded history rather than loading everything.
+Raw evidence, normalized/transcribed evidence, and AI interpretation are separate layers. Interaction text, person data, and attachments are untrusted data, never model instructions. Analysis uses relevant records and bounded history.
+
+## Product Direction
+
+The v1 target combines:
+
+- UserProfile, People, confirmed Facts, and separate Inferences.
+- Interactions with multiple participants and text, screenshot, image, and audio evidence.
+- Structured AI analysis, persisted results, and provider/model provenance.
+- Follow-up analysis conversations, user-reviewed profile suggestions, and a Person Advisor across interactions.
+- A free local AI path and a local Windows desktop experience, with browser/server use supported by the architecture.
+
+This describes the product target, not a list of features already shipped. Audio analysis will use persisted, reviewable transcripts; transcription and social analysis can use different providers.
 
 ## Architecture
 
-V1 intentionally uses one ASP.NET Core application project and one test project:
+The core is intentionally a simple ASP.NET Core application, not microservices. Features live under `Features/<Feature>/<UseCase>` and use EF Core directly where appropriate.
 
-- `SocialTelemetry.Api` — HTTP endpoints, domain models, persistence, local storage, and AI provider integration.
-- `SocialTelemetry.Tests` — automated application and integration tests.
+- .NET 10 / ASP.NET Core, Vertical Slice Architecture, and FastEndpoints.
+- EF Core; PostgreSQL for development/server mode, SQLite as the local desktop target.
+- Razor Pages product UI and a thin WebView2 desktop host as v1 targets.
+- Provider-neutral AI, local attachment storage, and Swagger / OpenAPI.
+- xUnit v3 and PostgreSQL Testcontainers integration tests.
 
-Features live under `Features/<Feature>/<UseCase>`. FastEndpoints handles HTTP, and small slices use EF Core directly. This keeps the application easy to follow and appropriate for its current scope.
+The repository currently contains `SocialTelemetry.Api` and `SocialTelemetry.Tests`. The planned `SocialTelemetry.Desktop` project will host the window and local application lifecycle, without duplicating domain or AI logic.
+
+## AI Providers and Local AI
+
+ChatGPT is the first implemented provider, not a hard dependency. Provider-neutral contracts and capability checks allow other cloud and local adapters without rewriting product features.
+
+V1 requires a usable free local path without a subscription or API key, subject to suitable hardware. The reference analysis/vision preset is **Qwen3-VL-8B-Instruct Q6_K**; the local transcription reference is **whisper.cpp + multilingual Whisper**. These are replaceable recommended choices, not domain dependencies. Advanced users will be able to connect compatible local endpoints.
+
+Local AI and transcription setup are planned, not available yet. Runtimes and model weights will be separate downloads, not bundled into the main installer; application updates should preserve them and user data.
+
+## Runtime Modes
+
+Accepted v1 direction:
+
+```text
+Local desktop
+→ local ASP.NET Core host → SQLite → local/cloud AI
+
+Server/browser mode
+→ ASP.NET Core → PostgreSQL → configured AI provider
+```
+
+The same Razor UI is intended for WebView2 and browser use. Authenticated multi-user hosting and a desktop client connected to a remote server are post-v1 directions, potentially using hosted/self-hosted AI through the same provider-neutral boundary.
+
+## Current State
+
+The backend/domain and attachment foundation, ChatGPT connection, and AnalyzeInteraction pipeline are implemented. Live ChatGPT connection and synthetic text/image analysis have been verified, and required A1–A4 audit corrections are resolved. Audio ingestion / persisted transcription is next; the product UI and desktop packaging remain ahead.
+
+For the current implementation checkpoint, see [CURRENT.md](CURRENT.md). Product scope, architecture, and accepted roadmap decisions live in [SocialTelemetry_Spec.md](SocialTelemetry_Spec.md); implementation/agent rules live in [AGENTS.md](AGENTS.md).
 
 ## Roadmap
 
-Next:
+V1 direction:
 
-1. Real ChatGPT connection smoke test
-2. AnalyzeInteraction + AiContextBuilder + structured AI output
-3. Suggested profile updates + follow-up
-4. Person Advisor
-5. Razor Pages UI
-6. SQLite local mode
-7. Self-contained Windows app
-8. Installer / GitHub Releases
-9. Manual update checker
-10. V1 stabilization
+```text
+Interaction analysis → Audio/transcription → Suggestion review → Follow-up
+→ Person Advisor → Backend stabilization → Razor UI → SQLite/local AI
+→ Desktop packaging/updater → Final stabilization/release
+```
 
 Future / post-v1:
 
-- VRChat/social-platform people import
-- Other AI providers
-- Audio transcription
-- Multi-user/server mode expansion
-- Sync
+- Authenticated multi-user/server and remote desktop client modes.
+- More providers and social-platform integrations/importers.
+- Sync and richer hosted/self-hosted inference.
 
 ## Origin Story
 
