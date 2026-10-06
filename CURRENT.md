@@ -4,49 +4,38 @@ Updated: 2026-10-06
 
 ## Current Checkpoint
 
-- **AI Pass 7.1 — COMPLETE.** No remaining technical blocker to starting 7.2.
-- Provider-neutral AI foundation and ChatGPT OAuth Authorization Code + PKCE are complete.
-- Protected local credential storage, serialized refresh, connection status/disconnect, and model discovery/selection are complete.
-- F1 is complete: post-rotation identity validation failure clears the unusable session and requires reconnect, preserving registration/host identity.
-- F2 is complete: neutral selected-model metadata/capabilities and completed-result provider/requested/returned-model provenance exist.
-- 7.1 completion verification (before the test-stack migration): 135 total / 135 passed / 0 failed / 0 skipped; build: 0 warnings / 0 errors.
-- Docker Compose PostgreSQL development environment works: `postgres:18`, verified version 18.6, healthy.
-- All four existing EF migrations applied successfully; no model mismatch or new migration.
-- Live smoke passed: startup, browser OAuth/callback, permission, models, selection (`gpt-5.6-sol`), restart persistence, disconnect/revocation, reconnect, safe errors, local-request protection, and cleanup. Exit code 0.
-- Automated AI tests use fake provider responses; the live connection smoke was performed separately.
-- .NET SDK pinned to stable `10.0.401` in `global.json`, with `latestPatch` servicing roll-forward and prereleases disabled; both projects remain `net10.0`.
-- Direct dependencies reviewed: EF Core/Design/Relational aligned to `10.0.12`, Npgsql provider updated to `10.0.3`; other packages are already current stable versions.
-- Testing stack migrated to xUnit v3 (`xunit.v3.mtp-v2` 4.0.1), MTP v2, and `coverlet.MTP` 10.1.0; existing HTTP/Testcontainers packages are unchanged.
-- Root test command: `dotnet test --solution SocialTelemetry.slnx --no-build`; discovery adds `--list-tests`; coverage adds `--coverlet --coverlet-output-format cobertura --results-directory coverage`.
-- Tooling verification: 135 tests discovered/passed, none failed/skipped; build: 0 warnings / 0 errors. Existing async test calls now pass test-context cancellation tokens; assertions and intentional cancellation scenarios are unchanged.
-- AnalyzeInteraction / AiContextBuilder implementation has NOT started.
+- **AI Pass 7.1 — COMPLETE.** OAuth Authorization Code + PKCE, protected credentials, serialized refresh, connection lifecycle, and model discovery/selection passed automated and real-account verification.
+- F1 refresh-rotation safety and F2 neutral selected-model/capability/execution-provenance boundaries are complete.
+- **AI Pass 7.2 — AnalyzeInteraction COMPLETE.** `POST /interactions/{interactionId}/analyze` returns a typed persisted analysis; local requests require `X-SocialTelemetry-Local: 1`.
+- Provider-neutral `AiContextBuilder` supplies owned UserProfile/participant context, separates confirmed facts from inferences, and preserves unknown speakers rather than inventing attribution.
+- Context is bounded: 10 participants, latest 20 facts/10 relevant inferences per Person, and at most 5 earlier interactions with overlapping participants and no unrelated People; 64,000 total context characters.
+- Text and Ready image/screenshot evidence are supported through attachment storage: 10 attachments, 12,000 characters per text attachment, 3 images, 5 MiB/image, 10 MiB images total. Audio is rejected explicitly.
+- F3 is complete: neutral image bytes and structured-output schema contracts; Text/StructuredOutput and, when needed, Vision are checked before inference. Unknown capabilities are not supported.
+- ChatGPT capability mapping is restricted to exact officially documented model IDs; no permanent discovery catalog or model-name heuristics. Completed SSE output remains mandatory even when the provider omits its Content-Type header.
+- Structured uncertainty-aware results validate required fields, sizes, confidence, context IDs, and suggestion targets. Pending suggestions (Description/HowWeMet/Notes only) are saved atomically with the analysis; People/PersonFacts are never changed automatically.
+- Versions: `interaction-analysis-v1` schema and `analyze-interaction-v1` prompt. Persisted provenance comes from completed execution, not a later selected-model lookup.
+- SHA-256 context/evidence fingerprints are checked again in a short persistence transaction. Changed, failed, cancelled, incomplete, or invalid executions cannot become successful analyses.
+- F5 is complete: session generations/lifetime cancellation invalidate in-flight and late results on disconnect; reconnect cannot revive an old execution. No credential lock spans inference.
+- Migration `20261006155153_AddAnalysisContextProvenance` adds nullable PromptVersion/ContextFingerprint only. All five migrations are applied; the Compose database is up to date with no model mismatch.
+- Automated verification: **202 total / 202 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
+- Live synthetic text and screenshot analyses passed with `chatgpt-plan` / `gpt-5.6-sol`; typed results and persisted provider/model/schema/prompt/fingerprint were verified. Natural refresh occurred without expiry manipulation. Synthetic records/files were removed through normal deletion workflows; observed logs contained no evidence/prompts/tokens.
+- Tooling remains .NET SDK `10.0.401` (`global.json`, latestPatch, no prereleases), `net10.0`, xUnit v3/MTP v2, and Docker Compose `postgres:18` (18.6, healthy).
+- Root verification: `dotnet restore`, `dotnet build SocialTelemetry.slnx`, `dotnet test --solution SocialTelemetry.slnx --no-build`, and `docker compose config`.
 
 ## Current Task
 
-Next checkpoint: **AI Pass 7.2 — AnalyzeInteraction.**
+Next checkpoint: **AI Pass 7.2.1 — Audio ingestion / persisted transcription.** Implementation has not started.
 
 ## Immediate Next Steps
 
-1. Build provider-neutral `AiContextBuilder` with bounded, owned context: UserProfile, participants/People, confirmed facts, relevant inferences, current Interaction, and selected/relevant previous interactions where appropriate.
-2. Include optional focused `UserQuestion`, text evidence, screenshot/image evidence, and speaker-aware normalized evidence.
-3. Implement deferred F3 concretely: capability validation and application-owned image/structured-output contracts; never silently discard unsupported evidence.
-4. Produce validated, structured uncertainty-aware results, including translation, literal meaning, social meaning, and tone when relevant.
-5. Preserve execution provenance and explicit prompt/schema versioning; protect against stale, failed, cancelled, incomplete, or invalid results.
-6. Resolve F5 connection-lifetime/late-result safety before exposing analysis persistence.
-7. Build and run relevant/full tests for the implemented scope. Do not expand v1 scope.
-
-## Accepted Verification Exceptions
-
-These are accepted NOT EXERCISED checks, not blockers to closing 7.1:
-
-- Natural token refresh was not observed; token expiry was not manipulated. Refresh behavior has automated coverage.
-- Tiny live inference was not exercised because no safe HTTP/manual execution surface exists yet.
-- Neutral selected-model metadata was not manually exercised over HTTP because no endpoint exposes it; automated coverage exists.
+1. Read the relevant specification before the next pass; keep transcription separate from social analysis.
+2. Add audio ingestion/transcription only when requested, persist valid transcripts, and reuse them rather than repeatedly transcribing the same evidence.
+3. Preserve speaker attribution and capability-based provider boundaries. Do not assume ChatGPT-plan inference supplies transcription.
 
 ## Guardrails
 
-- `AGENTS.md` defines coding/agent rules; `SocialTelemetry_Spec.md` defines product/architecture/roadmap decisions.
-- `AI_7_1_Architecture_Audit.md` is a historical audit; F1/F2 are resolved, F3/F5 belong to 7.2, and F4 waits for another provider.
+- `AGENTS.md` defines execution/coding rules; `SocialTelemetry_Spec.md` defines accepted product/architecture/roadmap decisions.
+- `AI_7_1_Architecture_Audit.md` is historical: F1/F2/F3/F5 are resolved; remaining provider-specific administration/error presentation can wait for another adapter.
 - Keep provider independence, ownership, bounded context, evidence boundaries, and facts versus AI inferences intact.
-- Store only validated results; keep credentials, prompts, and private evidence out of logs and checkpoint documents.
-- No speculative framework, architecture redesign, or premature implementation of later passes.
+- Store only validated results; keep credentials, raw prompts, private evidence, and provider envelopes out of logs/checkpoint documents.
+- No speculative framework, architecture redesign, or early implementation of Follow-up, Accept/Edit/Reject, Advisor, UI, SQLite, or Local AI.

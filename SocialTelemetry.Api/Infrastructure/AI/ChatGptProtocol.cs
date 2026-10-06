@@ -32,6 +32,7 @@ internal sealed class ChatGptAccount
 // Classes intentionally avoid generated record ToString methods for credential-bearing values.
 internal sealed class ChatGptTokens
 {
+    public Guid SessionId { get; set; }
     public string AccessToken { get; set; } = string.Empty;
     public string? RefreshToken { get; set; }
     public string? IdToken { get; set; }

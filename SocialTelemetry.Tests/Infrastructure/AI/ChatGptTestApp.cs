@@ -94,9 +94,9 @@ internal sealed class ChatGptTestApp : IDisposable
         return status;
     }
 
-    public async Task SelectModelAsync()
+    public async Task SelectModelAsync(string modelId = "model-a")
     {
-        using var response = await Client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = "model-a" });
+        using var response = await Client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = modelId });
         response.EnsureSuccessStatusCode();
     }
 
@@ -166,6 +166,10 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
     public HttpStatusCode ModelsStatus { get; set; } = HttpStatusCode.OK;
     public string ModelsBody { get; set; } = """{"models":[{"slug":"model-a","display_name":"Model A","visibility":"list"},{"slug":"hidden","display_name":"Hidden","visibility":"hide"}]}""";
     public string StreamBody { get; set; } = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"private-output\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n";
+    public TaskCompletionSource? InferenceStarted { get; set; }
+    public TaskCompletionSource? ContinueInference { get; set; }
+    public bool IgnoreInferenceCancellation { get; set; }
+    public string? InferenceMediaType { get; set; } = "text/event-stream";
     public HttpStatusCode RevokeStatus { get; set; } = HttpStatusCode.OK;
     public TimeSpan RefreshDelay { get; set; }
     public CancellationTokenSource? CancelDuringRefresh { get; set; }
@@ -248,9 +252,14 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
         if (uri.AbsoluteUri == "https://api.openai.com/v1/responses")
         {
             InferenceCount++;
+            InferenceStarted?.TrySetResult();
+            if (ContinueInference is { } completion)
+                await completion.Task.WaitAsync(IgnoreInferenceCancellation ? CancellationToken.None : cancellationToken);
             Assert.NotNull(request.Content);
             LastInferenceBody = await request.Content.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(StreamBody, Encoding.UTF8, "text/event-stream") };
+            var content = new StringContent(StreamBody, Encoding.UTF8);
+            content.Headers.ContentType = InferenceMediaType is null ? null : new(InferenceMediaType);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
         }
         throw new InvalidOperationException("Unexpected provider endpoint in fake HTTP handler.");
     }

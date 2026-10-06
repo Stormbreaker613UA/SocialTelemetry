@@ -8,6 +8,8 @@ public sealed class InteractionAnalysis
     public string? Provider { get; set; }
     public string? Model { get; set; }
     public string? SchemaVersion { get; set; }
+    public string? PromptVersion { get; set; }
+    public string? ContextFingerprint { get; set; }
     public string? ResultJson { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 

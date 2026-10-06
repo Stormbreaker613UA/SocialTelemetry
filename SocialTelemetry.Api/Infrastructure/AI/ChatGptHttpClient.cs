@@ -10,7 +10,7 @@ using SocialTelemetry.Api.Infrastructure.AI.Models;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
-public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timeProvider)
+public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timeProvider, ILogger<ChatGptHttpClient> logger)
 {
     private JsonElement? discovery;
     private ICollection<SecurityKey>? signingKeys;
@@ -135,21 +135,40 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         {
             using var request = AuthorizedRequest(HttpMethod.Post, ChatGptProtocol.Resource + "/responses", accessToken);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-            request.Content = JsonContent.Create(new
+            object content = input.Input;
+            if (input.Images.Count > 0)
             {
-                model,
-                instructions = input.Instructions,
-                input = new[] { new { role = "user", content = input.Input } },
-                store = false,
-                stream = true
-            });
+                var parts = new List<object> { new { type = "input_text", text = input.Input } };
+                foreach (var image in input.Images)
+                {
+                    parts.Add(new { type = "input_text", text = "Evidence ID: " + image.EvidenceId });
+                    parts.Add(new { type = "input_image", image_url = "data:" + image.MimeType + ";base64," + Convert.ToBase64String(image.Bytes.Span), detail = "auto" });
+                }
+                content = parts;
+            }
+            var payload = new Dictionary<string, object>
+            {
+                ["model"] = model,
+                ["instructions"] = input.Instructions,
+                ["input"] = new[] { new { role = "user", content } },
+                ["store"] = false,
+                ["stream"] = true
+            };
+            if (input.StructuredOutput is { } outputContract)
+                payload["text"] = new { format = new { type = "json_schema", name = outputContract.Name, strict = true, schema = outputContract.Schema } };
+            request.Content = JsonContent.Create(payload);
             using var response = await SendAsync(request, timeout.Token, streaming: true);
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            logger.LogInformation("AI inference transport returned HTTP {StatusCode}; stream header present {HasStreamHeader}",
+                (int)response.StatusCode, string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase));
             if (!response.IsSuccessStatusCode)
             {
                 var error = await ReadJsonAsync(response, timeout.Token);
                 ThrowProviderError(response.StatusCode, ErrorCode(error));
             }
-            if (response.Content.Headers.ContentType?.MediaType != "text/event-stream")
+            // Some plan responses omit Content-Type. They still must contain a valid SSE
+            // stream ending in response.completed; a JSON/body-only response cannot succeed.
+            if (mediaType is not null && !string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
                 throw new AiProviderException(AiFailure.MalformedResponse);
             await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
             using var reader = new StreamReader(stream);
@@ -185,7 +204,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         }
     }
 
-    private static (bool Completed, string? ReturnedModel) ProcessEvent(StringBuilder eventData, StringBuilder output)
+    private (bool Completed, string? ReturnedModel) ProcessEvent(StringBuilder eventData, StringBuilder output)
     {
         if (eventData.Length == 0) return (false, null);
         var data = eventData.ToString().TrimEnd();
@@ -197,7 +216,11 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         else if (type == "response.completed")
         {
             if (!body.TryGetProperty("response", out var response) || OptionalString(response, "status") != "completed" || output.Length == 0)
+            {
+                logger.LogWarning("AI completion rejected; has response {HasResponse}, has output {HasOutput}",
+                    body.TryGetProperty("response", out _), output.Length > 0);
                 throw new AiProviderException(AiFailure.MalformedResponse);
+            }
             return (true, OptionalString(response, "model"));
         }
         else if (type == "response.incomplete") throw new AiProviderException(AiFailure.IncompleteResponse);

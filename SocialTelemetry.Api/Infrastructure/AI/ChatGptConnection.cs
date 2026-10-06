@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,7 @@ public sealed class ChatGptConnection(
     ILogger<ChatGptConnection> logger)
 {
     private PendingAuthorization? pending;
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> lifetimes = new();
 
     public async Task BeginAsync(Guid? connectionId, bool newAccount, bool requestConsent, CancellationToken cancellationToken)
     {
@@ -110,6 +112,9 @@ public sealed class ChatGptConnection(
         if (account.Subject is not null && account.Subject != subject)
             throw new AiProviderException(AiFailure.InvalidIdentity);
         account.Subject = subject;
+        var previousAccount = state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId);
+        InvalidateLifetime(previousAccount?.Tokens?.SessionId);
+        tokens.SessionId = Guid.NewGuid();
         account.Tokens = tokens;
         state.ActiveConnectionId = account.Id;
         await store.SaveAsync(state, cancellationToken);
@@ -153,6 +158,7 @@ public sealed class ChatGptConnection(
         var state = await store.ReadAsync(cancellationToken);
         var account = state.Accounts.SingleOrDefault(account => account.Id == state.ActiveConnectionId);
         var confirmed = false;
+        InvalidateLifetime(account?.Tokens?.SessionId);
         try
         {
             if (account?.Tokens?.RefreshToken is not null)
@@ -193,7 +199,39 @@ public sealed class ChatGptConnection(
         var models = await GetModelsAsync(state, account, cancellationToken);
         if (!models.Any(model => model.Id == account.SelectedModel)) throw new AiProviderException(AiFailure.ModelUnavailable);
         var tokens = account.Tokens ?? throw new AiProviderException(AiFailure.NotConnected);
-        return new InferenceSession { AccessToken = tokens.AccessToken, Model = account.SelectedModel };
+        // Older protected stores predate session generations. Persist one before issuing a lease.
+        if (tokens.SessionId == Guid.Empty)
+        {
+            tokens.SessionId = Guid.NewGuid();
+            await store.SaveAsync(state, cancellationToken);
+        }
+        var lifetime = lifetimes.GetOrAdd(tokens.SessionId, _ => new CancellationTokenSource());
+        return new InferenceSession
+        {
+            AccessToken = tokens.AccessToken, Model = account.SelectedModel,
+            SessionId = tokens.SessionId, LifetimeCancellationToken = lifetime.Token
+        };
+    }
+
+    internal async Task ValidateSessionAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
+        using var storageLock = await store.LockAsync(cancellationToken);
+        var state = await store.ReadAsync(cancellationToken);
+        var account = state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId);
+        if (account?.Tokens?.SessionId != sessionId)
+        {
+            InvalidateLifetime(sessionId);
+            throw new AiProviderException(AiFailure.ExecutionInvalidated);
+        }
+    }
+
+    private void InvalidateLifetime(Guid? sessionId)
+    {
+        if (sessionId is { } id && lifetimes.TryRemove(id, out var lifetime))
+        {
+            lifetime.Cancel();
+            lifetime.Dispose();
+        }
     }
 
     private async Task<IReadOnlyList<ChatGptModel>> GetModelsAsync(ChatGptState state, ChatGptAccount account, CancellationToken cancellationToken)
@@ -217,6 +255,7 @@ public sealed class ChatGptConnection(
         if (!forceRefresh && tokens.ExpiresAt > clock.GetUtcNow()) return tokens;
         if (tokens.RefreshToken is null)
         {
+            InvalidateLifetime(account.Tokens?.SessionId);
             account.Tokens = null;
             await store.SaveAsync(state, CancellationToken.None);
             throw new AiProviderException(AiFailure.ReconnectRequired);
@@ -238,6 +277,7 @@ public sealed class ChatGptConnection(
         }
         catch (AiProviderException exception) when (exception.Failure is AiFailure.ReconnectRequired or AiFailure.InvalidIdentity or AiFailure.MalformedResponse or AiFailure.InvalidClient)
         {
+            InvalidateLifetime(account.Tokens?.SessionId);
             account.Tokens = null;
             await store.SaveAsync(state, CancellationToken.None);
             throw new AiProviderException(exception.Failure == AiFailure.InvalidClient ? AiFailure.InvalidClient : AiFailure.ReconnectRequired);
@@ -256,6 +296,7 @@ public sealed class ChatGptConnection(
         catch
         {
             // The replacement refresh token may have rotated. Never retry the consumed one.
+            InvalidateLifetime(account.Tokens?.SessionId);
             account.Tokens = null;
             await store.SaveAsync(state, CancellationToken.None);
             logger.LogWarning("ChatGPT replacement identity validation failed; connection {ConnectionId} requires reconnect", account.Id);
@@ -263,6 +304,7 @@ public sealed class ChatGptConnection(
         }
 
         replacement.IdToken ??= tokens.IdToken;
+        replacement.SessionId = tokens.SessionId;
         account.Tokens = replacement;
         await store.SaveAsync(state, CancellationToken.None);
         logger.LogInformation("ChatGPT credentials refreshed for connection {ConnectionId}", account.Id);
@@ -304,5 +346,7 @@ public sealed class ChatGptConnection(
     {
         public required string AccessToken { get; init; }
         public required string Model { get; init; }
+        public required Guid SessionId { get; init; }
+        public required CancellationToken LifetimeCancellationToken { get; init; }
     }
 }
