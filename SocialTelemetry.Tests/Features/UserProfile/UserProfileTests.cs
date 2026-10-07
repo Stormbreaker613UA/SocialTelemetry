@@ -6,11 +6,11 @@ using UpdateUserProfile = SocialTelemetry.Api.Features.UserProfile.Update;
 
 namespace SocialTelemetry.Tests.Features.UserProfile;
 
-public sealed class UserProfileTests : IClassFixture<PeopleApiFixture>, IAsyncLifetime
+public abstract class UserProfileTestsContract<TFixture> : IClassFixture<TFixture>, IAsyncLifetime where TFixture : PeopleApiFixture
 {
     private readonly PeopleApiFixture fixture;
 
-    public UserProfileTests(PeopleApiFixture fixture)
+    protected UserProfileTestsContract(TFixture fixture)
     {
         this.fixture = fixture;
     }
@@ -74,3 +74,8 @@ public sealed class UserProfileTests : IClassFixture<PeopleApiFixture>, IAsyncLi
         Assert.Equal("No guessing", userProfile.Boundaries);
     }
 }
+
+public sealed class UserProfileTests(PeopleApiFixture fixture) : UserProfileTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteUserProfileTests(SqliteApiFixture fixture) : UserProfileTestsContract<SqliteApiFixture>(fixture);

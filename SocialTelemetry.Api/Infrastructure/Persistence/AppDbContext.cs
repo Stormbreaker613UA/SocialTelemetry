@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.Observability;
 
 namespace SocialTelemetry.Api.Infrastructure.Persistence;
 
@@ -41,6 +44,24 @@ public sealed partial class AppDbContext(
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        // SQLite has no native database ActivitySource. Coarse persistence spans expose no commands/values.
+        using var operation = Database.IsSqlite() ? SocialTelemetryTelemetry.Start("database.save", cancellationToken) : null;
+        operation?.Activity?.SetTag("db.system.name", "sqlite");
+        try
+        {
+            var rows = await SaveCoordinatedChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            operation?.Complete();
+            return rows;
+        }
+        catch (Exception exception)
+        {
+            operation?.Fail(exception);
+            throw;
+        }
+    }
+
+    private async Task<int> SaveCoordinatedChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
     {
         var obsoleteAvatarKeys = avatarCleanup is null
             ? []
@@ -101,10 +122,18 @@ public sealed partial class AppDbContext(
         return changes.ToArray();
     }
 
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.ReplaceService<IMigrationsAssembly, ProviderMigrationsAssembly>();
+        optionsBuilder.AddInterceptors(SqliteSnapshotTransactions.Instance);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        modelBuilder.Entity<InteractionAnalysis>().Property(analysis => analysis.ResultJson)
+            .HasColumnType(Database.IsSqlite() ? "TEXT" : "jsonb");
         modelBuilder.Entity<UserProfile>().Property(profile => profile.AvatarStorageKey).HasMaxLength(32).IsConcurrencyToken();
         modelBuilder.Entity<UserProfile>().Property(profile => profile.AvatarMimeType).HasMaxLength(32);
         modelBuilder.Entity<Person>().Property(person => person.AvatarStorageKey).HasMaxLength(32).IsConcurrencyToken();
@@ -116,5 +145,27 @@ public sealed partial class AppDbContext(
         modelBuilder.Entity<AnalysisContextGuard>().ToTable("AnalysisContextGuards");
         modelBuilder.Entity<AnalysisContextGuard>().HasKey(guard => guard.UserProfileId);
         modelBuilder.Entity<AnalysisContextGuard>().Property(guard => guard.UserProfileId).ValueGeneratedNever();
+
+        if (Database.IsSqlite())
+        {
+            // SQLite cannot order DateTimeOffset natively. UTC ticks retain precision and chronological ordering.
+            var timestampConverter = new ValueConverter<DateTimeOffset, long>(
+                value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+            foreach (var entity in modelBuilder.Model.GetEntityTypes())
+            {
+                foreach (var property in entity.GetProperties())
+                {
+                    if ((Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType) == typeof(DateTimeOffset))
+                        property.SetValueConverter(timestampConverter);
+                    // SQLite ignores varchar length facets; preserve the model's persisted bounds.
+                    if (property.GetMaxLength() is { } maximum)
+                        modelBuilder.Entity(entity.Name).ToTable(table => table.HasCheckConstraint(
+                            $"CK_{entity.GetTableName()}_{property.Name}_Length",
+                            $"length(\"{property.Name}\") <= {maximum}"));
+                }
+            }
+            modelBuilder.Entity<InteractionAnalysis>().ToTable(table => table.HasCheckConstraint(
+                "CK_InteractionAnalyses_ResultJson", "\"ResultJson\" IS NULL OR json_valid(\"ResultJson\")"));
+        }
     }
 }

@@ -16,11 +16,11 @@ using GetAttachment = SocialTelemetry.Api.Features.Interactions.GetAttachment;
 
 namespace SocialTelemetry.Tests.Features.Interactions;
 
-public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture>
+public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     private readonly PeopleApiFixture fixture;
 
-    public InteractionAttachmentsTests(PeopleApiFixture fixture)
+    protected InteractionAttachmentsTestsContract(TFixture fixture)
     {
         this.fixture = fixture;
     }
@@ -504,3 +504,8 @@ public sealed class InteractionAttachmentsTests : IClassFixture<PeopleApiFixture
         return form;
     }
 }
+
+public sealed class InteractionAttachmentsTests(PeopleApiFixture fixture) : InteractionAttachmentsTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteInteractionAttachmentsTests(SqliteApiFixture fixture) : InteractionAttachmentsTestsContract<SqliteApiFixture>(fixture);

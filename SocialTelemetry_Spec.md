@@ -1394,13 +1394,48 @@ The WebView2 shell prevents the local product from depending on the lifecycle of
 
 Serilog remains structured logging, with trace/span correlation. OpenTelemetry supplies ASP.NET Core/HttpClient and native Npgsql tracing, runtime/HTTP metrics, and shared application analysis/AI/storage telemetry. SQL text, parameter values, private content, HTTP bodies/headers, OAuth queries, and exception details are excluded from exported telemetry. Metric dimensions use low-cardinality technical metadata, never entity IDs.
 
+SQLite has no equivalent native database ActivitySource. It uses coarse `database.save` and `database.migrate` activities from the shared application source, alongside existing analysis/context/storage stages; individual read/SQL-command spans are not exported. These activities carry only provider/outcome/error-type metadata, never database paths or SQL. PostgreSQL keeps native Npgsql spans without duplicate EF command instrumentation. No SQL parser, preview instrumentation package, or monitoring backend is required.
+
 OTLP export is optional, backend-neutral, and off by default. Local/hosted deployments may choose an OTLP-compatible viewer/collector; no monitoring backend is a core dependency. To enable export, configure `Observability:OtlpEnabled=true` and `Observability:OtlpEndpoint=http://localhost:4317` (OTLP/gRPC); leave disabled when no collector exists. Service identity is `SocialTelemetry.Api`, with assembly metadata for version and no machine/user identity enrichment.
 
-### Persistent paths, upgrades, and backup readiness
+### PostgreSQL / SQLite persistence
+
+One `AppDbContext` and domain model serve both providers. `Persistence:Provider` accepts exactly `PostgreSql` (shipped default) or `Sqlite`; unknown values fail startup. PostgreSQL requires `ConnectionStrings:Default` and remains the development/server provider. SQLite does not require PostgreSQL, Docker, or its connection string. Selecting PostgreSQL never creates a SQLite file.
+
+`Persistence:SqliteFile` defaults to `socialtelemetry.db`. Relative paths resolve through `ApplicationPaths` under `ApplicationData:RootDirectory` (unset retains the API content root); an absolute file override is allowed. A future desktop host should choose its durable user-data root. Existing media and protected credential locations do not move. Database files and `-wal`/`-shm`/`-journal` sidecars are local data excluded from Git.
+
+SQLite starts by applying its EF migrations before storage reconciliation. PostgreSQL migrations remain an explicit deployment/development step. No `EnsureCreated`, database reset, or custom migration runner is used. EF's SQLite migration lock can survive a process crash during migration; investigate an abandoned `__EFMigrationsLock` only after confirming no migrator is active, never automatically delete user data to recover startup.
+
+SQLite uses foreign keys on every configured connection, private cache, pooling disabled (predictable file lifetime), and a bounded busy timeout via `Persistence:SqliteTimeoutSeconds` (default 30, supported 1–120 seconds). EF creates the database in WAL mode; full synchronous durability is retained. WAL sidecars belong beside the database. Copying only the live `.db` file is not a backup procedure; backup/sync remain unimplemented.
+
+Domain timestamps remain `DateTimeOffset`: PostgreSQL stores UTC timestamps, SQLite stores UTC ticks for exact, server-side ordering/comparison. Decimal inference confidence remains decimal without a lossy floating-point conversion. GUID identities, logical storage keys, ownership/FKs, cascades, unique external identities, and application-managed concurrency tokens remain shared. SQLite uses explicit length checks for bounded columns and JSON validity for analysis results where PostgreSQL's column types enforce these constraints.
+
+**Concurrency.** PostgreSQL's per-UserProfile guard rows let unrelated profiles write independently. SQLite retains the same logical profile guards but has one writer per database file. Short default write transactions reserve that writer before final context reads; read-only Serializable context snapshots use deferred transactions and WAL so writers can proceed. Source writes during AI inference remain possible, final fingerprint revalidation rejects stale output, and the execution lease still spans the final save/commit. Busy/stale-snapshot/FK failures during final analysis persistence become a safe conflict. SQLite's write serialization never spans provider/network inference. There is no application-wide mutex, distributed lock, or whole-operation retry that could repeat AI calls.
+
+**Migration workflow (repository root).** Existing PostgreSQL migrations and `AppDbContextModelSnapshot` remain in `Infrastructure/Persistence/Migrations`, unchanged. SQLite has its own current-schema baseline and uniquely named `SqliteAppDbContextModelSnapshot` under `Migrations/Sqlite`. A small `IMigrationsAssembly` selector exposes only the active provider's standard EF artifacts. EF performs generation, history tracking, and execution. Keep snapshot class names distinct so EF tooling cannot overwrite the other provider's snapshot.
+
+For each persisted model change, generate and inspect both provider sets using the explicit provider and namespace:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet ef migrations add <ChangeName> --project SocialTelemetry.Api --context AppDbContext --output-dir Infrastructure/Persistence/Migrations --namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations -- --provider PostgreSql
+dotnet ef migrations add <ChangeName> --project SocialTelemetry.Api --context AppDbContext --output-dir Infrastructure/Persistence/Migrations/Sqlite --namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations.Sqlite -- --provider Sqlite
+
+dotnet ef database update --project SocialTelemetry.Api --context AppDbContext -- --provider PostgreSql
+dotnet ef database update --project SocialTelemetry.Api --context AppDbContext -- --provider Sqlite
+dotnet ef migrations has-pending-model-changes --project SocialTelemetry.Api -- --provider PostgreSql
+dotnet ef migrations has-pending-model-changes --project SocialTelemetry.Api -- --provider Sqlite
+```
+
+Design-time operations require `--provider`; omission never guesses a database. Standard configuration/environment overrides select the connection/data root. Do not run PostgreSQL migrations on SQLite or rewrite applied history. Add meaningful integration coverage for both providers when adding persisted features; provider-specific SQL/error/transaction behavior remains in persistence infrastructure.
+
+SQLite ↔ PostgreSQL synchronization is **not implemented**. Stable application GUIDs, shared logical entities/ownership, neutral types, and logical media keys preserve useful future seams without adding device IDs, change logs, tombstones, or replication infrastructure.
+
+### Persistent data ownership
 
 `ApplicationPaths` is the infrastructure boundary for physical persistent locations. `ApplicationData:RootDirectory` may select an absolute Desktop/hosted data root; unset preserves current development behavior. Relative attachment/avatar settings resolve under that root and absolute overrides remain supported. Existing files are not moved automatically. Credentials resolve separately through provider configuration; choosing a data root does not relocate existing protected sessions. Domain records retain portable logical keys.
 
-Current durable media areas are the configured attachment/avatar directories (including staging); development/server PostgreSQL data is managed by its configured database/Compose volume rather than an application file path. Future local database, transcripts, models, logs, and approved user configuration should use this path boundary when implemented. Backup must enumerate identified durable areas/database data, not crawl arbitrary working directories. Ordinary portable backups exclude provider credentials/tokens, OAuth state/protection keys, API keys, and other secrets by default, even when a host places protected storage under a common root. No Backup/Export/Restore implementation or archive format is introduced here.
+Current durable media areas are the configured attachment/avatar directories (including staging); development/server PostgreSQL data is managed by its configured database/Compose volume rather than an application file path. SQLite uses ApplicationPaths.DatabaseFile as described above. Future transcripts, models, logs, and approved user configuration should use this path boundary when implemented. Backup must enumerate identified durable areas/database data, not crawl arbitrary working directories. Ordinary portable backups exclude provider credentials/tokens, OAuth state/protection keys, API keys, and other secrets by default, even when a host places protected storage under a common root. No Backup/Export/Restore implementation or archive format is introduced here.
 
 Application version comes from assembly/package metadata. EF migrations remain the only database schema evolution mechanism, including future data-preserving local upgrades. New optional configuration uses shipped defaults plus startup validation; no separate schema-version table or JSON migration framework is needed.
 
@@ -1751,7 +1786,7 @@ UserProfile A → guard/revision A
 UserProfile B → guard/revision B
 ```
 
-Unrelated profiles must not serialize context writes through one global guard. No TenantId or SaaS abstraction is needed for this scope.
+On PostgreSQL, unrelated profiles must not serialize context writes through one global guard. SQLite retains profile-scoped guard identities but necessarily permits only one short writer per database file (section 28). No TenantId or SaaS abstraction is needed for this scope.
 
 The local-first v1 should preserve clean seams: UserProfile ownership, provider-neutral AI, thin desktop hosting, an API-compatible server path, and authentication identity separate from social context.
 

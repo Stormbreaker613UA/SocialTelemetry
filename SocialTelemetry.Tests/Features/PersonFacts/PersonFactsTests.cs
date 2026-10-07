@@ -9,11 +9,11 @@ using CreatePerson = SocialTelemetry.Api.Features.People.Create;
 
 namespace SocialTelemetry.Tests.Features.PersonFacts;
 
-public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
+public abstract class PersonFactsTestsContract<TFixture> : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     private readonly PeopleApiFixture fixture;
 
-    public PersonFactsTests(PeopleApiFixture fixture)
+    protected PersonFactsTestsContract(TFixture fixture)
     {
         this.fixture = fixture;
     }
@@ -157,3 +157,8 @@ public sealed class PersonFactsTests : IClassFixture<PeopleApiFixture>
         return facts!.Facts;
     }
 }
+
+public sealed class PersonFactsTests(PeopleApiFixture fixture) : PersonFactsTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqlitePersonFactsTests(SqliteApiFixture fixture) : PersonFactsTestsContract<SqliteApiFixture>(fixture);

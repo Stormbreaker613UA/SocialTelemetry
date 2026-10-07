@@ -8,7 +8,6 @@ public sealed class InteractionAnalysisConfiguration : IEntityTypeConfiguration<
 {
     public void Configure(EntityTypeBuilder<InteractionAnalysis> builder)
     {
-        builder.Property(analysis => analysis.ResultJson).HasColumnType("jsonb");
         builder.Property(analysis => analysis.PromptVersion).HasMaxLength(64);
         builder.Property(analysis => analysis.ContextFingerprint).HasMaxLength(64);
 

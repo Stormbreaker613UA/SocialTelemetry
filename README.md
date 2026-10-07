@@ -45,10 +45,10 @@ This describes the product target, not a list of features already shipped. Audio
 The core is intentionally a simple ASP.NET Core application, not microservices. Features live under `Features/<Feature>/<UseCase>` and use EF Core directly where appropriate.
 
 - .NET 10 / ASP.NET Core, Vertical Slice Architecture, and FastEndpoints.
-- EF Core; PostgreSQL for development/server mode, SQLite as the local desktop target.
+- EF Core with PostgreSQL for development/server mode and SQLite persistence for local mode.
 - Razor Pages product UI and a thin WebView2 desktop host as v1 targets.
 - Provider-neutral AI, local attachment storage, and Swagger / OpenAPI.
-- xUnit v3 and PostgreSQL Testcontainers integration tests.
+- xUnit v3, PostgreSQL Testcontainers, and real-file SQLite integration tests.
 
 The repository currently contains `SocialTelemetry.Api` and `SocialTelemetry.Tests`. The planned `SocialTelemetry.Desktop` project will host the window and local application lifecycle, without duplicating domain or AI logic.
 
@@ -86,7 +86,7 @@ V1 direction:
 
 ```text
 Interaction analysis → Audio/transcription → Suggestion review → Follow-up
-→ Person Advisor → Backend stabilization → Razor UI → SQLite/local AI
+→ Person Advisor → Backend stabilization → Razor UI → Local AI
 → Desktop packaging/updater → Final stabilization/release
 ```
 

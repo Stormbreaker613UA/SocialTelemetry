@@ -11,7 +11,7 @@ using GetPeople = SocialTelemetry.Api.Features.People.GetAll;
 
 namespace SocialTelemetry.Tests.Features.Profiles;
 
-public sealed class PersonArchiveTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
+public abstract class PersonArchiveTestsContract<TFixture>(TFixture fixture) : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     [Fact]
     public async Task Archive_is_idempotent_preserves_profile_and_history_and_filtering_is_explicit()
@@ -70,3 +70,8 @@ public sealed class PersonArchiveTests(PeopleApiFixture fixture) : IClassFixture
         Assert.Equal(HttpStatusCode.NotFound, unarchive.StatusCode);
     }
 }
+
+public sealed class PersonArchiveTests(PeopleApiFixture fixture) : PersonArchiveTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqlitePersonArchiveTests(SqliteApiFixture fixture) : PersonArchiveTestsContract<SqliteApiFixture>(fixture);

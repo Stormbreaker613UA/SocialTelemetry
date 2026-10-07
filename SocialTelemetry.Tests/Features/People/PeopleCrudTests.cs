@@ -17,11 +17,11 @@ using UpdatePerson = SocialTelemetry.Api.Features.People.Update;
 
 namespace SocialTelemetry.Tests.Features.People;
 
-public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
+public abstract class PeopleCrudTestsContract<TFixture> : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     private readonly PeopleApiFixture fixture;
 
-    public PeopleCrudTests(PeopleApiFixture fixture)
+    protected PeopleCrudTestsContract(TFixture fixture)
     {
         this.fixture = fixture;
     }
@@ -168,13 +168,20 @@ public sealed class PeopleCrudTests : IClassFixture<PeopleApiFixture>
     };
 }
 
-public sealed class PeopleApiFixture : IAsyncLifetime
+public class PeopleApiFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer database = new PostgreSqlBuilder("postgres:17-alpine")
-        .WithDatabase("socialtelemetry_tests")
-        .WithUsername("postgres")
-        .WithPassword("postgres")
-        .Build();
+    private readonly PostgreSqlContainer? database;
+    private readonly bool sqlite;
+
+    public PeopleApiFixture() : this(false) { }
+
+    protected PeopleApiFixture(bool sqlite)
+    {
+        this.sqlite = sqlite;
+        if (!sqlite)
+            database = new PostgreSqlBuilder("postgres:17-alpine")
+                .WithDatabase("socialtelemetry_tests").WithUsername("postgres").WithPassword("postgres").Build();
+    }
 
     private PeopleWebApplicationFactory? application;
     private string? attachmentStorageDirectory;
@@ -193,7 +200,7 @@ public sealed class PeopleApiFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await database.StartAsync();
+        if (database is not null) await database.StartAsync();
 
         attachmentStorageDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -202,15 +209,14 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         Directory.CreateDirectory(attachmentStorageDirectory);
 
         // Startup recovery queries attachments, so migrate before starting the HTTP host.
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(database.GetConnectionString())
-            .Options;
-        await using (var dbContext = new AppDbContext(options))
+        if (database is not null)
         {
+            var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(database.GetConnectionString()).Options;
+            await using var dbContext = new AppDbContext(options);
             await dbContext.Database.MigrateAsync();
         }
 
-        application = new PeopleWebApplicationFactory(database.GetConnectionString(), attachmentStorageDirectory);
+        application = new PeopleWebApplicationFactory(database?.GetConnectionString(), attachmentStorageDirectory, sqlite);
         Client = application.CreateClient();
     }
 
@@ -225,7 +231,7 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         {
             try
             {
-                await database.DisposeAsync();
+                if (database is not null) await database.DisposeAsync();
             }
             finally
             {
@@ -291,12 +297,20 @@ public sealed class PeopleApiFixture : IAsyncLifetime
     }
 
     private sealed class PeopleWebApplicationFactory(
-        string connectionString,
-        string attachmentStorageDirectory) : WebApplicationFactory<Program>
+        string? connectionString,
+        string attachmentStorageDirectory,
+        bool sqlite) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("AttachmentStorage:LocalDirectory", attachmentStorageDirectory);
+            if (sqlite)
+            {
+                builder.UseSetting("Persistence:Provider", "Sqlite");
+                builder.UseSetting("ApplicationData:RootDirectory", attachmentStorageDirectory);
+                builder.UseSetting("ConnectionStrings:Default", "");
+                return;
+            }
 
             builder.ConfigureServices(services =>
             {
@@ -307,3 +321,10 @@ public sealed class PeopleApiFixture : IAsyncLifetime
         }
     }
 }
+
+public sealed class SqliteApiFixture() : PeopleApiFixture(true);
+
+public sealed class PeopleCrudTests(PeopleApiFixture fixture) : PeopleCrudTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqlitePeopleCrudTests(SqliteApiFixture fixture) : PeopleCrudTestsContract<SqliteApiFixture>(fixture);

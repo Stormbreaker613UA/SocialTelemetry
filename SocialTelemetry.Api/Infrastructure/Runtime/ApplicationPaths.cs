@@ -9,6 +9,8 @@ public sealed class ApplicationPaths(IOptions<ApplicationDataOptions> options, I
 
     public string ResolveDataDirectory(string directory) => Path.GetFullPath(directory, RootDirectory);
 
+    public string DatabaseFile(string file) => Path.GetFullPath(file, RootDirectory);
+
     public string Attachments(AttachmentStorageOptions attachments) => ResolveDataDirectory(attachments.LocalDirectory);
 
     public string Avatars(ProfileStorageOptions profiles, AttachmentStorageOptions attachments) =>

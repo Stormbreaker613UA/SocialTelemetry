@@ -29,17 +29,8 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {TraceId} {SpanId}{NewLine}{Exception}");
 }, preserveStaticLogger: true);
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("Connection string 'Default' is required.");
-
 builder.Services.AddSocialTelemetryDiagnostics(builder.Configuration, builder.Environment);
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString, postgres =>
-    postgres.ConfigureDataSource(source => source.ConfigureTracing(tracing => tracing
-        .ConfigureCommandSpanNameProvider(_ => "database.command")
-        .ConfigureBatchSpanNameProvider(_ => "database.command")
-        .ConfigureCommandEnrichmentCallback((activity, _) => activity.SetTag("db.query.text", null))
-        .ConfigureBatchEnrichmentCallback((activity, _) => activity.SetTag("db.query.text", null))
-        .EnablePhysicalOpenTracing(false).EnableFirstResponseEvent(false)))));
+builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();

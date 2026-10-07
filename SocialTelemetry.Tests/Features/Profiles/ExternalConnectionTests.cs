@@ -9,7 +9,7 @@ using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Profiles;
 
-public sealed class ExternalConnectionTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
+public abstract class ExternalConnectionTestsContract<TFixture>(TFixture fixture) : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     private CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
@@ -196,3 +196,8 @@ public sealed class ExternalConnectionTests(PeopleApiFixture fixture) : IClassFi
         return created;
     }
 }
+
+public sealed class ExternalConnectionTests(PeopleApiFixture fixture) : ExternalConnectionTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteExternalConnectionTests(SqliteApiFixture fixture) : ExternalConnectionTestsContract<SqliteApiFixture>(fixture);

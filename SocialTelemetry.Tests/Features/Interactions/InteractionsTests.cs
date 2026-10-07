@@ -13,11 +13,11 @@ using CreatePerson = SocialTelemetry.Api.Features.People.Create;
 
 namespace SocialTelemetry.Tests.Features.Interactions;
 
-public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
+public abstract class InteractionsTestsContract<TFixture> : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     private readonly PeopleApiFixture fixture;
 
-    public InteractionsTests(PeopleApiFixture fixture)
+    protected InteractionsTestsContract(TFixture fixture)
     {
         this.fixture = fixture;
     }
@@ -341,3 +341,8 @@ public sealed class InteractionsTests : IClassFixture<PeopleApiFixture>
             ParticipantIds = participantIds
         };
 }
+
+public sealed class InteractionsTests(PeopleApiFixture fixture) : InteractionsTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteInteractionsTests(SqliteApiFixture fixture) : InteractionsTestsContract<SqliteApiFixture>(fixture);

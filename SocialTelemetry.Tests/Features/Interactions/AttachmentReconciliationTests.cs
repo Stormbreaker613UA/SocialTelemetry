@@ -14,7 +14,7 @@ using CreatePerson = SocialTelemetry.Api.Features.People.Create;
 
 namespace SocialTelemetry.Tests.Features.Interactions;
 
-public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
+public abstract class AttachmentReconciliationTestsContract<TFixture>(TFixture fixture) : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     [Theory]
     [InlineData("staging")]
@@ -213,3 +213,8 @@ public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IC
         }
     }
 }
+
+public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : AttachmentReconciliationTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteAttachmentReconciliationTests(SqliteApiFixture fixture) : AttachmentReconciliationTestsContract<SqliteApiFixture>(fixture);

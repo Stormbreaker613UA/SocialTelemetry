@@ -12,7 +12,7 @@ using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Profiles;
 
-public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
+public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     private static readonly byte[] Png = [137, 80, 78, 71, 13, 10, 26, 10, 1];
     private CancellationToken Cancellation => TestContext.Current.CancellationToken;
@@ -97,10 +97,11 @@ public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : IClassFixture
         var (route, _) = await CreateOwnerAsync(person);
         await UploadAsync(fixture.Client, route, Png);
         var originalKey = await KeyAsync(route);
-        var originalFiles = Directory.GetFiles(Path.GetDirectoryName(AvatarPath(originalKey))!).Order().ToArray();
         using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options =>
             options.AddInterceptors(new FailedSave())));
         using var client = application.CreateClient();
+        // Startup reconciliation may remove old orphans from earlier cases; capture the upload baseline afterward.
+        var originalFiles = Directory.GetFiles(Path.GetDirectoryName(AvatarPath(originalKey))!).Order().ToArray();
         using var form = Form(Png, "image/png");
         using var response = await client.PutAsync(route, form, Cancellation);
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -310,3 +311,8 @@ public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : IClassFixture
             throw new OperationCanceledException(cancellationToken);
     }
 }
+
+public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : ProfileAvatarTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteProfileAvatarTests(SqliteApiFixture fixture) : ProfileAvatarTestsContract<SqliteApiFixture>(fixture);

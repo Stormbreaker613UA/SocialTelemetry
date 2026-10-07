@@ -138,6 +138,8 @@ Use:
 
 Keep the domain model and EF Core model portable between PostgreSQL and SQLite as far as reasonably possible.
 
+New persisted functionality must preserve both PostgreSQL and SQLite compatibility unless an explicit documented exception exists. Keep one AppDbContext/domain model, maintain each provider's EF migration set, and test meaningful persistence/integration boundaries on both providers (not every trivial unit test). This includes future transcripts, suggestion review, follow-up, and Advisor data. Provider selection, type mapping, exception translation, and locking differences stay in persistence infrastructure. Never hold database protection across AI/network inference.
+
 Do not spread provider-specific SQL or provider-specific database features through feature/domain code. If a provider-specific implementation is genuinely required, isolate it and explain why.
 
 Local application upgrades must preserve user data. Do not design local schema changes around deleting/recreating the SQLite database.

@@ -14,7 +14,7 @@ using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdat
 
 namespace SocialTelemetry.Tests.Infrastructure.Persistence;
 
-public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
+public abstract class AiReadinessTestsContract<TFixture>(TFixture fixture) : IClassFixture<TFixture> where TFixture : PeopleApiFixture
 {
     [Fact]
     public async Task Concurrent_analyses_preserve_separate_results_and_provenance()
@@ -245,3 +245,8 @@ public sealed class AiReadinessTests(PeopleApiFixture fixture) : IClassFixture<P
         CreatedAt = DateTimeOffset.UtcNow
     };
 }
+
+public sealed class AiReadinessTests(PeopleApiFixture fixture) : AiReadinessTestsContract<PeopleApiFixture>(fixture);
+
+[Collection("SQLite")]
+public sealed class SqliteAiReadinessTests(SqliteApiFixture fixture) : AiReadinessTestsContract<SqliteApiFixture>(fixture);
