@@ -8,6 +8,7 @@ using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.Observability;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
@@ -117,6 +118,7 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
     private async Task<(IReadOnlyList<AnalysisEvidence> Evidence, IReadOnlyList<AiImageInput> Images)> LoadEvidenceAsync(
         Guid interactionId, IReadOnlyList<Guid>? selectedIds, CancellationToken cancellationToken)
     {
+        using var operation = SocialTelemetryTelemetry.Start("analysis.load_evidence", cancellationToken);
         if (selectedIds is not null && (selectedIds.Count > limits.EvidenceCount || selectedIds.Distinct().Count() != selectedIds.Count))
             throw new AiProviderException(AiFailure.InvalidEvidenceSelection);
         var query = dbContext.InteractionAttachments.AsNoTracking().Where(attachment => attachment.InteractionId == interactionId);
@@ -164,6 +166,7 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
             images.Add(new AiImageInput(attachment.Id, mimeType, bytes));
             evidence.Add(new AnalysisEvidence(attachment.Id, attachment.Type, [], mimeType, Convert.ToHexString(SHA256.HashData(bytes))));
         }
+        operation.Complete();
         return (evidence, images);
     }
 

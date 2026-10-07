@@ -11,6 +11,7 @@ using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Runtime;
+using SocialTelemetry.Api.Infrastructure.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,13 +26,20 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         .Filter.ByExcluding(Matching.FromSource("Microsoft.EntityFrameworkCore"))
         .Filter.ByExcluding(Matching.FromSource("Npgsql"))
         .Filter.ByExcluding(Matching.FromSource("Microsoft.IdentityModel"))
-        .WriteTo.Console();
+        .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {TraceId} {SpanId}{NewLine}{Exception}");
 }, preserveStaticLogger: true);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' is required.");
 
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddSocialTelemetryDiagnostics(builder.Configuration, builder.Environment);
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString, postgres =>
+    postgres.ConfigureDataSource(source => source.ConfigureTracing(tracing => tracing
+        .ConfigureCommandSpanNameProvider(_ => "database.command")
+        .ConfigureBatchSpanNameProvider(_ => "database.command")
+        .ConfigureCommandEnrichmentCallback((activity, _) => activity.SetTag("db.query.text", null))
+        .ConfigureBatchEnrichmentCallback((activity, _) => activity.SetTag("db.query.text", null))
+        .EnablePhysicalOpenTracing(false).EnableFirstResponseEvent(false)))));
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();

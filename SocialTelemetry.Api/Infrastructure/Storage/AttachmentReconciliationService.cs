@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Observability;
 
 namespace SocialTelemetry.Api.Infrastructure.Storage;
 
@@ -28,6 +29,7 @@ public sealed class AttachmentReconciliationService(
 
     public async Task ReconcileAsync(CancellationToken cancellationToken)
     {
+        using var operation = SocialTelemetryTelemetry.Start("storage.reconcile_attachments", cancellationToken);
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var storage = scope.ServiceProvider.GetRequiredService<IAttachmentStorage>();
@@ -38,14 +40,17 @@ public sealed class AttachmentReconciliationService(
 
         foreach (var attachment in unfinishedAttachments)
         {
+            SocialTelemetryTelemetry.RecordReconciliation("attachments", "inspected");
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 dbContext.Attach(attachment);
                 await RecoverAttachmentAsync(dbContext, storage, attachment, cancellationToken);
+                SocialTelemetryTelemetry.RecordReconciliation("attachments", "recovered");
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
+                SocialTelemetryTelemetry.RecordReconciliation("attachments", "failed");
                 logger.LogWarning("Recovery failed for Attachment {AttachmentId} ({ExceptionType}); its state is retained for retry",
                     attachment.Id, exception.GetType().Name);
             }
@@ -62,16 +67,19 @@ public sealed class AttachmentReconciliationService(
             .ToListAsync(cancellationToken);
         foreach (var attachment in readyFiles)
         {
+            SocialTelemetryTelemetry.RecordReconciliation("attachments", "inspected");
             try
             {
                 if (attachment.StorageKey is null || !await storage.ExistsAsync(attachment.StorageKey, cancellationToken))
                 {
+                    SocialTelemetryTelemetry.RecordReconciliation("attachments", "missing");
                     logger.LogWarning("Ready Attachment {AttachmentId} with key {StorageKey} is missing its file; metadata remains unchanged",
                         attachment.Id, attachment.StorageKey);
                 }
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
+                SocialTelemetryTelemetry.RecordReconciliation("attachments", "failed");
                 logger.LogWarning("Could not inspect Ready Attachment {AttachmentId} ({ExceptionType}); metadata remains unchanged",
                     attachment.Id, exception.GetType().Name);
             }
@@ -86,6 +94,7 @@ public sealed class AttachmentReconciliationService(
         var cutoff = DateTimeOffset.UtcNow - options.Value.OrphanSafetyAge;
         await RemoveOrphansAsync(dbContext, storage, storage.EnumerateFiles(), referencedKeySet, cutoff, staged: false, cancellationToken);
         await RemoveOrphansAsync(dbContext, storage, storage.EnumerateStagedFiles(), referencedKeySet, cutoff, staged: true, cancellationToken);
+        operation.Complete();
     }
 
     private async Task RecoverAttachmentAsync(
@@ -137,6 +146,7 @@ public sealed class AttachmentReconciliationService(
     {
         foreach (var file in files)
         {
+            SocialTelemetryTelemetry.RecordReconciliation("attachments", "inspected");
             cancellationToken.ThrowIfCancellationRequested();
             if (referencedKeys.Contains(file.StorageKey) || file.LastModified >= cutoff)
             {
@@ -156,11 +166,13 @@ public sealed class AttachmentReconciliationService(
                     await storage.DeleteAsync(file.StorageKey, cancellationToken);
                 }
 
+                SocialTelemetryTelemetry.RecordReconciliation("attachments", "orphan_deleted");
                 logger.LogInformation("Removed orphan attachment file {StorageKey} from {StorageArea}",
                     file.StorageKey, staged ? "staging" : "final storage");
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
+                SocialTelemetryTelemetry.RecordReconciliation("attachments", "failed");
                 logger.LogWarning("Orphan cleanup failed for {StorageKey} ({ExceptionType})", file.StorageKey, exception.GetType().Name);
             }
         }

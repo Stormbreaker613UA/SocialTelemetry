@@ -1390,6 +1390,12 @@ Desktop / local Windows mode   <- primary end-user local experience
 
 The WebView2 shell prevents the local product from depending on the lifecycle of an arbitrary browser tab/window. Closing the desktop application should shut down the owned local host cleanly. Development can still use a normal browser for convenience.
 
+### Diagnostics
+
+Serilog remains structured logging, with trace/span correlation. OpenTelemetry supplies ASP.NET Core/HttpClient and native Npgsql tracing, runtime/HTTP metrics, and shared application analysis/AI/storage telemetry. SQL text, parameter values, private content, HTTP bodies/headers, OAuth queries, and exception details are excluded from exported telemetry. Metric dimensions use low-cardinality technical metadata, never entity IDs.
+
+OTLP export is optional, backend-neutral, and off by default. Local/hosted deployments may choose an OTLP-compatible viewer/collector; no monitoring backend is a core dependency. To enable export, configure `Observability:OtlpEnabled=true` and `Observability:OtlpEndpoint=http://localhost:4317` (OTLP/gRPC); leave disabled when no collector exists. Service identity is `SocialTelemetry.Api`, with assembly metadata for version and no machine/user identity enrichment.
+
 ### Persistent paths, upgrades, and backup readiness
 
 `ApplicationPaths` is the infrastructure boundary for physical persistent locations. `ApplicationData:RootDirectory` may select an absolute Desktop/hosted data root; unset preserves current development behavior. Relative attachment/avatar settings resolve under that root and absolute overrides remain supported. Existing files are not moved automatically. Credentials resolve separately through provider configuration; choosing a data root does not relocate existing protected sessions. Domain records retain portable logical keys.

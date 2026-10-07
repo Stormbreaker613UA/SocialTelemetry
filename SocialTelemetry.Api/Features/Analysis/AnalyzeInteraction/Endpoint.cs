@@ -10,6 +10,7 @@ using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Observability;
 using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdate;
 
 namespace SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
@@ -26,28 +27,66 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
+        using var operation = SocialTelemetryTelemetry.Start("analysis.analyze_interaction", cancellationToken);
+        try
+        {
+            await AnalyzeAsync(request, cancellationToken);
+            operation.Complete();
+        }
+        catch (Exception exception)
+        {
+            operation.Fail(exception);
+            throw;
+        }
+    }
+
+    private async Task AnalyzeAsync(Request request, CancellationToken cancellationToken)
+    {
         BuiltAnalysisContext built;
         // A short snapshot protects context construction; no transaction spans provider inference.
         await using (var snapshot = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken))
         {
+            using var contextOperation = SocialTelemetryTelemetry.Start("analysis.build_context", cancellationToken);
             built = await contextBuilder.BuildAsync(request.InteractionId, request.UserQuestion, request.AttachmentIds, cancellationToken);
             await snapshot.CommitAsync(cancellationToken);
+            contextOperation.Complete();
         }
         var selected = await aiClient.GetSelectedModelAsync(cancellationToken);
         if (!selected.Supports(AiCapability.Text) || !selected.Supports(AiCapability.StructuredOutput) ||
             (built.Images.Count > 0 && !selected.Supports(AiCapability.Vision)))
             throw new AiProviderException(AiFailure.CapabilityMissing);
-        var completed = await aiClient.GenerateTextAsync(new AiTextRequest(AnalysisContract.Instructions, built.InputJson)
+        AiTextResponse completed;
+        using (var execution = SocialTelemetryTelemetry.StartAi(selected.ProviderId, selected.ModelId, built.Images.Count > 0))
         {
-            Images = built.Images, StructuredOutput = AnalysisContract.OutputContract(), SelectedModel = selected
-        }, cancellationToken);
-        var result = AnalysisContract.Validate(completed.Text, built.Context, options.Value.ResultCharacters);
+            try
+            {
+                completed = await aiClient.GenerateTextAsync(new AiTextRequest(AnalysisContract.Instructions, built.InputJson)
+                {
+                    Images = built.Images, StructuredOutput = AnalysisContract.OutputContract(), SelectedModel = selected
+                }, cancellationToken);
+                execution.SetExecutionProvenance(completed.ProviderId, completed.Model);
+                execution.Complete();
+            }
+            catch (Exception exception)
+            {
+                execution.Fail(exception);
+                throw;
+            }
+        }
+        InteractionAnalysisResult result;
+        using (var validation = SocialTelemetryTelemetry.Start("analysis.validate_result", cancellationToken))
+        {
+            result = AnalysisContract.Validate(completed.Text, built.Context, options.Value.ResultCharacters);
+            validation.Complete();
+        }
         await aiClient.ValidateExecutionAsync(completed, cancellationToken);
         using var persistence = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, completed.LifetimeCancellationToken);
         InteractionAnalysis persisted;
         try
         {
+            using var persistenceOperation = SocialTelemetryTelemetry.Start("analysis.persist", persistence.Token);
             persisted = await PersistAsync(request, built, completed, result, persistence.Token);
+            persistenceOperation.Complete();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && completed.LifetimeCancellationToken.IsCancellationRequested)
         {

@@ -341,6 +341,8 @@ Do not move large media into relational database BLOBs without a concrete reason
 
 Never log raw social/profile data, evidence, transcripts, prompts, complete AI results/provider envelopes, or credentials. Use identifiers, operation/status, counts/sizes, duration, exception type, and sanitized failure categories. Do not log callback queries or authorization URLs.
 
+Telemetry follows the same privacy boundary as logs and may be exported remotely. Use the shared `SocialTelemetryTelemetry` ActivitySource/Meter, technical metadata only, and low-cardinality metric dimensions; never emit private content, HTTP bodies, SQL values, or credentials.
+
 Use assembly/package metadata for application version and EF migrations for database schema evolution; do not add duplicate version constants/tables. Future portable backup must enumerate known durable data locations and approved user settings, excluding protected credentials, tokens, keys, and secrets by default. Backup/Export/Restore remains later work.
 
 ---

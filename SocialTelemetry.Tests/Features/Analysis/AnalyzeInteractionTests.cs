@@ -1,4 +1,6 @@
 using System.Net;
+using System.Diagnostics;
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Data.Common;
 using System.Text.Json;
@@ -18,6 +20,7 @@ using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Tests.Features.People;
 using SocialTelemetry.Tests.Infrastructure.AI;
 using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdate;
@@ -27,6 +30,79 @@ namespace SocialTelemetry.Tests.Features.Analysis;
 public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task PostgreSQL_failure_trace_exports_no_SQL_values_or_exception_details()
+    {
+        const string privateMarker = "PRIVATE_DATABASE_VALUE";
+        using var root = new Activity("synthetic-database-test").SetIdFormat(ActivityIdFormat.W3C).Start();
+        var spans = new ConcurrentQueue<(string Name, ActivityStatusCode Status, string Content)>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Npgsql",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.TraceId == root.TraceId)
+                    spans.Enqueue((activity.DisplayName, activity.Status,
+                        $"{activity.StatusDescription} {string.Join(' ', activity.TagObjects)} {string.Join(' ', activity.Events.Select(entry => string.Join(' ', entry.Tags)))}"));
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+        await using var scope = fixture.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => database.Database.ExecuteSqlRawAsync(
+            "SELECT CAST({0} AS integer)", new object[] { privateMarker }, Cancellation));
+        Assert.Contains(privateMarker, exception.Message);
+        Assert.Contains(spans, span => span.Name == "database.command" && span.Status == ActivityStatusCode.Error);
+        Assert.All(spans, span =>
+        {
+            Assert.DoesNotContain(privateMarker, span.Content);
+            Assert.DoesNotContain("db.query.text", span.Content);
+            Assert.DoesNotContain("db.npgsql.data_source", span.Content);
+            Assert.DoesNotContain("NpgsqlCommand", span.Content);
+        });
+    }
+
+    [Fact]
+    public async Task Synthetic_analysis_emits_owned_stage_hierarchy_and_safe_actual_execution_provenance()
+    {
+        var data = await SeedAsync();
+        var provider = new StubAiClient();
+        using var root = new Activity("synthetic-analysis-test").SetIdFormat(ActivityIdFormat.W3C).Start();
+        var spans = new ConcurrentQueue<(string Name, ActivitySpanId Id, ActivitySpanId Parent, Dictionary<string, object?> Tags)>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == SocialTelemetryTelemetry.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.TraceId == root.TraceId)
+                    spans.Enqueue((activity.OperationName, activity.SpanId, activity.ParentSpanId, activity.TagObjects.ToDictionary()));
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var app = CreateApp(provider);
+        using var client = CreateClient(app);
+        client.DefaultRequestHeaders.Add("traceparent", root.Id);
+        using var response = await client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze",
+            new { UserQuestion = "PRIVATE_EVIDENCE_PROMPT_MARKER" }, Cancellation);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var analysis = Assert.Single(spans, span => span.Name == "analysis.analyze_interaction");
+        foreach (var name in new[] { "analysis.build_context", "ai.execute", "analysis.validate_result", "analysis.persist" })
+        {
+            var stage = Assert.Single(spans, span => span.Name == name);
+            Assert.Equal(analysis.Id, stage.Parent);
+            Assert.Equal("success", stage.Tags["outcome"]);
+        }
+        var context = Assert.Single(spans, span => span.Name == "analysis.build_context");
+        Assert.Contains(spans, span => span.Name == "analysis.load_evidence" && span.Parent == context.Id);
+        var execution = Assert.Single(spans, span => span.Name == "ai.execute");
+        Assert.Equal("actual-provider", execution.Tags["ai.provider"]);
+        Assert.Equal("actual-returned", execution.Tags["ai.model"]);
+        Assert.Equal("selected-model", execution.Tags["ai.requested_model"]);
+        Assert.All(spans, span => Assert.DoesNotContain("PRIVATE_EVIDENCE_PROMPT_MARKER", string.Join(' ', span.Tags)));
+    }
 
     private AnalysisOptions AnalysisPolicy
     {
