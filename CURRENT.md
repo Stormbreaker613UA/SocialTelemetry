@@ -9,6 +9,7 @@ Updated: 2026-10-07
 - **AI Pass 7.2 — AnalyzeInteraction COMPLETE.** `POST /interactions/{interactionId}/analyze` returns a typed persisted analysis; local requests require `X-SocialTelemetry-Local: 1`.
 - Astra REQUIRED findings A1–A4 are resolved: endpoint request protection, commit-time context freshness, execution validity through commit, and SSE framing.
 - Profile/storage completion is finished: shared physical `IFileStorage`, separate UserProfile/Person avatars, Person archive/unarchive, and owner-scoped external connections with optional stable IDs. Avatars/external links are not AI evidence or fingerprint inputs; importers/UI remain future work.
+- **Product Foundation Gate COMPLETE.** `ApplicationPaths` preserves existing media/credential locations and supports a validated host data root; ownership/deletion and privacy/logging were audited. Shared-file cleanup, assembly-version availability, EF/config evolution, and backup readiness are verified. Backup/Export/Restore were not implemented; Audio has not started.
 - Runtime configuration is centralized in validated typed Options backed by `appsettings.json`; shipped defaults preserve prior behavior. Uploads, analysis input/aggregate-result limits, maintenance age, and provider timing/buffer policy are configurable within code-defined safety ceilings.
 - Provider-neutral `AiContextBuilder` supplies owned UserProfile/participant context, separates confirmed facts from inferences, and preserves unknown speakers rather than inventing attribution.
 - Default context bounds: 10 participants, latest 20 facts/10 relevant inferences per Person, and at most 5 earlier interactions with overlapping participants and no unrelated People; 64,000 total context characters.
@@ -21,14 +22,14 @@ Updated: 2026-10-07
 - F5 is complete: session generations/lifetime cancellation invalidate in-flight and late results on disconnect; reconnect cannot revive an old execution. No credential lock spans inference.
 - A3 uses a provider-neutral execution lease retaining shared credential-store protection from final session validation through save/commit. Disconnect/reconnect from another host cannot invalidate that protected commit.
 - Latest migration `20261007153015_AddProfileArchiveAndExternalConnections` follows `AddProfileAvatars`; all nine migrations are applied. The Compose database is up to date with no model mismatch; analysis guards remain per-UserProfile.
-- Automated verification: **347 total / 347 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
+- Automated verification: **360 total / 360 passed / 0 failed / 0 skipped**; build: **0 warnings / 0 errors**. Existing PostgreSQL Testcontainers tests ran; automated AI tests use fakes, never the real provider.
 - Live synthetic text and screenshot analyses passed with `chatgpt-plan` / `gpt-5.6-sol`; typed results and persisted provider/model/schema/prompt/fingerprint were verified. Natural refresh occurred without expiry manipulation. Synthetic records/files were removed through normal deletion workflows; observed logs contained no evidence/prompts/tokens.
 - Tooling remains .NET SDK `10.0.401` (`global.json`, latestPatch, no prereleases), `net10.0`, xUnit v3/MTP v2, and Docker Compose `postgres:18` (18.6, healthy).
 - Root verification: `dotnet restore`, `dotnet build SocialTelemetry.slnx`, `dotnet test --solution SocialTelemetry.slnx --no-build`, and `docker compose config`.
 
 ## Current Task
 
-Next checkpoint: **AI Pass 7.2.1 — Audio ingestion / persisted transcription.** Audio has not started.
+Next checkpoint: **AI Pass 7.2.1 — Audio ingestion / persisted transcription.** Audio has not started. Foundation work is closed unless a concrete defect or blocker is discovered.
 
 ## Immediate Next Steps
 

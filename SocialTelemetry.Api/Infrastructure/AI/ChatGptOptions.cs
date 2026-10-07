@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SocialTelemetry.Api.Infrastructure.Runtime;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
@@ -6,8 +7,7 @@ public sealed class ChatGptOptions
 {
     public const string CallbackPath = "/ai-connection/chatgpt/callback";
     public string CallbackUri { get; set; } = "http://127.0.0.1:5059" + CallbackPath;
-    public string DataDirectory { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SocialTelemetry", "ChatGpt");
+    public string DataDirectory { get; set; } = ApplicationPaths.DefaultCredentialDirectory("ChatGpt");
 
     [Range(typeof(TimeSpan), "00:00:00.001", "00:05:00")]
     public TimeSpan HttpTimeout { get; set; } = TimeSpan.FromSeconds(30);

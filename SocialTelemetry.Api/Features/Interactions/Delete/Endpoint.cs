@@ -37,8 +37,8 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
         {
             if (attachment.StorageKey is not null)
             {
-                await attachmentStorage.DeleteAsync(attachment.StorageKey, cancellationToken);
-                await attachmentStorage.DeleteStagedAsync(attachment.StorageKey, cancellationToken);
+                await AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(
+                    dbContext, attachmentStorage, attachment.StorageKey, cancellationToken);
             }
         }
 

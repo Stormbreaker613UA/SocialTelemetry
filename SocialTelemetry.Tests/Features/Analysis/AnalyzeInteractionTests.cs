@@ -247,6 +247,10 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     {
         var data = await SeedAsync();
         var storage = new MemoryAttachmentStorage { Bytes = PngBytes() };
+        var provider = new StubAiClient();
+        using var app = CreateApp(provider, storage);
+        using var client = CreateClient(app);
+        // Create the selected state after startup recovery; this test verifies request validation.
         var owner = fault == "foreign" ? data.ForeignInteractionId : data.InteractionId;
         var type = fault == "audio" ? AttachmentType.Audio : AttachmentType.Image;
         var status = fault == "pending" ? AttachmentStatus.Pending : fault == "deleting" ? AttachmentStatus.Deleting : AttachmentStatus.Ready;
@@ -263,9 +267,6 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
             await dbContext.SaveChangesAsync(Cancellation);
             attachment.Id = data.TextId;
         }
-        var provider = new StubAiClient();
-        using var app = CreateApp(provider, storage);
-        using var client = CreateClient(app);
         using var response = await AnalyzeAsync(client, data.InteractionId, [fault == "missing" ? Guid.NewGuid() : attachment.Id]);
         Assert.Equal(expected, response.StatusCode);
         if (code is not null) Assert.Contains(code, await response.Content.ReadAsStringAsync(Cancellation));

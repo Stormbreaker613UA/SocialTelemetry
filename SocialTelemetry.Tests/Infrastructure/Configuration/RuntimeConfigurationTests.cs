@@ -7,11 +7,78 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.Runtime;
 
 namespace SocialTelemetry.Tests.Infrastructure.Configuration;
 
 public sealed class RuntimeConfigurationTests
 {
+    [Fact]
+    public void Default_paths_preserve_existing_media_and_credential_locations()
+    {
+        using var application = CreateApp();
+        using var client = application.CreateClient();
+        var paths = application.Services.GetRequiredService<ApplicationPaths>();
+        var environment = application.Services.GetRequiredService<IWebHostEnvironment>();
+        Assert.Equal(environment.ContentRootPath, paths.RootDirectory);
+        Assert.Equal(Path.Combine(environment.ContentRootPath, "attachments"), paths.Attachments(new()));
+        Assert.Equal(Path.Combine(environment.ContentRootPath, "attachments", "avatars"), paths.Avatars(new(), new()));
+        var credentials = application.Services.GetRequiredService<IOptions<ChatGptOptions>>().Value.DataDirectory;
+        Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SocialTelemetry", "ChatGpt"), paths.ResolveCredentialDirectory(credentials));
+    }
+
+    [Fact]
+    public void Host_data_root_redirects_relative_media_without_moving_credentials_or_absolute_overrides()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "SocialTelemetry.Tests", Guid.NewGuid().ToString("N"));
+        using var application = CreateApp(new() { ["ApplicationData:RootDirectory"] = root });
+        using var client = application.CreateClient();
+        var paths = application.Services.GetRequiredService<ApplicationPaths>();
+        Assert.Equal(Path.Combine(root, "attachments"), paths.Attachments(new()));
+        Assert.Equal(Path.Combine(root, "attachments", "avatars"), paths.Avatars(new(), new()));
+        var external = Path.Combine(Path.GetTempPath(), "SocialTelemetry.Tests", Guid.NewGuid().ToString("N"));
+        Assert.Equal(external, paths.Attachments(new() { LocalDirectory = external }));
+        Assert.Equal(external, paths.Avatars(new() { AvatarDirectory = external }, new()));
+        var credentials = application.Services.GetRequiredService<IOptions<ChatGptOptions>>().Value.DataDirectory;
+        Assert.Equal(Path.GetFullPath(credentials), paths.ResolveCredentialDirectory(credentials));
+    }
+
+    [Theory]
+    [InlineData("relative-directory")]
+    [InlineData(" ")]
+    public void Invalid_host_data_root_is_rejected_at_startup(string root)
+    {
+        using var application = CreateApp(new() { ["ApplicationData:RootDirectory"] = root });
+        var exception = Assert.ThrowsAny<Exception>(() => application.CreateClient());
+        Assert.Contains(nameof(OptionsValidationException), exception.ToString());
+    }
+
+    [Fact]
+    public void Application_version_is_available_from_assembly_metadata()
+    {
+        var assembly = typeof(Program).Assembly;
+        Assert.NotNull(assembly.GetName().Version);
+        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+        Assert.NotNull(version);
+        Assert.False(string.IsNullOrWhiteSpace(version.InformationalVersion));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Media_final_and_staging_directories_cannot_overlap(bool reversed)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "SocialTelemetry.Tests", Guid.NewGuid().ToString("N"));
+        using var application = CreateApp(new()
+        {
+            ["AttachmentStorage:LocalDirectory"] = reversed ? Path.Combine(directory, ".staging") : directory,
+            ["ProfileStorage:AvatarDirectory"] = reversed ? directory : Path.Combine(directory, ".staging")
+        });
+        var exception = Assert.ThrowsAny<Exception>(() => application.CreateClient());
+        Assert.Contains(nameof(OptionsValidationException), exception.ToString());
+    }
+
     [Fact]
     public void Shipped_settings_bind_every_policy_and_preserve_previous_defaults()
     {

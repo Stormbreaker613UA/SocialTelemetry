@@ -144,8 +144,8 @@ public sealed class Endpoint(
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(CancellationToken.None);
             await dbContext.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
-            await attachmentStorage.DeleteAsync(attachment.StorageKey, CancellationToken.None);
-            await attachmentStorage.DeleteStagedAsync(attachment.StorageKey, CancellationToken.None);
+            await AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(
+                dbContext, attachmentStorage, attachment.StorageKey, CancellationToken.None);
             await dbContext.InteractionAttachments
                 .Where(existingAttachment => existingAttachment.Id == attachment.Id)
                 .ExecuteDeleteAsync(CancellationToken.None);

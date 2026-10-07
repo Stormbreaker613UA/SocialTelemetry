@@ -84,8 +84,8 @@ public sealed class AttachmentReconciliationService(
             .ToListAsync(cancellationToken);
         var referencedKeySet = referencedKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var cutoff = DateTimeOffset.UtcNow - options.Value.OrphanSafetyAge;
-        await RemoveOrphansAsync(storage, storage.EnumerateFiles(), referencedKeySet, cutoff, staged: false, cancellationToken);
-        await RemoveOrphansAsync(storage, storage.EnumerateStagedFiles(), referencedKeySet, cutoff, staged: true, cancellationToken);
+        await RemoveOrphansAsync(dbContext, storage, storage.EnumerateFiles(), referencedKeySet, cutoff, staged: false, cancellationToken);
+        await RemoveOrphansAsync(dbContext, storage, storage.EnumerateStagedFiles(), referencedKeySet, cutoff, staged: true, cancellationToken);
     }
 
     private async Task RecoverAttachmentAsync(
@@ -112,8 +112,8 @@ public sealed class AttachmentReconciliationService(
         {
             if (attachment.StorageKey is not null)
             {
-                await storage.DeleteAsync(attachment.StorageKey, cancellationToken);
-                await storage.DeleteStagedAsync(attachment.StorageKey, cancellationToken);
+                await AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(
+                    dbContext, storage, attachment.StorageKey, cancellationToken);
             }
 
             dbContext.InteractionAttachments.Remove(attachment);
@@ -127,6 +127,7 @@ public sealed class AttachmentReconciliationService(
     }
 
     private async Task RemoveOrphansAsync(
+        AppDbContext dbContext,
         IAttachmentStorage storage,
         IEnumerable<StoredAttachmentFile> files,
         HashSet<string> referencedKeys,
@@ -144,6 +145,8 @@ public sealed class AttachmentReconciliationService(
 
             try
             {
+                // Recheck current ownership: the earlier snapshot must not authorize deletion.
+                if (await AttachmentFileCleanup.IsReferencedAsync(dbContext, file.StorageKey, cancellationToken)) continue;
                 if (staged)
                 {
                     await storage.DeleteStagedAsync(file.StorageKey, cancellationToken);

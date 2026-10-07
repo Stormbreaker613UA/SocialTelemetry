@@ -52,7 +52,12 @@ public sealed class ProfileAvatarCleanup(
         }
     }
 
-    public static async Task<bool> IsReferencedAsync(AppDbContext database, string key, CancellationToken cancellationToken) =>
-        await database.UserProfiles.AsNoTracking().AnyAsync(profile => profile.AvatarStorageKey == key, cancellationToken) ||
-        await database.People.AsNoTracking().AnyAsync(person => person.AvatarStorageKey == key, cancellationToken);
+    public static async Task<bool> IsReferencedAsync(AppDbContext database, string key, CancellationToken cancellationToken)
+    {
+        var normalizedKey = key.ToLowerInvariant();
+        return await database.UserProfiles.AsNoTracking().AnyAsync(profile => profile.AvatarStorageKey != null &&
+            profile.AvatarStorageKey.ToLower() == normalizedKey, cancellationToken) ||
+            await database.People.AsNoTracking().AnyAsync(person => person.AvatarStorageKey != null &&
+                person.AvatarStorageKey.ToLower() == normalizedKey, cancellationToken);
+    }
 }

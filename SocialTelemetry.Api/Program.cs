@@ -10,6 +10,7 @@ using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.Runtime;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,14 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
+builder.Services.AddOptions<ApplicationDataOptions>()
+    .BindConfiguration("ApplicationData")
+    .Validate(options => options.RootDirectory is null ||
+        (Path.IsPathFullyQualified(options.RootDirectory) &&
+         ApplicationPaths.IsValidDirectory(options.RootDirectory, builder.Environment.ContentRootPath)),
+        "ApplicationData requires a valid absolute root directory when configured.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ApplicationPaths>();
 builder.Services.AddOptions<ChatGptOptions>()
     .BindConfiguration("ChatGpt")
     .ValidateDataAnnotations()
@@ -51,20 +60,18 @@ builder.Services.AddOptions<StorageMaintenanceOptions>()
     .BindConfiguration("StorageMaintenance").ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddOptions<AttachmentStorageOptions>()
     .BindConfiguration("AttachmentStorage")
-    .Validate(options => StorageDirectories.IsValid(options.LocalDirectory, builder.Environment.ContentRootPath),
+    .Validate<ApplicationPaths>((options, paths) => ApplicationPaths.IsValidDirectory(options.LocalDirectory, paths.RootDirectory),
         "AttachmentStorage requires a valid directory without symbolic links.")
     .ValidateOnStart();
 builder.Services.AddOptions<ProfileStorageOptions>()
     .BindConfiguration("ProfileStorage")
-    .Validate<IOptions<AttachmentStorageOptions>>((options, attachments) =>
+    .Validate<IOptions<AttachmentStorageOptions>, ApplicationPaths>((options, attachments, paths) =>
     {
-        var attachmentPath = StorageDirectories.Attachments(attachments.Value, builder.Environment.ContentRootPath);
+        var attachmentPath = paths.Attachments(attachments.Value);
         var directory = options.AvatarDirectory ?? Path.Combine(attachmentPath, "avatars");
-        if (!StorageDirectories.IsValid(directory, builder.Environment.ContentRootPath)) return false;
-        var avatarPath = StorageDirectories.Avatars(options, attachments.Value, builder.Environment.ContentRootPath);
-        return !string.Equals(Path.TrimEndingDirectorySeparator(attachmentPath), Path.TrimEndingDirectorySeparator(avatarPath),
-            StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(Path.Combine(attachmentPath, ".staging"), Path.TrimEndingDirectorySeparator(avatarPath), StringComparison.OrdinalIgnoreCase);
+        if (!ApplicationPaths.IsValidDirectory(directory, paths.RootDirectory)) return false;
+        var avatarPath = paths.Avatars(options, attachments.Value);
+        return ApplicationPaths.AreStorageAreasSeparate(attachmentPath, avatarPath);
     }, "ProfileStorage requires a valid avatar directory separate from attachment files and staging.")
     .ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -87,19 +94,19 @@ builder.Services.AddHttpClient<ChatGptHttpClient>((services, client) =>
 builder.Services.AddScoped<IAiClient, ChatGptPlanAiClient>();
 builder.Services.AddKeyedSingleton<IFileStorage>("attachments", (services, _) =>
 {
-    var environment = services.GetRequiredService<IWebHostEnvironment>();
+    var paths = services.GetRequiredService<ApplicationPaths>();
     var options = services.GetRequiredService<IOptions<AttachmentStorageOptions>>().Value;
     return new LocalFileStorage(
-        StorageDirectories.Attachments(options, environment.ContentRootPath),
+        paths.Attachments(options),
         services.GetRequiredService<ILogger<LocalFileStorage>>());
 });
 builder.Services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
 builder.Services.AddKeyedSingleton<IFileStorage>("avatars", (services, _) =>
 {
-    var environment = services.GetRequiredService<IWebHostEnvironment>();
+    var paths = services.GetRequiredService<ApplicationPaths>();
     var attachments = services.GetRequiredService<IOptions<AttachmentStorageOptions>>().Value;
     var profiles = services.GetRequiredService<IOptions<ProfileStorageOptions>>().Value;
-    return new LocalFileStorage(StorageDirectories.Avatars(profiles, attachments, environment.ContentRootPath),
+    return new LocalFileStorage(paths.Avatars(profiles, attachments),
         services.GetRequiredService<ILogger<LocalFileStorage>>());
 });
 builder.Services.AddScoped<ProfileAvatarCleanup>();

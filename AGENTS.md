@@ -107,7 +107,13 @@ For small features, logic may live inside the Endpoint.
 
 If feature logic becomes non-trivial, extract it only when doing so improves readability.
 
-Do not introduce a separate handler, service, command, or query merely for architectural ceremony.
+Do not introduce a separate handler, service, command, or query merely for architectural ceremony. Respect feature/subsystem ownership; use a small existing stable boundary instead of reaching into another feature's private implementation.
+
+---
+
+## Runtime Configuration
+
+Operational policy (limits, sizes, counts, timeouts, cache lifetimes, retries, maintenance timing) uses validated typed Options with shipped defaults in `appsettings.json`. Do not scatter policy literals or read configuration keys in feature code. Keep schema constraints, protocol/cryptographic rules, file signatures, status values, safety ceilings, and ordinary implementation constants in code. Add optional settings through safe defaults plus validation; do not add a persistent settings system or configuration migration framework without a current requirement. Secrets remain outside ordinary configuration.
 
 ---
 
@@ -160,7 +166,7 @@ Do not add unless explicitly requested by the current task or already accepted i
 - React
 - TypeScript SPA architecture
 
-Do not split the core application into additional projects without a concrete reason.
+The core remains a VSA modular monolith. Do not split `SocialTelemetry.Api` into Domain/Application/Infrastructure or module class libraries without a concrete technical/runtime reason and user approval. Prefer logical boundaries; extract physical projects only when justified.
 
 `SocialTelemetry.Desktop` is an approved exception when WebView2 is implemented. It must remain a thin Windows host only.
 
@@ -319,6 +325,8 @@ Do not silently guess speaker identity when evidence is ambiguous.
 
 ## Attachment Storage Boundaries
 
+Infrastructure resolves persistent locations through `ApplicationPaths`; feature/domain code must not construct arbitrary application-data paths. Desktop and hosted runtimes may select different roots without silently moving existing data. Persist logical storage keys, never absolute machine paths.
+
 Feature/domain code must not depend on physical local file-system paths.
 
 Use the existing attachment storage abstraction.
@@ -326,6 +334,14 @@ Use the existing attachment storage abstraction.
 Local mode may use local file storage. Future server deployments may use another storage implementation without changing interaction/domain behavior.
 
 Do not move large media into relational database BLOBs without a concrete reason.
+
+---
+
+## Privacy and Upgrade Readiness
+
+Never log raw social/profile data, evidence, transcripts, prompts, complete AI results/provider envelopes, or credentials. Use identifiers, operation/status, counts/sizes, duration, exception type, and sanitized failure categories. Do not log callback queries or authorization URLs.
+
+Use assembly/package metadata for application version and EF migrations for database schema evolution; do not add duplicate version constants/tables. Future portable backup must enumerate known durable data locations and approved user settings, excluding protected credentials, tokens, keys, and secrets by default. Backup/Export/Restore remains later work.
 
 ---
 

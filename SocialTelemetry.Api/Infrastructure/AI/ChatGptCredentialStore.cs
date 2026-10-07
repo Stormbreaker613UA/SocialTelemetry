@@ -2,12 +2,13 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
+using SocialTelemetry.Api.Infrastructure.Runtime;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
-public sealed class ChatGptCredentialStore(IOptions<ChatGptOptions> options)
+public sealed class ChatGptCredentialStore(IOptions<ChatGptOptions> options, ApplicationPaths paths)
 {
-    private readonly string directory = options.Value.DataDirectory;
+    private readonly string directory = paths.ResolveCredentialDirectory(options.Value.DataDirectory);
     private readonly SemaphoreSlim gate = new(1, 1);
     private IDataProtector? protector;
 

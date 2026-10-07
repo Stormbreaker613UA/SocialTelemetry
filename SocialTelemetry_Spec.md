@@ -131,6 +131,8 @@ The core domain should not be called “Dating” because the application is bro
 
 ### Profile media, archive, and external connections
 
+UserProfile is the ownership root. Validate matching profiles on writable cross-links and scope reads to owned records; foreign keys alone do not prove profile isolation. Person deletion removes its facts/inferences, external connections, avatar reference, participants, and person-bound suggestions while shared interactions/analyses remain historical records. Interaction deletion cascades analyses/messages/suggestions, sourced inferences, and attachment metadata; UserProfile deletion cascades its domain graph. Physical cleanup must preserve any surviving Ready/Pending attachment or avatar reference; failed/cascaded file cleanup is recoverable through startup reconciliation and the configured orphan safety age.
+
 UserProfile and Person may each have one optional avatar. Avatars are presentation media, not InteractionAttachments or AI evidence: changing them does not enter AI context or invalidate analysis fingerprints. Upload/replace/get/delete supports bounded PNG/JPEG/WebP with MIME/signature validation. Finalize new bytes before changing the reference; retain the old avatar on failure and clean obsolete files after successful persistence. Aged orphan files are recovered through startup cleanup.
 
 `Person.ArchivedAt` records archive state without deleting Facts, Inferences, interactions/history, analyses, or external connections. Archive/unarchive is explicit; People lists include all profiles by default, with an optional explicit archive filter. UI grouping comes later.
@@ -1388,6 +1390,14 @@ Desktop / local Windows mode   <- primary end-user local experience
 
 The WebView2 shell prevents the local product from depending on the lifecycle of an arbitrary browser tab/window. Closing the desktop application should shut down the owned local host cleanly. Development can still use a normal browser for convenience.
 
+### Persistent paths, upgrades, and backup readiness
+
+`ApplicationPaths` is the infrastructure boundary for physical persistent locations. `ApplicationData:RootDirectory` may select an absolute Desktop/hosted data root; unset preserves current development behavior. Relative attachment/avatar settings resolve under that root and absolute overrides remain supported. Existing files are not moved automatically. Credentials resolve separately through provider configuration; choosing a data root does not relocate existing protected sessions. Domain records retain portable logical keys.
+
+Current durable media areas are the configured attachment/avatar directories (including staging); development/server PostgreSQL data is managed by its configured database/Compose volume rather than an application file path. Future local database, transcripts, models, logs, and approved user configuration should use this path boundary when implemented. Backup must enumerate identified durable areas/database data, not crawl arbitrary working directories. Ordinary portable backups exclude provider credentials/tokens, OAuth state/protection keys, API keys, and other secrets by default, even when a host places protected storage under a common root. No Backup/Export/Restore implementation or archive format is introduced here.
+
+Application version comes from assembly/package metadata. EF migrations remain the only database schema evolution mechanism, including future data-preserving local upgrades. New optional configuration uses shipped defaults plus startup validation; no separate schema-version table or JSON migration framework is needed.
+
 Target local data layout:
 
 ```text
@@ -1574,6 +1584,8 @@ The Qwen/Whisper reference choices concretize already-planned v1 work; they add 
 ## 32. Privacy / Context Boundaries
 
 SocialTelemetry handles sensitive personal conversations and media. For v1:
+
+Logging uses technical identifiers, operation/status, counts/sizes, duration, exception type, and sanitized categories only. Never log raw social/profile text, evidence/transcripts, prompts, complete AI outputs/provider envelopes, tokens, credentials, authorization URLs, or callback query parameters.
 
 ```text
 - AI context is bounded; do not send an entire lifetime of history by default.
