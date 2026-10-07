@@ -39,6 +39,8 @@ public sealed class ExceptionPipelineTests
                 var reconciliation = services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(AttachmentReconciliationService));
                 services.Remove(reconciliation);
+                services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
+                    service.ImplementationType == typeof(ProfileAvatarReconciliationService)));
                 services.AddSingleton<ILogEventSink>(sink);
                 services.AddSingleton<IStartupFilter, FailureStartupFilter>();
             });

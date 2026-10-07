@@ -65,6 +65,19 @@ builder.Services.AddKeyedSingleton<IFileStorage>("attachments", (services, _) =>
         services.GetRequiredService<ILogger<LocalFileStorage>>());
 });
 builder.Services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
+builder.Services.AddKeyedSingleton<IFileStorage>("avatars", (services, _) =>
+{
+    var environment = services.GetRequiredService<IWebHostEnvironment>();
+    var configuration = services.GetRequiredService<IConfiguration>();
+    var attachmentDirectory = configuration["AttachmentStorage:LocalDirectory"] ?? "attachments";
+    var directory = configuration["ProfileStorage:AvatarDirectory"]
+        ?? Path.Combine(attachmentDirectory, "avatars");
+    return new LocalFileStorage(Path.GetFullPath(directory, environment.ContentRootPath),
+        services.GetRequiredService<ILogger<LocalFileStorage>>());
+});
+builder.Services.AddScoped<ProfileAvatarCleanup>();
+builder.Services.AddScoped<ProfileAvatarService>();
+builder.Services.AddHostedService<ProfileAvatarReconciliationService>();
 builder.Services.AddHostedService<AttachmentReconciliationService>();
 builder.Services.AddScoped<AiContextBuilder>();
 

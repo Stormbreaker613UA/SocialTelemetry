@@ -46,6 +46,8 @@ internal sealed class ChatGptTestApp : IDisposable
                 var reconciliation = services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(AttachmentReconciliationService));
                 services.Remove(reconciliation);
+                services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
+                    service.ImplementationType == typeof(ProfileAvatarReconciliationService)));
                 services.Configure<ChatGptOptions>(options => options.DataDirectory = DataDirectory);
                 services.RemoveAll<ISystemBrowser>();
                 services.AddSingleton<ISystemBrowser>(Browser);

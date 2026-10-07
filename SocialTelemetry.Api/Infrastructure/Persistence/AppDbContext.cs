@@ -3,10 +3,13 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Infrastructure.Persistence;
 
-public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public sealed partial class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    ProfileAvatarCleanup? avatarCleanup = null) : DbContext(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<Person> People => Set<Person>();
@@ -37,9 +40,18 @@ public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options)
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        var obsoleteAvatarKeys = avatarCleanup is null
+            ? []
+            : await avatarCleanup.FindObsoleteKeysAsync(this, cancellationToken);
+        var hasExternalTransaction = Database.CurrentTransaction is not null;
         var sourceChanges = AnalysisSourceChanges();
         if (sourceChanges.Length == 0)
-            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        {
+            var savedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            if (!hasExternalTransaction && avatarCleanup is not null)
+                await avatarCleanup.DeleteUnreferencedAsync(this, obsoleteAvatarKeys);
+            return savedRows;
+        }
 
         if (Database.CurrentTransaction is not null)
         {
@@ -51,6 +63,8 @@ public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options)
         await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
         var affectedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        if (avatarCleanup is not null)
+            await avatarCleanup.DeleteUnreferencedAsync(this, obsoleteAvatarKeys);
         return affectedRows;
     }
 
@@ -89,6 +103,10 @@ public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        modelBuilder.Entity<UserProfile>().Property(profile => profile.AvatarStorageKey).HasMaxLength(32).IsConcurrencyToken();
+        modelBuilder.Entity<UserProfile>().Property(profile => profile.AvatarMimeType).HasMaxLength(32);
+        modelBuilder.Entity<Person>().Property(person => person.AvatarStorageKey).HasMaxLength(32).IsConcurrencyToken();
+        modelBuilder.Entity<Person>().Property(person => person.AvatarMimeType).HasMaxLength(32);
 
         modelBuilder.Entity<InteractionParticipant>()
             .HasKey(participant => new { participant.InteractionId, participant.PersonId });

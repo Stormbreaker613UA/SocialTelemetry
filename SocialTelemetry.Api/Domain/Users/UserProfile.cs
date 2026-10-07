@@ -13,6 +13,8 @@ public sealed class UserProfile
     public string? Preferences { get; set; }
     public string? Boundaries { get; set; }
     public string? AiInstructions { get; set; }
+    public string? AvatarStorageKey { get; set; }
+    public string? AvatarMimeType { get; set; }
 
     public ICollection<Person> People { get; set; } = new List<Person>();
     public ICollection<Interaction> Interactions { get; set; } = new List<Interaction>();
