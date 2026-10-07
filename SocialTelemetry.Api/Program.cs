@@ -55,6 +55,15 @@ builder.Services.AddHttpClient<ChatGptHttpClient>(client =>
     })
     .RemoveAllLoggers();
 builder.Services.AddScoped<IAiClient, ChatGptPlanAiClient>();
+builder.Services.AddKeyedSingleton<IFileStorage>("attachments", (services, _) =>
+{
+    var environment = services.GetRequiredService<IWebHostEnvironment>();
+    var configuration = services.GetRequiredService<IConfiguration>();
+    var directory = configuration["AttachmentStorage:LocalDirectory"];
+    return new LocalFileStorage(
+        Path.GetFullPath(string.IsNullOrWhiteSpace(directory) ? "attachments" : directory, environment.ContentRootPath),
+        services.GetRequiredService<ILogger<LocalFileStorage>>());
+});
 builder.Services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
 builder.Services.AddHostedService<AttachmentReconciliationService>();
 builder.Services.AddScoped<AiContextBuilder>();
