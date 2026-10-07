@@ -76,6 +76,7 @@ UserProfile
 - Preferences
 - Boundaries
 - AiInstructions
+- AvatarStorageKey? / AvatarMimeType?   optional profile media
 ```
 
 Example AI instructions:
@@ -111,6 +112,8 @@ Person
 - Notes
 - CreatedAt
 - UpdatedAt
+- ArchivedAt?            archive without deleting history
+- AvatarStorageKey? / AvatarMimeType?   optional profile media
 ```
 
 Relationship context should stay generic:
@@ -125,6 +128,16 @@ Other
 ```
 
 The core domain should not be called “Dating” because the application is broader than dating.
+
+### Profile media, archive, and external connections
+
+UserProfile and Person may each have one optional avatar. Avatars are presentation media, not InteractionAttachments or AI evidence: changing them does not enter AI context or invalidate analysis fingerprints. Upload/replace/get/delete supports bounded PNG/JPEG/WebP with MIME/signature validation. Finalize new bytes before changing the reference; retain the old avatar on failure and clean obsolete files after successful persistence. Aged orphan files are recovered through startup cleanup.
+
+`Person.ArchivedAt` records archive state without deleting Facts, Inferences, interactions/history, analyses, or external connections. Archive/unarchive is explicit; People lists include all profiles by default, with an optional explicit archive filter. UI grouping comes later.
+
+External identities use separate `UserProfileExternalConnection` and `PersonExternalConnection` entities, each with its own owner FK and cascade deletion. Fields: Id, owner ID, Platform, optional ExternalUserId/Handle/DisplayName/ProfileUrl, CreatedAt, UpdatedAt. Platform is a normalized lowercase string, not a database enum; stable external IDs stay opaque. An owner/platform/stable-ID combination is unique when the ID is present; absent IDs do not imply identity equivalence. URLs are optional HTTP(S) profile links, not instructions to fetch content.
+
+These records support future linking/import without implementing platform APIs, synchronization, automatic merging, authentication, or importers. They do not automatically become AI context.
 
 ---
 
@@ -239,6 +252,8 @@ Interaction.PersonId
 ---
 
 ## 5. Interaction Attachments
+
+Physical byte storage is replaceable through `IFileStorage` (currently `LocalFileStorage`). The attachment-facing `IAttachmentStorage` adapter retains the existing staging/finalization/reconciliation lifecycle; profile avatars use a separate storage area. Future message/imported files may reuse physical storage without becoming InteractionAttachments. Feature/domain code uses storage keys, never physical paths. Cloud storage implementations remain future work.
 
 An interaction may include extra evidence/context. Attachments are **AI evidence**, not merely files stored next to an Interaction:
 

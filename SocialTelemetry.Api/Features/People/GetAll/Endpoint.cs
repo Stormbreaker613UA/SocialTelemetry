@@ -17,6 +17,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
         var people = await dbContext.People
             .AsNoTracking()
             .Where(person => person.UserProfileId == request.UserProfileId)
+            .Where(person => request.Archived == null || (person.ArchivedAt != null) == request.Archived)
             .OrderBy(person => person.DisplayName)
             .Select(person => new PersonResponse(
                 person.Id,
@@ -28,7 +29,8 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
                 person.HowWeMet,
                 person.Notes,
                 person.CreatedAt,
-                person.UpdatedAt))
+                person.UpdatedAt,
+                person.ArchivedAt))
             .ToListAsync(cancellationToken);
 
         await Send.OkAsync(new Response(people), cancellationToken);

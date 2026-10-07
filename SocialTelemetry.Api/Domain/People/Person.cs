@@ -17,6 +17,7 @@ public sealed class Person
     public DateTimeOffset UpdatedAt { get; set; }
     public string? AvatarStorageKey { get; set; }
     public string? AvatarMimeType { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
 
     public UserProfile UserProfile { get; set; } = null!;
     public ICollection<PersonFact> Facts { get; set; } = new List<PersonFact>();

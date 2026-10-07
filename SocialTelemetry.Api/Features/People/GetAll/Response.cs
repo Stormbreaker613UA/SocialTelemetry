@@ -14,4 +14,5 @@ public sealed record PersonResponse(
     string? HowWeMet,
     string? Notes,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? ArchivedAt = null);

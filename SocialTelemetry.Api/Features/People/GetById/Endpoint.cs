@@ -28,7 +28,8 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
                 person.HowWeMet,
                 person.Notes,
                 person.CreatedAt,
-                person.UpdatedAt))
+                person.UpdatedAt,
+                person.ArchivedAt))
             .SingleOrDefaultAsync(cancellationToken);
 
         if (person is null)

@@ -12,6 +12,8 @@ public sealed partial class AppDbContext(
     ProfileAvatarCleanup? avatarCleanup = null) : DbContext(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
+    public DbSet<UserProfileExternalConnection> UserProfileExternalConnections => Set<UserProfileExternalConnection>();
+    public DbSet<PersonExternalConnection> PersonExternalConnections => Set<PersonExternalConnection>();
     public DbSet<Person> People => Set<Person>();
     public DbSet<PersonFact> PersonFacts => Set<PersonFact>();
     public DbSet<PersonInference> PersonInferences => Set<PersonInference>();
