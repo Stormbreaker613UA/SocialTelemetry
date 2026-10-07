@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Infrastructure.Storage;
 
-public sealed class ProfileAvatarReconciliationService(IServiceScopeFactory scopeFactory) : IHostedService
+public sealed class ProfileAvatarReconciliationService(IServiceScopeFactory scopeFactory,
+    IOptions<StorageMaintenanceOptions> options) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -22,7 +24,7 @@ public sealed class ProfileAvatarReconciliationService(IServiceScopeFactory scop
                 if (!await storage.ExistsAsync(key, cancellationToken))
                     logger.LogWarning("Avatar {StorageKey} is missing; its profile reference remains unchanged", key);
 
-            var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromHours(1);
+            var cutoff = DateTimeOffset.UtcNow - options.Value.OrphanSafetyAge;
             var orphans = storage.EnumerateFiles().Concat(storage.EnumerateStagedFiles())
                 .Where(file => file.LastModified < cutoff).Select(file => file.StorageKey).ToArray();
             await cleanup.DeleteUnreferencedAsync(database, orphans);

@@ -16,6 +16,8 @@ public static class AnalysisContract
         PropertyNameCaseInsensitive = false,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
+    // Item/text bounds are part of the versioned result contract, not runtime policy.
+    // Only the aggregate response-size ceiling is configurable.
     public const string Instructions = """
         You help interpret social interactions, not read minds. Return the requested structured analysis.
         Distinguish observations from interpretations. Do not claim certainty about anyone's internal
@@ -70,9 +72,9 @@ public static class AnalysisContract
         ["required"] = new JsonArray(properties.Select(property => (JsonNode?)JsonValue.Create(property.Key)).ToArray())
     };
 
-    public static InteractionAnalysisResult Validate(string output, InteractionAnalysisContext context)
+    public static InteractionAnalysisResult Validate(string output, InteractionAnalysisContext context, int maximumResultCharacters)
     {
-        if (output.Length > AnalysisLimits.ResultCharacters) throw Invalid();
+        if (output.Length > maximumResultCharacters) throw Invalid();
         try
         {
             using var document = JsonDocument.Parse(output);

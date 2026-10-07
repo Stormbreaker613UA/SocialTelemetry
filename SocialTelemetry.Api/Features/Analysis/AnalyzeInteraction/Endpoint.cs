@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
@@ -14,7 +15,7 @@ using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdat
 namespace SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
 
 public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBuilder, IAiClient aiClient,
-    ILogger<Endpoint> logger) : Endpoint<Request, Response>
+    ILogger<Endpoint> logger, IOptions<AnalysisOptions> options) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -40,7 +41,7 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
         {
             Images = built.Images, StructuredOutput = AnalysisContract.OutputContract(), SelectedModel = selected
         }, cancellationToken);
-        var result = AnalysisContract.Validate(completed.Text, built.Context);
+        var result = AnalysisContract.Validate(completed.Text, built.Context, options.Value.ResultCharacters);
         await aiClient.ValidateExecutionAsync(completed, cancellationToken);
         using var persistence = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, completed.LifetimeCancellationToken);
         InteractionAnalysis persisted;

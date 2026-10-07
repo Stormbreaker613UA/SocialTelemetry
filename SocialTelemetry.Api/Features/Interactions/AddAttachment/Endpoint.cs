@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
@@ -9,16 +10,15 @@ namespace SocialTelemetry.Api.Features.Interactions.AddAttachment;
 public sealed class Endpoint(
     AppDbContext dbContext,
     IAttachmentStorage attachmentStorage,
-    ILogger<Endpoint> logger) : Endpoint<Request, Response>
+    ILogger<Endpoint> logger,
+    IOptions<UploadOptions> options) : Endpoint<Request, Response>
 {
-    private const long MaximumFileSizeBytes = 10 * 1024 * 1024;
-
     public override void Configure()
     {
         Post("/interactions/{interactionId}/attachments");
         AllowAnonymous();
         AllowFileUploads();
-        MaxRequestBodySize(MaximumFileSizeBytes + 1024 * 1024);
+        MaxRequestBodySize(options.Value.AttachmentRequestBodyBytes);
     }
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
@@ -43,9 +43,9 @@ public sealed class Endpoint(
             return;
         }
 
-        if (request.File?.Length > MaximumFileSizeBytes)
+        if (request.File?.Length > options.Value.AttachmentMaxBytes)
         {
-            await SendBadRequestAsync("Attachment files cannot exceed 10 MB.", cancellationToken);
+            await SendBadRequestAsync("Attachment files exceed the configured upload limit.", cancellationToken);
             return;
         }
 

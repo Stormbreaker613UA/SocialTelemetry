@@ -4,13 +4,14 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using SocialTelemetry.Api.Infrastructure.AI.Models;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
-public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timeProvider, ILogger<ChatGptHttpClient> logger)
+public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timeProvider, ILogger<ChatGptHttpClient> logger, IOptions<ChatGptOptions> options)
 {
     private JsonElement? discovery;
     private ICollection<SecurityKey>? signingKeys;
@@ -130,7 +131,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         string accessToken, string model, AiTextRequest input, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        timeout.CancelAfter(options.Value.InferenceTimeout);
         try
         {
             using var request = AuthorizedRequest(HttpMethod.Post, ChatGptProtocol.Resource + "/responses", accessToken);
@@ -178,7 +179,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
             while (await reader.ReadLineAsync(timeout.Token) is { } line)
             {
                 receivedCharacters += line.Length;
-                if (receivedCharacters > 2 * 1024 * 1024) throw new AiProviderException(AiFailure.MalformedResponse);
+                if (receivedCharacters > options.Value.StreamResponseCharacters) throw new AiProviderException(AiFailure.MalformedResponse);
                 if (line.Length == 0)
                 {
                     var completion = ProcessEvent(eventData, output);
@@ -257,7 +258,7 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
             var keys = new JsonWebKeySet(body.GetRawText());
             signingKeys = keys.Keys.Where(key => key.Kty is "RSA" or "EC").Cast<SecurityKey>().ToList();
             if (signingKeys.Count == 0) throw new AiProviderException(AiFailure.InvalidIdentity);
-            keysExpireAt = timeProvider.GetUtcNow().AddMinutes(30);
+            keysExpireAt = timeProvider.GetUtcNow().Add(options.Value.SigningKeyCacheLifetime);
         }
         catch (ArgumentException) { throw new AiProviderException(AiFailure.InvalidIdentity); }
     }

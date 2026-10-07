@@ -32,7 +32,7 @@ internal sealed class ChatGptTestApp : IDisposable
     public IPAddress RemoteAddress { get; set; } = IPAddress.Loopback;
     public IServiceProvider Services => application.Services;
 
-    public ChatGptTestApp(ChatGptTestApp? sharedStorage = null)
+    public ChatGptTestApp(ChatGptTestApp? sharedStorage = null, Action<ChatGptOptions>? configure = null)
     {
         ownsDirectory = sharedStorage is null;
         DataDirectory = sharedStorage?.DataDirectory ?? Path.Combine(Path.GetTempPath(), "SocialTelemetry.Tests", "ChatGpt", Guid.NewGuid().ToString("N"));
@@ -49,6 +49,7 @@ internal sealed class ChatGptTestApp : IDisposable
                 services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(ProfileAvatarReconciliationService)));
                 services.Configure<ChatGptOptions>(options => options.DataDirectory = DataDirectory);
+                if (configure is not null) services.Configure(configure);
                 services.RemoveAll<ISystemBrowser>();
                 services.AddSingleton<ISystemBrowser>(Browser);
                 services.RemoveAll<TimeProvider>();

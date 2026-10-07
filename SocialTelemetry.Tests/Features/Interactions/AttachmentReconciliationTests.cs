@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -142,7 +143,8 @@ public sealed class AttachmentReconciliationTests(PeopleApiFixture fixture) : IC
         await using var scope = fixture.CreateAsyncScope();
         var service = new AttachmentReconciliationService(
             scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>(),
-            logger ?? NullLogger<AttachmentReconciliationService>.Instance);
+            logger ?? NullLogger<AttachmentReconciliationService>.Instance,
+            scope.ServiceProvider.GetRequiredService<IOptions<StorageMaintenanceOptions>>());
         await service.ReconcileAsync(CancellationToken.None);
     }
 

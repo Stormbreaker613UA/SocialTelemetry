@@ -1,24 +1,25 @@
+using Microsoft.Extensions.Options;
 using FastEndpoints;
 using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.People.UploadAvatar;
 
-public sealed class Endpoint(ProfileAvatarService avatars) : Endpoint<Request>
+public sealed class Endpoint(ProfileAvatarService avatars, IOptions<UploadOptions> options) : Endpoint<Request>
 {
     public override void Configure()
     {
         Put("/people/{id}/avatar");
         AllowAnonymous();
         AllowFileUploads();
-        MaxRequestBodySize(ProfileAvatarService.MaximumBytes + 1024 * 1024);
+        MaxRequestBodySize(options.Value.AvatarRequestBodyBytes);
     }
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
         var owner = await avatars.FindOwnerAsync(request.Id, cancellationToken);
-        if (request.File is null || request.File.Length == 0 || request.File.Length > ProfileAvatarService.MaximumBytes)
+        if (request.File is null || request.File.Length == 0 || request.File.Length > options.Value.AvatarMaxBytes)
         {
-            AddError("A non-empty avatar up to 5 MiB is required.");
+            AddError("A non-empty avatar within the configured upload limit is required.");
             await Send.ErrorsAsync(400, cancellationToken);
             return;
         }
@@ -29,9 +30,9 @@ public sealed class Endpoint(ProfileAvatarService avatars) : Endpoint<Request>
         int count;
         while ((count = await content.ReadAsync(chunk, cancellationToken)) > 0)
         {
-            if (buffer.Length + count > ProfileAvatarService.MaximumBytes)
+            if (buffer.Length + count > options.Value.AvatarMaxBytes)
             {
-                AddError("Avatar exceeds 5 MiB.");
+                AddError("Avatar exceeds the configured upload limit.");
                 await Send.ErrorsAsync(400, cancellationToken);
                 return;
             }

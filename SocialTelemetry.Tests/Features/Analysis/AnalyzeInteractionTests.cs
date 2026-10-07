@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Data.Common;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +27,82 @@ namespace SocialTelemetry.Tests.Features.Analysis;
 public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFixture<PeopleApiFixture>
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    private AnalysisOptions AnalysisPolicy
+    {
+        get
+        {
+            using var scope = fixture.CreateAsyncScope();
+            return scope.ServiceProvider.GetRequiredService<IOptions<AnalysisOptions>>().Value;
+        }
+    }
+
+    [Theory]
+    [InlineData("question")]
+    [InlineData("description")]
+    [InlineData("text-evidence")]
+    [InlineData("participants")]
+    public async Task Configured_context_limits_reject_input_before_inference(string policy)
+    {
+        var data = await SeedAsync();
+        if (policy == "participants")
+        {
+            await using var scope = fixture.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.InteractionParticipants.Add(new InteractionParticipant { InteractionId = data.InteractionId, PersonId = data.OtherPersonId });
+            await database.SaveChangesAsync(Cancellation);
+        }
+        var provider = new StubAiClient();
+        using var app = CreateApp(provider, configure: options =>
+        {
+            if (policy == "question") options.QuestionCharacters = 1;
+            if (policy == "description") options.InteractionDescriptionCharacters = 1;
+            if (policy == "text-evidence") options.TextEvidenceCharacters = 1;
+            if (policy == "participants") options.Participants = 1;
+        });
+        using var client = CreateClient(app);
+        using var response = await client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze",
+            new { UserQuestion = "Synthetic question" }, Cancellation);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, provider.Calls);
+    }
+
+    [Fact]
+    public async Task Configured_collection_counts_bound_materialized_context()
+    {
+        var data = await SeedAsync();
+        var provider = new StubAiClient();
+        using var app = CreateApp(provider, configure: options =>
+        {
+            options.FactsPerPerson = 0;
+            options.InferencesPerPerson = 0;
+            options.PreviousInteractions = 0;
+        });
+        using var client = CreateClient(app);
+        using var response = await client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, Cancellation);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(provider.Context);
+        Assert.All(provider.Context.Participants, person =>
+        {
+            Assert.Empty(person.ConfirmedFacts);
+            Assert.Empty(person.AiInferences);
+        });
+        Assert.Empty(provider.Context.PreviousInteractions);
+    }
+
+    [Fact]
+    public async Task Configured_result_size_rejects_otherwise_valid_output_without_persisting()
+    {
+        var data = await SeedAsync();
+        var provider = new StubAiClient { ChangeResult = result => result with { Summary = new string('s', 3900) } };
+        using var app = CreateApp(provider, configure: options => options.ResultCharacters = 4000);
+        using var client = CreateClient(app);
+        using var response = await client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, Cancellation);
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        await using var scope = fixture.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await database.InteractionAnalyses.AnyAsync(analysis => analysis.InteractionId == data.InteractionId, Cancellation));
+    }
 
     [Fact]
     public async Task Interaction_id_is_always_taken_from_the_route_not_the_body()
@@ -176,13 +253,13 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         var attachment = await AddAttachmentAsync(owner, type, status, "opaque", fault == "mime" ? "text/html" : "image/png");
         if (fault == "signature") storage.Bytes = [1, 2, 3];
         if (fault == "missing-file") storage.Bytes = null;
-        if (fault == "large-image") storage.Bytes = new byte[AnalysisLimits.ImageBytes + 1];
+        if (fault == "large-image") storage.Bytes = new byte[AnalysisPolicy.ImageBytes + 1];
         if (fault == "large-text")
         {
             await using var scope = fixture.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var text = await dbContext.InteractionAttachments.SingleAsync(stored => stored.Id == data.TextId, Cancellation);
-            text.TextContent = new string('t', AnalysisLimits.TextEvidenceCharacters + 1);
+            text.TextContent = new string('t', AnalysisPolicy.TextEvidenceCharacters + 1);
             await dbContext.SaveChangesAsync(Cancellation);
             attachment.Id = data.TextId;
         }
@@ -1014,7 +1091,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
             var count = limit == "image-count" ? 4 : 3;
             if (limit == "total-image-bytes")
             {
-                storage.Bytes = new byte[AnalysisLimits.ImageBytes];
+                storage.Bytes = new byte[AnalysisPolicy.ImageBytes];
                 PngBytes().CopyTo(storage.Bytes, 0);
             }
             for (var index = 0; index < count; index++) await AddAttachmentAsync(data.InteractionId, AttachmentType.Image, AttachmentStatus.Ready, "opaque", "image/png");
@@ -1022,15 +1099,16 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         using var app = CreateApp(provider, storage);
         using var client = CreateClient(app);
         using var response = await client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze",
-            new { UserQuestion = limit == "question" ? new string('q', AnalysisLimits.QuestionCharacters + 1) : null }, Cancellation);
+            new { UserQuestion = limit == "question" ? new string('q', AnalysisPolicy.QuestionCharacters + 1) : null }, Cancellation);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("EvidenceLimitExceeded", await response.Content.ReadAsStringAsync(Cancellation));
         Assert.Equal(0, provider.Calls);
     }
 
     private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateApp(IAiClient provider,
-        IAttachmentStorage? storage = null, AnalysisCommitGate? commitGate = null) => fixture.WithServices(services =>
+        IAttachmentStorage? storage = null, AnalysisCommitGate? commitGate = null, Action<AnalysisOptions>? configure = null) => fixture.WithServices(services =>
     {
+        if (configure is not null) services.Configure(configure);
         services.RemoveAll<IAiClient>();
         services.AddSingleton<IAiClient>(provider);
         services.AddSingleton<IStartupFilter>(new LocalAddressFilter());

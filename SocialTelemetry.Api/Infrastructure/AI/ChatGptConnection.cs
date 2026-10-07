@@ -32,7 +32,7 @@ public sealed class ChatGptConnection(
             State = RandomValue(),
             Nonce = RandomValue(),
             Verifier = RandomValue(),
-            ExpiresAt = clock.GetUtcNow().AddMinutes(10),
+            ExpiresAt = clock.GetUtcNow().Add(options.Value.AuthorizationLifetime),
             ConnectionId = account?.Id ?? Guid.NewGuid(),
             ClientId = account?.ClientId,
             CallbackUri = options.Value.CallbackUri
@@ -163,7 +163,7 @@ public sealed class ChatGptConnection(
         {
             if (account?.Tokens?.RefreshToken is not null)
             {
-                for (var attempt = 0; attempt < 2; attempt++)
+                for (var attempt = 0; attempt < options.Value.RevocationAttempts; attempt++)
                 {
                     try
                     {
@@ -173,8 +173,8 @@ public sealed class ChatGptConnection(
                     }
                     catch (AiProviderException exception)
                     {
-                        if (exception.Failure != AiFailure.ProviderUnavailable || attempt == 1) break;
-                        await Task.Delay(200, cancellationToken);
+                        if (exception.Failure != AiFailure.ProviderUnavailable || attempt == options.Value.RevocationAttempts - 1) break;
+                        await Task.Delay(options.Value.RevocationRetryDelay, cancellationToken);
                     }
                 }
             }
@@ -306,7 +306,7 @@ public sealed class ChatGptConnection(
 
         cancellationToken.ThrowIfCancellationRequested();
         // Once rotation starts, persist its replacement even if the caller disconnects.
-        using var refreshTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var refreshTimeout = new CancellationTokenSource(options.Value.RefreshTimeout);
         ChatGptTokens replacement;
         try
         {

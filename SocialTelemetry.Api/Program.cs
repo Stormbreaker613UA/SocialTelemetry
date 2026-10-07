@@ -1,6 +1,7 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Events;
 using Serilog.Filters;
@@ -36,43 +37,69 @@ builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
 builder.Services.AddOptions<ChatGptOptions>()
     .BindConfiguration("ChatGpt")
+    .ValidateDataAnnotations()
+    .Validate(options => options.HasConsistentTiming(), "ChatGpt lock retry delay cannot exceed its timeout.")
     .Validate(options => options.IsValid(), "ChatGpt requires an HTTP 127.0.0.1 callback with the fixed callback path and an absolute local data directory.")
+    .ValidateOnStart();
+builder.Services.AddOptions<UploadOptions>()
+    .BindConfiguration("Uploads").ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddOptions<AnalysisOptions>()
+    .BindConfiguration("Analysis").ValidateDataAnnotations()
+    .Validate(options => options.HasConsistentLimits(), "Analysis input limits must fit context, image count must fit evidence count, and total image bytes must cover an individual image.")
+    .ValidateOnStart();
+builder.Services.AddOptions<StorageMaintenanceOptions>()
+    .BindConfiguration("StorageMaintenance").ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddOptions<AttachmentStorageOptions>()
+    .BindConfiguration("AttachmentStorage")
+    .Validate(options => StorageDirectories.IsValid(options.LocalDirectory, builder.Environment.ContentRootPath),
+        "AttachmentStorage requires a valid directory without symbolic links.")
+    .ValidateOnStart();
+builder.Services.AddOptions<ProfileStorageOptions>()
+    .BindConfiguration("ProfileStorage")
+    .Validate<IOptions<AttachmentStorageOptions>>((options, attachments) =>
+    {
+        var attachmentPath = StorageDirectories.Attachments(attachments.Value, builder.Environment.ContentRootPath);
+        var directory = options.AvatarDirectory ?? Path.Combine(attachmentPath, "avatars");
+        if (!StorageDirectories.IsValid(directory, builder.Environment.ContentRootPath)) return false;
+        var avatarPath = StorageDirectories.Avatars(options, attachments.Value, builder.Environment.ContentRootPath);
+        return !string.Equals(Path.TrimEndingDirectorySeparator(attachmentPath), Path.TrimEndingDirectorySeparator(avatarPath),
+            StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(Path.Combine(attachmentPath, ".staging"), Path.TrimEndingDirectorySeparator(avatarPath), StringComparison.OrdinalIgnoreCase);
+    }, "ProfileStorage requires a valid avatar directory separate from attachment files and staging.")
     .ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ChatGptCredentialStore>();
 builder.Services.AddSingleton<ChatGptConnection>();
 builder.Services.AddSingleton<ISystemBrowser, SystemBrowser>();
-builder.Services.AddHttpClient<ChatGptHttpClient>(client =>
+builder.Services.AddHttpClient<ChatGptHttpClient>((services, client) =>
     {
-        client.Timeout = TimeSpan.FromSeconds(30);
-        client.MaxResponseContentBufferSize = 1024 * 1024;
+        var options = services.GetRequiredService<IOptions<ChatGptOptions>>().Value;
+        client.Timeout = options.HttpTimeout;
+        client.MaxResponseContentBufferSize = options.HttpResponseBufferBytes;
     })
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
     {
         AllowAutoRedirect = false,
         UseCookies = false,
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+        PooledConnectionLifetime = services.GetRequiredService<IOptions<ChatGptOptions>>().Value.PooledConnectionLifetime
     })
     .RemoveAllLoggers();
 builder.Services.AddScoped<IAiClient, ChatGptPlanAiClient>();
 builder.Services.AddKeyedSingleton<IFileStorage>("attachments", (services, _) =>
 {
     var environment = services.GetRequiredService<IWebHostEnvironment>();
-    var configuration = services.GetRequiredService<IConfiguration>();
-    var directory = configuration["AttachmentStorage:LocalDirectory"];
+    var options = services.GetRequiredService<IOptions<AttachmentStorageOptions>>().Value;
     return new LocalFileStorage(
-        Path.GetFullPath(string.IsNullOrWhiteSpace(directory) ? "attachments" : directory, environment.ContentRootPath),
+        StorageDirectories.Attachments(options, environment.ContentRootPath),
         services.GetRequiredService<ILogger<LocalFileStorage>>());
 });
 builder.Services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
 builder.Services.AddKeyedSingleton<IFileStorage>("avatars", (services, _) =>
 {
     var environment = services.GetRequiredService<IWebHostEnvironment>();
-    var configuration = services.GetRequiredService<IConfiguration>();
-    var attachmentDirectory = configuration["AttachmentStorage:LocalDirectory"] ?? "attachments";
-    var directory = configuration["ProfileStorage:AvatarDirectory"]
-        ?? Path.Combine(attachmentDirectory, "avatars");
-    return new LocalFileStorage(Path.GetFullPath(directory, environment.ContentRootPath),
+    var attachments = services.GetRequiredService<IOptions<AttachmentStorageOptions>>().Value;
+    var profiles = services.GetRequiredService<IOptions<ProfileStorageOptions>>().Value;
+    return new LocalFileStorage(StorageDirectories.Avatars(profiles, attachments, environment.ContentRootPath),
         services.GetRequiredService<ILogger<LocalFileStorage>>());
 });
 builder.Services.AddScoped<ProfileAvatarCleanup>();

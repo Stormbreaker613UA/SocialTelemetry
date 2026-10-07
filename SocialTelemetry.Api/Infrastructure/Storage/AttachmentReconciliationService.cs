@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
@@ -6,10 +7,9 @@ namespace SocialTelemetry.Api.Infrastructure.Storage;
 
 public sealed class AttachmentReconciliationService(
     IServiceScopeFactory scopeFactory,
-    ILogger<AttachmentReconciliationService> logger) : IHostedService
+    ILogger<AttachmentReconciliationService> logger,
+    IOptions<StorageMaintenanceOptions> options) : IHostedService
 {
-    private static readonly TimeSpan OrphanSafetyAge = TimeSpan.FromHours(1);
-
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         try
@@ -83,7 +83,7 @@ public sealed class AttachmentReconciliationService(
             .Select(attachment => attachment.StorageKey!)
             .ToListAsync(cancellationToken);
         var referencedKeySet = referencedKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var cutoff = DateTimeOffset.UtcNow - OrphanSafetyAge;
+        var cutoff = DateTimeOffset.UtcNow - options.Value.OrphanSafetyAge;
         await RemoveOrphansAsync(storage, storage.EnumerateFiles(), referencedKeySet, cutoff, staged: false, cancellationToken);
         await RemoveOrphansAsync(storage, storage.EnumerateStagedFiles(), referencedKeySet, cutoff, staged: true, cancellationToken);
     }

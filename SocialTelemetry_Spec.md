@@ -1359,6 +1359,8 @@ Again: not MVP.
 
 ## 28. Local / Server Runtime Modes
 
+Operational policy (uploads, AI context/evidence bounds, storage maintenance, and provider timing/response limits) uses validated typed Options, with shipped non-secret defaults in `SocialTelemetry.Api/appsettings.json`. Existing storage and ChatGPT sections remain compatible with standard .NET configuration overrides. Security/protocol rules, schema constraints, absolute safety ceilings, and versioned AI result item bounds remain code-defined. Provider credentials stay in protected local storage, outside ordinary configuration. A future Settings UI may expose an approved subset through the same Options boundary; this does not introduce settings persistence or UI now.
+
 The same ASP.NET Core/Razor product should support two deployment experiences without splitting the product into separate business-logic codebases.
 
 ```text

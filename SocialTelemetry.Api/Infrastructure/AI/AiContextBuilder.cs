@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Domain.Interactions;
@@ -10,48 +11,49 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
-public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage storage)
+public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage storage, IOptions<AnalysisOptions> options)
 {
+    private readonly AnalysisOptions limits = options.Value;
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<BuiltAnalysisContext> BuildAsync(Guid interactionId, string? userQuestion,
         IReadOnlyList<Guid>? selectedAttachmentIds, CancellationToken cancellationToken)
     {
-        CheckText(userQuestion, AnalysisLimits.QuestionCharacters);
+        CheckText(userQuestion, limits.QuestionCharacters);
         var interactionQuery = dbContext.Interactions.AsNoTracking().Where(stored => stored.Id == interactionId);
-        if (await interactionQuery.AnyAsync(stored => stored.Title.Length > 500 || stored.Description.Length > 8_000 ||
-            (stored.UserThoughts != null && stored.UserThoughts.Length > 4_000), cancellationToken))
+        if (await interactionQuery.AnyAsync(stored => stored.Title.Length > limits.InteractionTitleCharacters || stored.Description.Length > limits.InteractionDescriptionCharacters ||
+            (stored.UserThoughts != null && stored.UserThoughts.Length > limits.UserThoughtsCharacters), cancellationToken))
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
         var interaction = await interactionQuery.SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Interaction not found.");
         var userQuery = dbContext.UserProfiles.AsNoTracking().Where(profile => profile.Id == interaction.UserProfileId);
-        if (await userQuery.AnyAsync(profile => profile.DisplayName.Length > 4_000 ||
-            (profile.AboutMe != null && profile.AboutMe.Length > 4_000) ||
-            (profile.CommunicationStyle != null && profile.CommunicationStyle.Length > 4_000) ||
-            (profile.Goals != null && profile.Goals.Length > 4_000) ||
-            (profile.Preferences != null && profile.Preferences.Length > 4_000) ||
-            (profile.Boundaries != null && profile.Boundaries.Length > 4_000) ||
-            (profile.AiInstructions != null && profile.AiInstructions.Length > 4_000), cancellationToken))
+        if (await userQuery.AnyAsync(profile => profile.DisplayName.Length > limits.ProfileFieldCharacters ||
+            (profile.AboutMe != null && profile.AboutMe.Length > limits.ProfileFieldCharacters) ||
+            (profile.CommunicationStyle != null && profile.CommunicationStyle.Length > limits.ProfileFieldCharacters) ||
+            (profile.Goals != null && profile.Goals.Length > limits.ProfileFieldCharacters) ||
+            (profile.Preferences != null && profile.Preferences.Length > limits.ProfileFieldCharacters) ||
+            (profile.Boundaries != null && profile.Boundaries.Length > limits.ProfileFieldCharacters) ||
+            (profile.AiInstructions != null && profile.AiInstructions.Length > limits.ProfileFieldCharacters), cancellationToken))
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
         var user = await userQuery.SingleAsync(cancellationToken);
         var participantIds = await dbContext.InteractionParticipants.AsNoTracking()
             .Where(participant => participant.InteractionId == interactionId)
             .OrderBy(participant => participant.PersonId).Select(participant => participant.PersonId)
-            .Take(AnalysisLimits.Participants + 1).ToListAsync(cancellationToken);
-        if (participantIds.Count == 0 || participantIds.Count > AnalysisLimits.Participants)
+            .Take(limits.Participants + 1).ToListAsync(cancellationToken);
+        if (participantIds.Count == 0 || participantIds.Count > limits.Participants)
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
         var peopleQuery = dbContext.People.AsNoTracking()
             .Where(person => participantIds.Contains(person.Id) && person.UserProfileId == interaction.UserProfileId);
-        if (await peopleQuery.AnyAsync(person => person.DisplayName.Length > 4_000 ||
-            (person.Gender != null && person.Gender.Length > 4_000) ||
-            (person.Description != null && person.Description.Length > 4_000) ||
-            (person.HowWeMet != null && person.HowWeMet.Length > 4_000) ||
-            (person.Notes != null && person.Notes.Length > 4_000), cancellationToken))
+        if (await peopleQuery.AnyAsync(person => person.DisplayName.Length > limits.ProfileFieldCharacters ||
+            (person.Gender != null && person.Gender.Length > limits.ProfileFieldCharacters) ||
+            (person.Description != null && person.Description.Length > limits.ProfileFieldCharacters) ||
+            (person.HowWeMet != null && person.HowWeMet.Length > limits.ProfileFieldCharacters) ||
+            (person.Notes != null && person.Notes.Length > limits.ProfileFieldCharacters), cancellationToken))
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
         var people = await peopleQuery.OrderBy(person => person.Id).ToListAsync(cancellationToken);
         if (people.Count != participantIds.Count) throw new AiProviderException(AiFailure.StaleContext);
 
-        // Latest five earlier interactions with an overlapping participant; exclude interactions
+        // Bounded recent earlier interactions with an overlapping participant; exclude interactions
         // containing any foreign/non-current participant so unrelated People never enter context.
         var historyQuery = dbContext.Interactions.AsNoTracking().Where(previous =>
             previous.UserProfileId == interaction.UserProfileId && previous.Id != interactionId &&
@@ -60,9 +62,9 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
             !previous.Participants.Any(participant => !participantIds.Contains(participant.PersonId) ||
                 participant.Person.UserProfileId != interaction.UserProfileId))
             .OrderByDescending(previous => previous.OccurredAt).ThenBy(previous => previous.Id)
-            .Take(AnalysisLimits.PreviousInteractions);
-        if (await historyQuery.AnyAsync(previous => previous.Title.Length > 500 ||
-            previous.Description.Length > 8_000 || (previous.UserThoughts != null && previous.UserThoughts.Length > 4_000), cancellationToken))
+            .Take(limits.PreviousInteractions);
+        if (await historyQuery.AnyAsync(previous => previous.Title.Length > limits.InteractionTitleCharacters ||
+            previous.Description.Length > limits.InteractionDescriptionCharacters || (previous.UserThoughts != null && previous.UserThoughts.Length > limits.UserThoughtsCharacters), cancellationToken))
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
         var history = await historyQuery.Select(previous => new AnalysisInteraction(previous.Id, previous.Title,
             previous.Description, previous.UserThoughts, previous.OccurredAt,
@@ -71,17 +73,17 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
         var sourceIds = history.Select(previous => previous.Id).Append(interactionId).ToArray();
         var participants = await LoadParticipantsAsync(interaction.UserProfileId, people, sourceIds, cancellationToken);
         foreach (var field in new[] { user.DisplayName, user.AboutMe, user.CommunicationStyle, user.Goals,
-            user.Preferences, user.Boundaries, user.AiInstructions }) CheckText(field, 4_000);
-        CheckText(interaction.Title, 500);
-        CheckText(interaction.Description, 8_000);
-        CheckText(interaction.UserThoughts, 4_000);
+            user.Preferences, user.Boundaries, user.AiInstructions }) CheckText(field, limits.ProfileFieldCharacters);
+        CheckText(interaction.Title, limits.InteractionTitleCharacters);
+        CheckText(interaction.Description, limits.InteractionDescriptionCharacters);
+        CheckText(interaction.UserThoughts, limits.UserThoughtsCharacters);
         var (evidence, images) = await LoadEvidenceAsync(interactionId, selectedAttachmentIds, cancellationToken);
         var context = new InteractionAnalysisContext(new AnalysisUser(user.Id, user.DisplayName, user.AboutMe,
             user.CommunicationStyle, user.Goals, user.Preferences, user.Boundaries, user.AiInstructions),
             new AnalysisInteraction(interaction.Id, interaction.Title, interaction.Description, interaction.UserThoughts,
                 interaction.OccurredAt, participantIds), participants, history, evidence, userQuestion);
         var json = JsonSerializer.Serialize(context, JsonOptions);
-        CheckText(json, AnalysisLimits.ContextCharacters);
+        CheckText(json, limits.ContextCharacters);
         return new BuiltAnalysisContext(context, images, json, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))));
     }
 
@@ -92,20 +94,20 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
         foreach (var person in people)
         {
             var factsQuery = dbContext.PersonFacts.AsNoTracking().Where(fact => fact.PersonId == person.Id)
-                .OrderByDescending(fact => fact.CreatedAt).ThenBy(fact => fact.Id).Take(AnalysisLimits.FactsPerPerson);
-            if (await factsQuery.AnyAsync(fact => fact.Value.Length > 2_000 || (fact.Source != null && fact.Source.Length > 1_000), cancellationToken))
+                .OrderByDescending(fact => fact.CreatedAt).ThenBy(fact => fact.Id).Take(limits.FactsPerPerson);
+            if (await factsQuery.AnyAsync(fact => fact.Value.Length > limits.FactValueCharacters || (fact.Source != null && fact.Source.Length > limits.FactSourceCharacters), cancellationToken))
                 throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
             var facts = await factsQuery.Select(fact => new AnalysisFact(fact.Id, fact.Value, fact.Source)).ToListAsync(cancellationToken);
             var inferencesQuery = dbContext.PersonInferences.AsNoTracking().Where(inference => inference.PersonId == person.Id &&
                 (inference.SourceInteractionId == null || (sourceIds.Contains(inference.SourceInteractionId.Value) &&
                     inference.SourceInteraction != null && inference.SourceInteraction.UserProfileId == userProfileId)))
-                .OrderByDescending(inference => inference.CreatedAt).ThenBy(inference => inference.Id).Take(AnalysisLimits.InferencesPerPerson);
-            if (await inferencesQuery.AnyAsync(inference => inference.Value.Length > 2_000 ||
+                .OrderByDescending(inference => inference.CreatedAt).ThenBy(inference => inference.Id).Take(limits.InferencesPerPerson);
+            if (await inferencesQuery.AnyAsync(inference => inference.Value.Length > limits.InferenceValueCharacters ||
                 inference.Confidence < 0 || inference.Confidence > 1, cancellationToken))
                 throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
             var inferences = await inferencesQuery.Select(inference => new AnalysisInference(inference.Id,
                 inference.Value, inference.Confidence, inference.SourceInteractionId)).ToListAsync(cancellationToken);
-            foreach (var field in new[] { person.DisplayName, person.Gender, person.Description, person.HowWeMet, person.Notes }) CheckText(field, 4_000);
+            foreach (var field in new[] { person.DisplayName, person.Gender, person.Description, person.HowWeMet, person.Notes }) CheckText(field, limits.ProfileFieldCharacters);
             participants.Add(new AnalysisPerson(person.Id, person.DisplayName, person.Age, person.Gender, person.Description,
                 person.RelationshipContext, person.HowWeMet, person.Notes, facts, inferences));
         }
@@ -115,17 +117,17 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
     private async Task<(IReadOnlyList<AnalysisEvidence> Evidence, IReadOnlyList<AiImageInput> Images)> LoadEvidenceAsync(
         Guid interactionId, IReadOnlyList<Guid>? selectedIds, CancellationToken cancellationToken)
     {
-        if (selectedIds is not null && (selectedIds.Count > AnalysisLimits.EvidenceCount || selectedIds.Distinct().Count() != selectedIds.Count))
+        if (selectedIds is not null && (selectedIds.Count > limits.EvidenceCount || selectedIds.Distinct().Count() != selectedIds.Count))
             throw new AiProviderException(AiFailure.InvalidEvidenceSelection);
         var query = dbContext.InteractionAttachments.AsNoTracking().Where(attachment => attachment.InteractionId == interactionId);
         query = selectedIds is null
             ? query.Where(attachment => attachment.Status == AttachmentStatus.Ready)
             : query.Where(attachment => selectedIds.Contains(attachment.Id));
         if (await query.AnyAsync(attachment => attachment.TextContent != null &&
-            attachment.TextContent.Length > AnalysisLimits.TextEvidenceCharacters, cancellationToken))
+            attachment.TextContent.Length > limits.TextEvidenceCharacters, cancellationToken))
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
-        var attachments = await query.OrderBy(attachment => attachment.Id).Take(AnalysisLimits.EvidenceCount + 1).ToListAsync(cancellationToken);
-        if (attachments.Count > AnalysisLimits.EvidenceCount) throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
+        var attachments = await query.OrderBy(attachment => attachment.Id).Take(limits.EvidenceCount + 1).ToListAsync(cancellationToken);
+        if (attachments.Count > limits.EvidenceCount) throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
         if (selectedIds is not null && attachments.Count != selectedIds.Count) throw new AiProviderException(AiFailure.InvalidEvidenceSelection);
         var evidence = new List<AnalysisEvidence>();
         var images = new List<AiImageInput>();
@@ -141,7 +143,7 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
             }
             if (attachment.Type is not (AttachmentType.Image or AttachmentType.Screenshot))
                 throw new AiProviderException(AiFailure.UnsupportedEvidence);
-            if (images.Count >= AnalysisLimits.ImageCount) throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
+            if (images.Count >= limits.ImageCount) throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
             var mimeType = attachment.MimeType?.ToLowerInvariant();
             if (mimeType is not ("image/png" or "image/jpeg" or "image/webp")) throw new AiProviderException(AiFailure.UnsupportedEvidence);
             if (attachment.StorageKey is null) throw new AiProviderException(AiFailure.UnsupportedEvidence);
@@ -152,7 +154,7 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
             int count;
             while ((count = await source.ReadAsync(chunk.AsMemory(), cancellationToken)) > 0)
             {
-                if (buffer.Length + count > AnalysisLimits.ImageBytes || totalBytes + count > AnalysisLimits.TotalImageBytes)
+                if (buffer.Length + count > limits.ImageBytes || totalBytes + count > limits.TotalImageBytes)
                     throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
                 buffer.Write(chunk, 0, count);
                 totalBytes += count;

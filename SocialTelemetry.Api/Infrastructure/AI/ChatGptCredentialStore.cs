@@ -14,7 +14,7 @@ public sealed class ChatGptCredentialStore(IOptions<ChatGptOptions> options)
     internal async Task<IDisposable> LockAsync(CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        timeout.CancelAfter(options.Value.CredentialLockTimeout);
         var entered = false;
         try
         {
@@ -32,7 +32,7 @@ public sealed class ChatGptCredentialStore(IOptions<ChatGptOptions> options)
                 }
                 catch (IOException)
                 {
-                    await Task.Delay(50, timeout.Token);
+                    await Task.Delay(options.Value.CredentialLockRetryDelay, timeout.Token);
                 }
             }
         }

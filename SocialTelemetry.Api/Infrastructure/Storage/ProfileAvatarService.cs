@@ -11,8 +11,6 @@ public sealed class ProfileAvatarService(
     [FromKeyedServices("avatars")] IFileStorage storage,
     ProfileAvatarCleanup cleanup)
 {
-    public const int MaximumBytes = 5 * 1024 * 1024;
-
     public async Task<object> FindOwnerAsync(Guid? personId, CancellationToken cancellationToken, bool readOnly = false)
     {
         if (personId is Guid id)

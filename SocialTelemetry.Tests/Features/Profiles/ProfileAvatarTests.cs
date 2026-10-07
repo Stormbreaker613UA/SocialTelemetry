@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,32 @@ public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : IClassFixture
 {
     private static readonly byte[] Png = [137, 80, 78, 71, 13, 10, 26, 10, 1];
     private CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    private UploadOptions UploadPolicy
+    {
+        get
+        {
+            using var scope = fixture.CreateAsyncScope();
+            return scope.ServiceProvider.GetRequiredService<IOptions<UploadOptions>>().Value;
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Configured_avatar_limit_is_enforced_for_both_owners(bool person)
+    {
+        var (route, _) = await CreateOwnerAsync(person);
+        using var application = fixture.WithServices(services => services.Configure<UploadOptions>(options => options.AvatarMaxBytes = Png.Length));
+        using var client = application.CreateClient();
+        await UploadAsync(client, route, Png);
+        using var form = Form(Png.Concat(new byte[] { 1 }).ToArray(), "image/png");
+        using var response = await client.PutAsync(route, form, Cancellation);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain("5 MiB", await response.Content.ReadAsStringAsync(Cancellation));
+        using var download = await client.GetAsync(route, Cancellation);
+        Assert.Equal(Png, await download.Content.ReadAsByteArrayAsync(Cancellation));
+    }
 
     [Theory]
     [InlineData(false)]
@@ -55,7 +82,7 @@ public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : IClassFixture
         var (route, _) = await CreateOwnerAsync(person);
         await UploadAsync(fixture.Client, route, Png);
         var originalKey = await KeyAsync(route);
-        using var form = Form(oversized ? new byte[ProfileAvatarService.MaximumBytes + 1] : Png, mime);
+        using var form = Form(oversized ? new byte[UploadPolicy.AvatarMaxBytes + 1] : Png, mime);
         using var response = await fixture.Client.PutAsync(route, form, Cancellation);
         Assert.True(response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge);
         Assert.Equal(originalKey, await KeyAsync(route));
@@ -217,7 +244,8 @@ public sealed class ProfileAvatarTests(PeopleApiFixture fixture) : IClassFixture
         await storage.CompleteUploadAsync(recentKey, Cancellation);
         File.SetLastWriteTimeUtc(AvatarPath(oldKey), DateTime.UtcNow.AddHours(-2));
         File.SetLastWriteTimeUtc(AvatarPath(originalKey), DateTime.UtcNow.AddHours(-2));
-        var recovery = new ProfileAvatarReconciliationService(scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>());
+        var recovery = new ProfileAvatarReconciliationService(scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scope.ServiceProvider.GetRequiredService<IOptions<StorageMaintenanceOptions>>());
         await recovery.StartAsync(Cancellation);
         Assert.False(File.Exists(AvatarPath(oldKey)));
         Assert.True(File.Exists(AvatarPath(recentKey)));
