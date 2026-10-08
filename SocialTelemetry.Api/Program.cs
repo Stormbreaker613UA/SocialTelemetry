@@ -110,11 +110,20 @@ builder.Services.AddKeyedSingleton<IFileStorage>("avatars", (services, _) =>
 });
 builder.Services.AddScoped<ProfileAvatarCleanup>();
 builder.Services.AddScoped<ProfileAvatarService>();
+builder.Services.AddOptions<MediaBindingOptions>().BindConfiguration("MediaBinding").ValidateDataAnnotations()
+    .Validate(options => options.LockRetryDelay <= options.LockTimeout, "MediaBinding retry delay cannot exceed its lock timeout.").ValidateOnStart();
+builder.Services.AddHostedService<MediaDirectoryBinding>();
 builder.Services.AddHostedService<ProfileAvatarReconciliationService>();
 builder.Services.AddHostedService<AttachmentReconciliationService>();
 builder.Services.AddScoped<AiContextBuilder>();
 
 var app = builder.Build();
+
+if (app.Services.GetRequiredService<IOptions<MediaBindingOptions>>().Value.Action is not null)
+{
+    await app.Services.GetServices<IHostedService>().OfType<MediaDirectoryBinding>().Single().RunMaintenanceAsync(CancellationToken.None);
+    return;
+}
 
 app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
 app.UseExceptionHandler();

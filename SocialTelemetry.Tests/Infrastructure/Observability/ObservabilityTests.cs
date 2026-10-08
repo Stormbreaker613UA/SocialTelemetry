@@ -185,7 +185,8 @@ public sealed class ObservabilityTests
             builder.ConfigureServices(services =>
             {
                 foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService) &&
-                    (service.ImplementationType == typeof(AttachmentReconciliationService) || service.ImplementationType == typeof(ProfileAvatarReconciliationService))).ToArray())
+                    (service.ImplementationType == typeof(AttachmentReconciliationService) || service.ImplementationType == typeof(ProfileAvatarReconciliationService) ||
+                     service.ImplementationType == typeof(MediaDirectoryBinding))).ToArray())
                     services.Remove(service);
                 configure?.Invoke(services);
             });

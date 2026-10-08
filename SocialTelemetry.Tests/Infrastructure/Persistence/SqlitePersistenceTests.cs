@@ -29,19 +29,19 @@ public sealed class SqlitePersistenceTests(SqliteApiFixture fixture) : IClassFix
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             Assert.True(database.Database.IsSqlite());
-            Assert.EndsWith("InitialSqlite", Assert.Single(await database.Database.GetAppliedMigrationsAsync(Cancellation)));
+            Assert.Contains(await database.Database.GetAppliedMigrationsAsync(Cancellation), migration => migration.EndsWith("InitialSqlite"));
             Assert.Empty(await database.Database.GetPendingMigrationsAsync(Cancellation));
             Assert.False(database.Database.HasPendingModelChanges());
             var migrations = database.GetService<IMigrationsAssembly>();
             Assert.Equal(ProviderMigrationsAssembly.SqliteNamespace, migrations.ModelSnapshot?.GetType().Namespace);
-            Assert.Single(migrations.Migrations);
+            Assert.Equal(2, migrations.Migrations.Count);
         }
         using var restarted = fixture.WithServices(_ => { });
         using var client = restarted.CreateClient();
         await using var newScope = restarted.Services.CreateAsyncScope();
         var reloaded = newScope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.Equal("Persisted across hosts", (await reloaded.UserProfiles.SingleAsync(profile => profile.Id == profileId, Cancellation)).DisplayName);
-        Assert.True(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, "socialtelemetry.db")));
+        Assert.True(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, "..", "socialtelemetry.db")));
     }
 
     [Fact]

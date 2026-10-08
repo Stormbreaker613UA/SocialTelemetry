@@ -15,6 +15,7 @@ public sealed partial class AppDbContext(
     ProfileAvatarCleanup? avatarCleanup = null) : DbContext(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
+    public DbSet<StorageDatabaseIdentity> StorageDatabaseIdentities => Set<StorageDatabaseIdentity>();
     public DbSet<UserProfileExternalConnection> UserProfileExternalConnections => Set<UserProfileExternalConnection>();
     public DbSet<PersonExternalConnection> PersonExternalConnections => Set<PersonExternalConnection>();
     public DbSet<Person> People => Set<Person>();
@@ -132,6 +133,11 @@ public sealed partial class AppDbContext(
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        modelBuilder.Entity<StorageDatabaseIdentity>().ToTable("StorageDatabaseIdentity", table =>
+            table.HasCheckConstraint("CK_StorageDatabaseIdentity_Singleton", "\"Id\" = 1"));
+        modelBuilder.Entity<StorageDatabaseIdentity>().HasKey(identity => identity.Id);
+        modelBuilder.Entity<StorageDatabaseIdentity>().Property(identity => identity.Id).ValueGeneratedNever();
+        modelBuilder.Entity<StorageDatabaseIdentity>().Property(identity => identity.StoreId).ValueGeneratedNever();
         modelBuilder.Entity<InteractionAnalysis>().Property(analysis => analysis.ResultJson)
             .HasColumnType(Database.IsSqlite() ? "TEXT" : "jsonb");
         modelBuilder.Entity<UserProfile>().Property(profile => profile.AvatarStorageKey).HasMaxLength(32).IsConcurrencyToken();

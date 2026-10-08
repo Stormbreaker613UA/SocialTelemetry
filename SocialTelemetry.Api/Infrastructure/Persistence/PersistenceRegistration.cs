@@ -1,5 +1,4 @@
 using Microsoft.Data.Sqlite;
-using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Infrastructure.Runtime;
@@ -11,7 +10,7 @@ public static class PersistenceRegistration
     public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<PersistenceOptions>().BindConfiguration("Persistence")
-            .ValidateDataAnnotations()
+            .Validate(options => options.HasValidSqliteTimeout(), "Persistence:SqliteTimeoutSeconds must be between 1 and 120 for Sqlite.")
             .Validate(options => options.Provider is "PostgreSql" or "Sqlite", "Persistence:Provider must be PostgreSql or Sqlite.")
             .Validate(options => options.Provider != "PostgreSql" || !string.IsNullOrWhiteSpace(configuration.GetConnectionString("Default")),
                 "PostgreSql requires ConnectionStrings:Default.")
@@ -29,7 +28,8 @@ public static class PersistenceRegistration
     public static void Configure(DbContextOptionsBuilder database, PersistenceOptions options,
         ApplicationPaths paths, string? postgresConnection)
     {
-        Validator.ValidateObject(options, new ValidationContext(options), validateAllProperties: true);
+        if (!options.HasValidSqliteTimeout())
+            throw new InvalidOperationException("Persistence:SqliteTimeoutSeconds must be between 1 and 120 for Sqlite.");
         switch (options.Provider)
         {
             case "PostgreSql":

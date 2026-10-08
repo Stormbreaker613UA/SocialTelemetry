@@ -31,6 +31,7 @@ SocialTelemetry.Api/attachments/
 *.db-wal
 *.db-shm
 *.db-journal
+.socialtelemetry-media-*
 
 # Protected local ChatGPT connection data (also excluded if the storage path is overridden)
 chatgpt-state.bin*

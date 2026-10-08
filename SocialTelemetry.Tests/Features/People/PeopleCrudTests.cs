@@ -185,6 +185,7 @@ public class PeopleApiFixture : IAsyncLifetime
 
     private PeopleWebApplicationFactory? application;
     private string? attachmentStorageDirectory;
+    private string? applicationDataDirectory;
 
     public HttpClient Client { get; private set; } = null!;
     public string AttachmentStorageDirectory => attachmentStorageDirectory
@@ -202,10 +203,11 @@ public class PeopleApiFixture : IAsyncLifetime
     {
         if (database is not null) await database.StartAsync();
 
-        attachmentStorageDirectory = Path.Combine(
+        applicationDataDirectory = Path.Combine(
             Path.GetTempPath(),
             "SocialTelemetry.Tests",
             Guid.NewGuid().ToString("N"));
+        attachmentStorageDirectory = Path.Combine(applicationDataDirectory, "attachments");
         Directory.CreateDirectory(attachmentStorageDirectory);
 
         // Startup recovery queries attachments, so migrate before starting the HTTP host.
@@ -235,9 +237,9 @@ public class PeopleApiFixture : IAsyncLifetime
             }
             finally
             {
-                if (attachmentStorageDirectory is not null && Directory.Exists(attachmentStorageDirectory))
+                if (applicationDataDirectory is not null && Directory.Exists(applicationDataDirectory))
                 {
-                    Directory.Delete(attachmentStorageDirectory, recursive: true);
+                    Directory.Delete(applicationDataDirectory, recursive: true);
                 }
             }
         }
@@ -307,7 +309,7 @@ public class PeopleApiFixture : IAsyncLifetime
             if (sqlite)
             {
                 builder.UseSetting("Persistence:Provider", "Sqlite");
-                builder.UseSetting("ApplicationData:RootDirectory", attachmentStorageDirectory);
+                builder.UseSetting("ApplicationData:RootDirectory", Path.GetDirectoryName(attachmentStorageDirectory));
                 builder.UseSetting("ConnectionStrings:Default", "");
                 return;
             }

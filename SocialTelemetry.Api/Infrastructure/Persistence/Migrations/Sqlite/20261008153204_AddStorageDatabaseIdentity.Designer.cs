@@ -2,45 +2,43 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
+namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations.Sqlite
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261008153204_AddStorageDatabaseIdentity")]
+    partial class AddStorageDatabaseIdentity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
-
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.AnalysisConversationMessage", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("InteractionAnalysisId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Role")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -53,27 +51,27 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("OccurredAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("UserProfileId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("UserThoughts")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -86,74 +84,81 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ContextFingerprint")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("InteractionId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Model")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("PromptVersion")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Provider")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ResultJson")
-                        .HasColumnType("jsonb");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("SchemaVersion")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Summary")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.HasIndex("InteractionId");
 
-                    b.ToTable("InteractionAnalyses");
+                    b.ToTable("InteractionAnalyses", t =>
+                        {
+                            t.HasCheckConstraint("CK_InteractionAnalyses_ContextFingerprint_Length", "length(\"ContextFingerprint\") <= 64");
+
+                            t.HasCheckConstraint("CK_InteractionAnalyses_PromptVersion_Length", "length(\"PromptVersion\") <= 64");
+
+                            t.HasCheckConstraint("CK_InteractionAnalyses_ResultJson", "\"ResultJson\" IS NULL OR json_valid(\"ResultJson\")");
+                        });
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.InteractionAttachment", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("InteractionId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("MimeType")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasDefaultValue(1);
 
                     b.Property<string>("StorageKey")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("TextContent")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Type")
-                        .HasColumnType("integer");
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
@@ -165,10 +170,10 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.InteractionParticipant", b =>
                 {
                     b.Property<Guid>("InteractionId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("PersonId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("InteractionId", "PersonId");
 
@@ -181,96 +186,105 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<int?>("Age")
-                        .HasColumnType("integer");
+                        .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset?>("ArchivedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("AvatarMimeType")
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("AvatarStorageKey")
                         .IsConcurrencyToken()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Description")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Gender")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("HowWeMet")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Notes")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("RelationshipContext")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("UserProfileId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserProfileId");
 
-                    b.ToTable("People");
+                    b.ToTable("People", t =>
+                        {
+                            t.HasCheckConstraint("CK_People_AvatarMimeType_Length", "length(\"AvatarMimeType\") <= 32");
+
+                            t.HasCheckConstraint("CK_People_AvatarStorageKey_Length", "length(\"AvatarStorageKey\") <= 32");
+
+                            t.HasCheckConstraint("CK_People_DisplayName_Length", "length(\"DisplayName\") <= 200");
+
+                            t.HasCheckConstraint("CK_People_RelationshipContext_Length", "length(\"RelationshipContext\") <= 32");
+                        });
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.People.PersonExternalConnection", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("DisplayName")
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ExternalUserId")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Handle")
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("PersonId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Platform")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ProfileUrl")
                         .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
@@ -278,27 +292,38 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_PersonConnection_StableIdentity");
 
-                    b.ToTable("PersonExternalConnections");
+                    b.ToTable("PersonExternalConnections", t =>
+                        {
+                            t.HasCheckConstraint("CK_PersonExternalConnections_DisplayName_Length", "length(\"DisplayName\") <= 200");
+
+                            t.HasCheckConstraint("CK_PersonExternalConnections_ExternalUserId_Length", "length(\"ExternalUserId\") <= 128");
+
+                            t.HasCheckConstraint("CK_PersonExternalConnections_Handle_Length", "length(\"Handle\") <= 200");
+
+                            t.HasCheckConstraint("CK_PersonExternalConnections_Platform_Length", "length(\"Platform\") <= 32");
+
+                            t.HasCheckConstraint("CK_PersonExternalConnections_ProfileUrl_Length", "length(\"ProfileUrl\") <= 2048");
+                        });
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.People.PersonFact", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("PersonId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Source")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -311,23 +336,23 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<decimal>("Confidence")
-                        .HasColumnType("numeric");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("PersonId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid?>("SourceInteractionId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -342,36 +367,36 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("AcceptedValue")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Field")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("InteractionAnalysisId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("PersonId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long?>("ReviewedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Status")
                         .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("SuggestedValue")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -379,86 +404,94 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PersonId");
 
-                    b.ToTable("SuggestedProfileUpdates");
+                    b.ToTable("SuggestedProfileUpdates", t =>
+                        {
+                            t.HasCheckConstraint("CK_SuggestedProfileUpdates_Status_Length", "length(\"Status\") <= 16");
+                        });
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Users.UserProfile", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("AboutMe")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("AiInstructions")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("AvatarMimeType")
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("AvatarStorageKey")
                         .IsConcurrencyToken()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Boundaries")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("CommunicationStyle")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Goals")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Preferences")
-                        .HasColumnType("text");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.ToTable("UserProfiles");
+                    b.ToTable("UserProfiles", t =>
+                        {
+                            t.HasCheckConstraint("CK_UserProfiles_AvatarMimeType_Length", "length(\"AvatarMimeType\") <= 32");
+
+                            t.HasCheckConstraint("CK_UserProfiles_AvatarStorageKey_Length", "length(\"AvatarStorageKey\") <= 32");
+                        });
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Users.UserProfileExternalConnection", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("DisplayName")
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ExternalUserId")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Handle")
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Platform")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ProfileUrl")
                         .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
+                        .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("UserProfileId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -466,13 +499,24 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_UserConnection_StableIdentity");
 
-                    b.ToTable("UserProfileExternalConnections");
+                    b.ToTable("UserProfileExternalConnections", t =>
+                        {
+                            t.HasCheckConstraint("CK_UserProfileExternalConnections_DisplayName_Length", "length(\"DisplayName\") <= 200");
+
+                            t.HasCheckConstraint("CK_UserProfileExternalConnections_ExternalUserId_Length", "length(\"ExternalUserId\") <= 128");
+
+                            t.HasCheckConstraint("CK_UserProfileExternalConnections_Handle_Length", "length(\"Handle\") <= 200");
+
+                            t.HasCheckConstraint("CK_UserProfileExternalConnections_Platform_Length", "length(\"Platform\") <= 32");
+
+                            t.HasCheckConstraint("CK_UserProfileExternalConnections_ProfileUrl_Length", "length(\"ProfileUrl\") <= 2048");
+                        });
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Persistence.AnalysisContextGuard", b =>
                 {
                     b.Property<Guid>("UserProfileId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("UserProfileId");
 
@@ -482,10 +526,10 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Persistence.StorageDatabaseIdentity", b =>
                 {
                     b.Property<int>("Id")
-                        .HasColumnType("integer");
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("StoreId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 

@@ -1406,7 +1406,7 @@ One `AppDbContext` and domain model serve both providers. `Persistence:Provider`
 
 SQLite starts by applying its EF migrations before storage reconciliation. PostgreSQL migrations remain an explicit deployment/development step. No `EnsureCreated`, database reset, or custom migration runner is used. EF's SQLite migration lock can survive a process crash during migration; investigate an abandoned `__EFMigrationsLock` only after confirming no migrator is active, never automatically delete user data to recover startup.
 
-SQLite uses foreign keys on every configured connection, private cache, pooling disabled (predictable file lifetime), and a bounded busy timeout via `Persistence:SqliteTimeoutSeconds` (default 30, supported 1–120 seconds). EF creates the database in WAL mode; full synchronous durability is retained. WAL sidecars belong beside the database. Copying only the live `.db` file is not a backup procedure; backup/sync remain unimplemented.
+SQLite uses foreign keys on every configured connection, private cache, pooling disabled (predictable file lifetime), and a bounded busy timeout via `Persistence:SqliteTimeoutSeconds` (default 30, supported 1–120 seconds only when SQLite is selected; PostgreSQL ignores that inactive setting). Runtime and design-time use the same timeout rule. Startup explicitly establishes and checks WAL outside a transaction for absent, empty, and existing database files before migrations/reconciliation, retaining FULL synchronous durability. Failure to establish WAL stops startup with a sanitized diagnostic. WAL sidecars belong beside the database. Copying only the live `.db` file is not a backup procedure; backup/sync remain unimplemented.
 
 Domain timestamps remain `DateTimeOffset`: PostgreSQL stores UTC timestamps, SQLite stores UTC ticks for exact, server-side ordering/comparison. Decimal inference confidence remains decimal without a lossy floating-point conversion. GUID identities, logical storage keys, ownership/FKs, cascades, unique external identities, and application-managed concurrency tokens remain shared. SQLite uses explicit length checks for bounded columns and JSON validity for analysis results where PostgreSQL's column types enforce these constraints.
 
@@ -1432,6 +1432,27 @@ Design-time operations require `--provider`; omission never guesses a database. 
 SQLite ↔ PostgreSQL synchronization is **not implemented**. Stable application GUIDs, shared logical entities/ownership, neutral types, and logical media keys preserve useful future seams without adding device IDs, change logs, tombstones, or replication infrastructure.
 
 ### Persistent data ownership
+
+**Database/media binding.** Each database persists a randomly generated GUID `StoreId` in the infrastructure-only `StorageDatabaseIdentity` table. It is initialized race-safely after migrations, never derived from a path or seeded identically across databases. Media owner markers bind each actual attachment/avatar directory and its `.staging` area to that StoreId, media role, normalized directory hash, and database locator hash. The locator includes the SQLite absolute filename or PostgreSQL host/port/effective database/search path; passwords are excluded. Replacement/recreation produces a new StoreId, while copying a database preserves StoreId but changing its locator still requires explicit rebinding.
+
+Binding validation runs before both startup reconciliation services and before HTTP requests. Every configured area, including absolute overrides and ancestor paths, is checked; symbolic-link ancestors are rejected. Only empty unbound areas may be provisioned automatically. Populated unbound, malformed, or conflicting areas stop startup. Shared file leases permit matching owners in multiple hosts, exclusive initialization locks prevent conflicting first claims, and offline rebinding requires exclusive leases while all owning hosts are stopped. No media is moved/deleted by binding. PostgreSQL paths and existing files remain unchanged.
+
+**Legacy adoption / deliberate relocation (offline, repository root).** Stop all owning hosts, confirm the selected database and configured media belong together, and apply the selected provider's migration commands above. Use the same provider/connection/data-root/media overrides as normal startup. Then inspect safe IDs/hashes:
+
+```powershell
+dotnet run --project SocialTelemetry.Api --launch-profile http --no-build -- --MediaBinding:Action inspect
+dotnet run --project SocialTelemetry.Api --launch-profile http --no-build -- --MediaBinding:Action adopt --MediaBinding:StoreId <inspected-guid> --MediaBinding:Locator <inspected-locator-hash>
+```
+
+Inspection initializes only the database's missing StoreId and reports current/previous safe ownership metadata, never credentials or physical paths. Adoption explicitly binds populated legacy areas without running HTTP or reconciliation, preserving referenced and orphan files. It refuses conflicting existing owners. Normal startup is a separate action afterward; usual orphan cleanup may then run against the verified pairing.
+
+For a verified relocation or intentional reassignment, inspect the new database and old markers, then provide both exact identities:
+
+```powershell
+dotnet run --project SocialTelemetry.Api --launch-profile http --no-build -- --MediaBinding:Action rebind --MediaBinding:StoreId <new-guid> --MediaBinding:Locator <new-locator-hash> --MediaBinding:PreviousStoreId <old-guid> --MediaBinding:PreviousLocator <old-locator-hash>
+```
+
+Rebinding is an operator assertion that the files belong with the selected database; verify references first. It never transfers records, restores missing data, copies files, or authorizes unrelated-store deletion. Stop hosts before externally replacing databases or media; these cooperative local-filesystem leases are not protection against manual DBA/filesystem changes during operation. Network filesystem locking and cross-machine media sharing are not supported. Marker writes are durable atomic replacements individually, not a transaction over all directories; interruption fails closed and the explicitly verified maintenance operation can be repeated. Do not delete owner markers to bypass a conflict. No synchronization/backup/restore is implemented.
 
 `ApplicationPaths` is the infrastructure boundary for physical persistent locations. `ApplicationData:RootDirectory` may select an absolute Desktop/hosted data root; unset preserves current development behavior. Relative attachment/avatar settings resolve under that root and absolute overrides remain supported. Existing files are not moved automatically. Credentials resolve separately through provider configuration; choosing a data root does not relocate existing protected sessions. Domain records retain portable logical keys.
 

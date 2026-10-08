@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using SocialTelemetry.Api.Infrastructure.Runtime;
 
 namespace SocialTelemetry.Api.Infrastructure.Persistence;
@@ -7,8 +6,9 @@ public sealed class PersistenceOptions
 {
     public string Provider { get; set; } = "PostgreSql";
     public string SqliteFile { get; set; } = "socialtelemetry.db";
-    [Range(1, 120)]
     public int SqliteTimeoutSeconds { get; set; } = 30;
+
+    public bool HasValidSqliteTimeout() => Provider != "Sqlite" || SqliteTimeoutSeconds is >= 1 and <= 120;
 
     public bool HasValidSqlitePath(ApplicationPaths paths)
     {

@@ -520,6 +520,22 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations.Sqlite
                     b.ToTable("AnalysisContextGuards", (string)null);
                 });
 
+            modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Persistence.StorageDatabaseIdentity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("StorageDatabaseIdentity", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_StorageDatabaseIdentity_Singleton", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.AnalysisConversationMessage", b =>
                 {
                     b.HasOne("SocialTelemetry.Api.Domain.Interactions.InteractionAnalysis", "InteractionAnalysis")

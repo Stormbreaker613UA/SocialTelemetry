@@ -17,8 +17,6 @@ public sealed class PersistenceConfigurationTests
     [Theory]
     [InlineData("Persistence:Provider", "Unknown", "Persistence:Provider")]
     [InlineData("ConnectionStrings:Default", "", "ConnectionStrings:Default")]
-    [InlineData("Persistence:SqliteTimeoutSeconds", "0", "SqliteTimeoutSeconds")]
-    [InlineData("Persistence:SqliteTimeoutSeconds", "121", "SqliteTimeoutSeconds")]
     public void Invalid_configuration_fails_clearly_without_fallback(string key, string value, string expected)
     {
         using var application = CreateApp(new() { [key] = value }, maintenance: false);
@@ -102,6 +100,50 @@ public sealed class PersistenceConfigurationTests
         Assert.Contains("--provider", failure.Message);
     }
 
+    [Theory]
+    [InlineData("PostgreSql", 0, true)]
+    [InlineData("PostgreSql", 121, true)]
+    [InlineData("Sqlite", 1, true)]
+    [InlineData("Sqlite", 120, true)]
+    [InlineData("Sqlite", 0, false)]
+    [InlineData("Sqlite", 121, false)]
+    public void Timeout_validation_matches_runtime_and_design_time(string provider, int timeout, bool valid)
+    {
+        var originalDirectory = Directory.GetCurrentDirectory();
+        var repository = new DirectoryInfo(AppContext.BaseDirectory);
+        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "SocialTelemetry.slnx"))) repository = repository.Parent;
+        Assert.NotNull(repository);
+        Directory.SetCurrentDirectory(repository.FullName);
+        var root = TemporaryRoot();
+        var settings = new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = provider,
+            ["Persistence:SqliteTimeoutSeconds"] = timeout.ToString(),
+            ["ApplicationData:RootDirectory"] = root,
+            ["ConnectionStrings:Default"] = "Host=localhost;Database=unused;Username=unused"
+        };
+        try
+        {
+            using var application = CreateApp(settings, maintenance: false);
+            if (valid)
+            {
+                using var client = application.CreateClient();
+                using var context = new AppDbContextFactory().CreateDbContext(
+                    ["--provider", provider, "--Persistence:SqliteTimeoutSeconds", timeout.ToString(),
+                     "--ApplicationData:RootDirectory", root, "--ConnectionStrings:Default", settings["ConnectionStrings:Default"]!]);
+                Assert.Equal(provider == "Sqlite", context.Database.IsSqlite());
+            }
+            else
+            {
+                Assert.Contains("SqliteTimeoutSeconds", Assert.ThrowsAny<Exception>(() => application.CreateClient()).ToString());
+                Assert.Contains("SqliteTimeoutSeconds", Assert.Throws<InvalidOperationException>(() => new AppDbContextFactory().CreateDbContext(
+                    ["--provider", provider, "--Persistence:SqliteTimeoutSeconds", timeout.ToString(),
+                     "--ApplicationData:RootDirectory", root])).Message);
+            }
+        }
+        finally { Directory.SetCurrentDirectory(originalDirectory); DeleteTemporaryRoot(root); }
+    }
+
     private static WebApplicationFactory<Program> CreateApp(Dictionary<string, string?> values, bool maintenance = true) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -111,7 +153,8 @@ public sealed class PersistenceConfigurationTests
                 {
                     foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService) &&
                         (service.ImplementationType == typeof(AttachmentReconciliationService) ||
-                         service.ImplementationType == typeof(ProfileAvatarReconciliationService))).ToArray())
+                         service.ImplementationType == typeof(ProfileAvatarReconciliationService) ||
+                         service.ImplementationType == typeof(MediaDirectoryBinding))).ToArray())
                         services.Remove(service);
                 });
         });
