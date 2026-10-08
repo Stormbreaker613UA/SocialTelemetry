@@ -19,6 +19,9 @@ coverage/
 *.coverage
 *.coveragexml
 
+# Local UI prototypes
+/prototypes/
+
 # Local environment files
 .env
 .env.*
