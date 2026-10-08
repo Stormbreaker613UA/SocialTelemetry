@@ -11,6 +11,9 @@ public sealed class ApplicationPaths(IOptions<ApplicationDataOptions> options, I
 
     public string DatabaseFile(string file) => Path.GetFullPath(file, RootDirectory);
 
+    public string TranscriptionTemporaryDirectory(string? directory) => directory is null
+        ? Path.Combine(Path.GetTempPath(), "SocialTelemetry.Transcription") : ResolveDataDirectory(directory);
+
     public string Attachments(AttachmentStorageOptions attachments) => ResolveDataDirectory(attachments.LocalDirectory);
 
     public string Avatars(ProfileStorageOptions profiles, AttachmentStorageOptions attachments) =>

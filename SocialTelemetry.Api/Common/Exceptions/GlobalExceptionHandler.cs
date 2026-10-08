@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Api.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Api.Common.Exceptions;
 
@@ -15,6 +16,7 @@ public sealed class GlobalExceptionHandler(
     {
         var (statusCode, title, detail) = exception switch
         {
+            SpeechToTextException transcription => (transcription.StatusCode, "Transcription failed.", transcription.Message),
             AiProviderException providerException => (providerException.StatusCode, "AI connection or request failed.", providerException.Message),
             NotFoundException => (StatusCodes.Status404NotFound, "Resource not found.", "The requested resource was not found."),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict.", "The request conflicts with the current state of the resource."),
@@ -41,6 +43,8 @@ public sealed class GlobalExceptionHandler(
             Title = title,
             Detail = detail
         };
+        if (exception is SpeechToTextException transcriptionException)
+            problemDetails.Extensions["code"] = transcriptionException.Failure.ToString();
         if (exception is AiProviderException aiException)
         {
             problemDetails.Extensions["code"] = aiException.Failure.ToString();

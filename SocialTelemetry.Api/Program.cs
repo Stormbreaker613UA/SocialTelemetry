@@ -12,6 +12,7 @@ using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Runtime;
 using SocialTelemetry.Api.Infrastructure.Observability;
+using SocialTelemetry.Api.Infrastructure.Transcription;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -53,6 +54,10 @@ builder.Services.AddOptions<UploadOptions>()
     .BindConfiguration("Uploads").ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddOptions<TranscriptOptions>()
     .BindConfiguration("Transcripts").ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddOptions<WhisperCppOptions>().BindConfiguration("WhisperCpp").ValidateDataAnnotations()
+    .Validate(options => options.HasConsistentLimits(), "WhisperCpp decoded size must accommodate its duration limit.").ValidateOnStart();
+builder.Services.AddSingleton<ITranscriptionProcessRunner, TranscriptionProcessRunner>();
+builder.Services.AddSingleton<ISpeechToTextClient, WhisperCppSpeechToTextClient>();
 builder.Services.AddOptions<AnalysisOptions>()
     .BindConfiguration("Analysis").ValidateDataAnnotations()
     .Validate(options => options.HasConsistentLimits(), "Analysis input limits must fit context, image count must fit evidence count, and total image bytes must cover an individual image.")
