@@ -51,6 +51,12 @@ Do not redesign the existing project structure without a concrete reason and use
 
 ---
 
+## Provider Independence (Mandatory)
+
+Do not tightly couple the product to any AI/LLM or STT engine, cloud, external API/SDK, or storage provider. Business logic, domain code, and use cases depend only on small provider-neutral contracts; provider settings, SDK types, CLI details, secrets, and provider errors stay inside adapters. Add no layers or interfaces without a concrete need.
+
+---
+
 ## Code Style
 
 Prioritize readability over brevity.
