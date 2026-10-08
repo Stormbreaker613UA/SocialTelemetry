@@ -34,7 +34,7 @@ public sealed class SqlitePersistenceTests(SqliteApiFixture fixture) : IClassFix
             Assert.False(database.Database.HasPendingModelChanges());
             var migrations = database.GetService<IMigrationsAssembly>();
             Assert.Equal(ProviderMigrationsAssembly.SqliteNamespace, migrations.ModelSnapshot?.GetType().Namespace);
-            Assert.Equal(2, migrations.Migrations.Count);
+            Assert.Equal(3, migrations.Migrations.Count);
         }
         using var restarted = fixture.WithServices(_ => { });
         using var client = restarted.CreateClient();

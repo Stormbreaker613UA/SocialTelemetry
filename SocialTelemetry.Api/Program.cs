@@ -51,6 +51,8 @@ builder.Services.AddOptions<ChatGptOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<UploadOptions>()
     .BindConfiguration("Uploads").ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddOptions<TranscriptOptions>()
+    .BindConfiguration("Transcripts").ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddOptions<AnalysisOptions>()
     .BindConfiguration("Analysis").ValidateDataAnnotations()
     .Validate(options => options.HasConsistentLimits(), "Analysis input limits must fit context, image count must fit evidence count, and total image bytes must cover an individual image.")

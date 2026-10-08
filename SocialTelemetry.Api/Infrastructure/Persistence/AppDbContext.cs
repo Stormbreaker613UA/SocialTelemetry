@@ -24,6 +24,7 @@ public sealed partial class AppDbContext(
     public DbSet<Interaction> Interactions => Set<Interaction>();
     public DbSet<InteractionParticipant> InteractionParticipants => Set<InteractionParticipant>();
     public DbSet<InteractionAttachment> InteractionAttachments => Set<InteractionAttachment>();
+    public DbSet<AttachmentTranscript> AttachmentTranscripts => Set<AttachmentTranscript>();
     public DbSet<InteractionAnalysis> InteractionAnalyses => Set<InteractionAnalysis>();
     public DbSet<AnalysisConversationMessage> AnalysisConversationMessages => Set<AnalysisConversationMessage>();
     public DbSet<SuggestedProfileUpdate> SuggestedProfileUpdates => Set<SuggestedProfileUpdate>();
@@ -112,6 +113,10 @@ public sealed partial class AppDbContext(
                 InteractionAttachment => [nameof(InteractionAttachment.InteractionId), nameof(InteractionAttachment.Type),
                     nameof(InteractionAttachment.Status), nameof(InteractionAttachment.TextContent),
                     nameof(InteractionAttachment.StorageKey), nameof(InteractionAttachment.MimeType)],
+                AttachmentTranscript => [nameof(AttachmentTranscript.AttachmentId), nameof(AttachmentTranscript.GeneratedText),
+                    nameof(AttachmentTranscript.CorrectedText), nameof(AttachmentTranscript.ReviewStatus), nameof(AttachmentTranscript.ReviewedAt),
+                    nameof(AttachmentTranscript.Version), nameof(AttachmentTranscript.SourceStorageKey), nameof(AttachmentTranscript.SourceSha256),
+                    nameof(AttachmentTranscript.Provider), nameof(AttachmentTranscript.Model), nameof(AttachmentTranscript.TranscriptionVersion)],
                 _ => []
             };
 

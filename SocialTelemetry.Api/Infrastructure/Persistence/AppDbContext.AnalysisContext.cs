@@ -57,6 +57,7 @@ public sealed partial class AppDbContext
         var profiles = new HashSet<Guid>();
         var personIds = new HashSet<Guid>();
         var interactionIds = new HashSet<Guid>();
+        var transcriptAttachmentIds = new HashSet<Guid>();
         var deletedProfiles = new HashSet<Guid>();
         var deletedPeople = new HashSet<Guid>();
         var deletedInteractions = new HashSet<Guid>();
@@ -92,10 +93,22 @@ public sealed partial class AppDbContext
                 case InteractionAttachment:
                     AddScopeValues(entry, nameof(InteractionAttachment.InteractionId), interactionIds);
                     break;
+                case AttachmentTranscript:
+                    AddScopeValues(entry, nameof(AttachmentTranscript.AttachmentId), transcriptAttachmentIds);
+                    break;
             }
         }
 
         // Detached deletes and stale tracked children may not hold their current database parent.
+        if (transcriptAttachmentIds.Count > 0)
+        {
+            interactionIds.UnionWith(await InteractionAttachments.AsNoTracking()
+                .Where(attachment => transcriptAttachmentIds.Contains(attachment.Id))
+                .Select(attachment => attachment.InteractionId).ToListAsync(cancellationToken));
+            foreach (var attachment in ChangeTracker.Entries<InteractionAttachment>()
+                .Where(entry => transcriptAttachmentIds.Contains(entry.Entity.Id)))
+                AddScopeValues(attachment, nameof(InteractionAttachment.InteractionId), interactionIds);
+        }
         var factIds = changes.Where(entry => entry.State != EntityState.Added).Select(entry => entry.Entity)
             .OfType<PersonFact>().Select(fact => fact.Id).ToArray();
         if (factIds.Length > 0)

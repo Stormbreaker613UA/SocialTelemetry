@@ -49,6 +49,62 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("AnalysisConversationMessages");
                 });
 
+            modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.AttachmentTranscript", b =>
+                {
+                    b.Property<Guid>("AttachmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CorrectedText")
+                        .HasMaxLength(120000)
+                        .HasColumnType("character varying(120000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GeneratedText")
+                        .HasMaxLength(120000)
+                        .HasColumnType("character varying(120000)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("ReviewStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceStorageKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("TranscriptionVersion")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("AttachmentId");
+
+                    b.ToTable("AttachmentTranscripts");
+                });
+
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.Interaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -504,6 +560,17 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("InteractionAnalysis");
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.AttachmentTranscript", b =>
+                {
+                    b.HasOne("SocialTelemetry.Api.Domain.Interactions.InteractionAttachment", "Attachment")
+                        .WithOne()
+                        .HasForeignKey("SocialTelemetry.Api.Domain.Interactions.AttachmentTranscript", "AttachmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Attachment");
                 });
 
             modelBuilder.Entity("SocialTelemetry.Api.Domain.Interactions.Interaction", b =>
