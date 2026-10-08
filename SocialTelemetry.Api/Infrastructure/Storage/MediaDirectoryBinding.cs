@@ -51,11 +51,11 @@ public sealed class MediaDirectoryBinding(IServiceScopeFactory scopeFactory, App
         var bindingLocks = new List<FileStream>();
         try
         {
+            var areas = Areas();
             await using var scope = scopeFactory.CreateAsyncScope();
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var storeId = await GetStoreIdAsync(database, cancellationToken);
             var locator = DatabaseLocator(database);
-            var areas = Areas();
             if (maintenance && options.Value.Action == "inspect")
             {
                 Console.WriteLine($"StoreId: {storeId:D}\nLocator: {locator}");
@@ -155,7 +155,23 @@ public sealed class MediaDirectoryBinding(IServiceScopeFactory scopeFactory, App
             new(avatarRoot, "avatars"), new(Canonical(Path.Combine(avatarRoot, ".staging")), "avatar-staging")];
         if (areas.Select(area => area.Directory).Distinct(PathComparer).Count() != areas.Length)
             throw Failure("Media areas overlap.");
+        // Check the calculated layout before any directories/markers exist; ancestor markers alone
+        // would otherwise allow the first startup and reject the same layout after restart.
+        foreach (var staging in areas.Where(area => area.Kind.EndsWith("-staging", StringComparison.Ordinal)))
+        {
+            foreach (var media in areas.Where(area => area.Kind is "attachments" or "avatars"))
+            {
+                if (IsWithinDirectory(media.Directory, staging.Directory))
+                    throw Failure("A media area cannot be nested inside another staging area.");
+            }
+        }
         return areas.OrderBy(area => area.Directory, PathComparer).ToArray();
+    }
+
+    private static bool IsWithinDirectory(string directory, string parent)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return PathComparer.Equals(directory, parent) || directory.StartsWith(parent + Path.DirectorySeparatorChar, comparison);
     }
 
     private async Task<FileStream> LockAsync(string file, bool exclusive, CancellationToken cancellationToken)

@@ -32,6 +32,66 @@ public sealed class MediaDirectoryBindingTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task Fresh_cross_staging_layout_is_rejected_without_directories_or_ownership_markers(bool nestedAvatar, bool normalizedVariant)
+    {
+        var root = Root();
+        var settings = await SettingsAsync("Sqlite", root, absolute: true);
+        var stagingName = normalizedVariant && OperatingSystem.IsWindows() ? ".STAGING" : ".staging";
+        var parent = settings[nestedAvatar ? "AttachmentStorage:LocalDirectory" : "ProfileStorage:AvatarDirectory"]!;
+        var nested = normalizedVariant
+            ? Path.Combine(parent, "unused", "..", stagingName, "nested-media")
+            : Path.Combine(parent, stagingName, "nested-media");
+        settings[nestedAvatar ? "ProfileStorage:AvatarDirectory" : "AttachmentStorage:LocalDirectory"] = nested;
+
+        using var application = App(settings);
+        var failure = Assert.Throws<MediaBindingException>(() => application.CreateClient());
+        Assert.Contains("staging", failure.Message);
+        Assert.DoesNotContain(root, failure.Message);
+        Assert.Empty(Directory.EnumerateFiles(root, ".socialtelemetry-media-*", SearchOption.AllDirectories));
+        Assert.All(Directories(settings), directory => Assert.False(Directory.Exists(directory)));
+    }
+
+    [Theory]
+    [InlineData("default")]
+    [InlineData("separate-absolute")]
+    [InlineData("avatar-staging-prefix")]
+    [InlineData("attachment-staging-prefix")]
+    [InlineData("media-root-prefix")]
+    public async Task Valid_layout_and_its_own_staging_areas_remain_valid_after_restart(string layout)
+    {
+        var root = Root();
+        var settings = await SettingsAsync("Sqlite", root, absolute: layout != "default");
+        if (layout == "avatar-staging-prefix")
+            settings["ProfileStorage:AvatarDirectory"] = Path.Combine(settings["AttachmentStorage:LocalDirectory"]!, ".staging-avatars");
+        if (layout == "attachment-staging-prefix")
+            settings["AttachmentStorage:LocalDirectory"] = Path.Combine(settings["ProfileStorage:AvatarDirectory"]!, ".staging-attachments");
+        if (layout == "media-root-prefix")
+        {
+            settings["AttachmentStorage:LocalDirectory"] = Path.Combine(root, "media");
+            settings["ProfileStorage:AvatarDirectory"] = Path.Combine(root, "media-extra");
+        }
+        Media media;
+        string[] originalBindings;
+        using (var first = App(settings))
+        using (var client = first.CreateClient())
+        {
+            media = await SeedMediaAsync(first, settings);
+            originalBindings = Directories(settings).Select(directory => File.ReadAllText(Path.Combine(directory, ".socialtelemetry-media-owner.json"))).ToArray();
+        }
+        using var restarted = App(settings);
+        using var restartedClient = restarted.CreateClient();
+        Assert.Equal(originalBindings, Directories(settings).Select(directory => File.ReadAllText(Path.Combine(directory, ".socialtelemetry-media-owner.json"))).ToArray());
+        Assert.Equal(4, Directory.EnumerateFiles(root, ".socialtelemetry-media-owner.json", SearchOption.AllDirectories).Count());
+        Assert.True(File.Exists(media.Attachment));
+        Assert.True(File.Exists(media.Avatar));
+        Assert.False(File.Exists(media.Orphan));
+    }
+
+    [Theory]
     [InlineData("PostgreSql", "Sqlite", false)]
     [InlineData("PostgreSql", "Sqlite", true)]
     [InlineData("Sqlite", "PostgreSql", true)]
