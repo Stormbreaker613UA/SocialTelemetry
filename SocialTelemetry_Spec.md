@@ -1363,7 +1363,7 @@ Again: not MVP.
 
 Operational policy (uploads, AI context/evidence bounds, storage maintenance, and provider timing/response limits) uses validated typed Options, with shipped non-secret defaults in `SocialTelemetry.Api/appsettings.json`. Existing storage and ChatGPT sections remain compatible with standard .NET configuration overrides. Security/protocol rules, schema constraints, absolute safety ceilings, and versioned AI result item bounds remain code-defined. Provider credentials stay in protected local storage, outside ordinary configuration. A future Settings UI may expose an approved subset through the same Options boundary; this does not introduce settings persistence or UI now.
 
-The same ASP.NET Core/Razor product should support two deployment experiences without splitting the product into separate business-logic codebases.
+The same ASP.NET Core/Razor product supports a local and a hosted backend deployment, with three accepted eventual client usage modes: Desktop Local, Desktop Remote, and Web Browser. These are modes of one product, not separate business-logic or UI codebases. The hosted modes are post-v1.
 
 ```text
 Server / development mode
@@ -1726,7 +1726,7 @@ Conversation / Interaction Importers
 Data/product expansion
 - backup / restore
 - server multi-user/auth
-- sync via a server API if ever needed
+- bidirectional Local Desktop ↔ Hosted Server synchronization, including offline change reconciliation (accepted post-v1; design and implementation pending)
 - cloud/blob attachment storage
 - mobile/cross-platform client if justified
 - semantic search / embeddings / RAG only when history size creates a real need
@@ -1738,20 +1738,25 @@ External integrations should map into the existing domain rather than creating p
 
 This is accepted **post-v1 direction**, not current implementation or additional v1 scope. The existing roadmap order remains unchanged.
 
-Three eventual deployment modes:
+Three eventual client usage modes (one SocialTelemetry product and shared UI):
 
 ```text
-Local desktop
+Desktop Local (v1)
 → local ASP.NET Core host → SQLite → local or cloud AI
+→ single local owner, no mandatory SocialTelemetry login
 
-Local desktop connected to remote server
-→ remote SocialTelemetry API → authenticated user → PostgreSQL
-→ hosted or external AI
+Desktop Remote (post-v1)
+→ installed Windows client → authenticated remote SocialTelemetry server
+→ PostgreSQL → hosted or selected AI
 
-Hosted server
-→ browser / desktop / other client → SocialTelemetry API → PostgreSQL
-→ hosted AI or user-selected provider
+Web Browser (post-v1)
+→ browser → authenticated remote SocialTelemetry server
+→ PostgreSQL → hosted or selected AI
 ```
+
+Local Desktop must remain usable without an account or network connection for its core local workflows, subject to the selected AI runtime/provider. Hosted access must require authentication and enforce authorization and per-user ownership server-side. A desktop connection-mode choice must not permit disabling hosted authorization. `SocialTelemetry.Desktop` remains one thin installed client, offering Local or Remote after remote support is implemented; the same Razor Pages product UI also serves browser clients.
+
+**Synchronization is an accepted post-v1 product requirement, not an optional idea.** The intended experience includes bidirectional synchronization between a user's local SQLite journal and authenticated hosted PostgreSQL account, with continued local/offline work and later reconciliation of changes. Switching between Local and Remote must never silently copy, merge, or overwrite data. Exact sync protocol, scope per entity/media type, deletions/tombstones, conflict resolution, account/device mapping, and first-sync consent/recovery behavior require separate design before implementation. No synchronization infrastructure or migrations are required for v1; current provider parity and stable IDs are preparation, not working sync.
 
 **Identity and ownership.** Future authentication identity is separate from social profile data:
 
