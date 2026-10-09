@@ -10,6 +10,57 @@ AI helps explain literal meaning, tone, and possible social context; surface unc
 
 AI interpretations are hypotheses, not facts. SocialTelemetry is not a mind reader or relationship oracle.
 
+## Why Use SocialTelemetry?
+
+Ever received a message and wondered, *"What did they actually mean?"* Or found yourself repeatedly explaining the same social situation to an AI assistant?
+
+**SocialTelemetry helps you understand conversations, keep track of important social context, and make more informed decisions about how to communicate.**
+
+Think of it as a personal journal combined with a context-aware AI advisor.
+
+### What Problems Does It Help With?
+
+- **Ambiguous communication:** Understand possible meanings, tone, sarcasm, hints, and social cues.
+- **Overthinking:** Separate what actually happened from assumptions, consider alternative explanations, and avoid jumping to conclusions.
+- **Lost context:** Keep relevant information about people and previous interactions in one place.
+- **Language and cultural barriers:** Better understand expressions, humor, and communication styles when talking to people from different backgrounds.
+- **Difficult conversations:** Explore possible replies, approaches to conflicts, and reasonable next steps.
+- **Recurring patterns:** Reflect on how communication develops over time instead of judging everything by a single message.
+
+### Who Is It For?
+
+Anyone who wants to better understand their social interactions, especially people who find social signals confusing, tend to overanalyze conversations, communicate across languages, or simply want to keep track of important relationships and contacts.
+
+It's not just for dating. SocialTelemetry can be useful for friendships, online communities, workplace communication, interviews, and everyday situations.
+
+### How Does It Work?
+
+1. **Create profiles** for yourself and people you interact with.
+2. **Record an interaction** by describing what happened and adding conversation text, screenshots, images, or voice messages.
+3. **Ask AI for an analysis** of the situation, including possible interpretations, uncertainty, and suggested responses.
+4. **Continue the conversation with AI**, ask follow-up questions, and explore the situation using relevant history.
+5. **Review suggested profile updates** before anything becomes confirmed knowledge.
+
+### Real-Life Examples
+
+**An unclear message:** "Was that sarcasm, flirting, or just a friendly joke?"
+
+**An awkward conversation:** "Could I have misunderstood their reaction? What are other possible explanations?"
+
+**A communication problem:** "How can I respond without making the situation worse?"
+
+**Long-term context:** "Looking at our previous interactions, what patterns can I actually observe?"
+
+### Important Limitations and Privacy
+
+SocialTelemetry cannot read minds, determine someone's intentions with certainty, or replace direct communication.
+
+AI-generated interpretations are suggestions, not established facts. You remain in control of what information is saved as confirmed knowledge.
+
+The application is designed to be local-first. Local AI processing is a planned v1 option; choosing a cloud AI provider means selected information may be sent to that provider for analysis.
+
+*These examples describe the intended product experience. Not all features are implemented yet.*
+
 ## Facts and Guesses
 
 > Facts are facts. AI guesses are guesses.
@@ -76,7 +127,7 @@ The same Razor UI is intended for WebView2 and browser use. Authenticated multi-
 
 ## Current State
 
-The backend/domain and attachment foundation, ChatGPT connection, and AnalyzeInteraction pipeline are implemented. Live ChatGPT connection and synthetic text/image analysis have been verified, and required A1–A4 audit corrections are resolved. Audio ingestion / persisted transcription is next; the product UI and desktop packaging remain ahead.
+The backend/domain and attachment foundation, ChatGPT connection, and AnalyzeInteraction pipeline are implemented. Live ChatGPT connection and synthetic text/image analysis have been verified, and required A1–A4 audit corrections are resolved. Audio attachment ingestion, editable/reviewable transcripts (7.2.1A), and local speech-to-text integration (7.2.1B) are implemented; using reviewed audio transcripts in AnalyzeInteraction (7.2.1C) is still pending. Real whisper.cpp/FFmpeg/model smoke testing has not yet been performed. The product UI and desktop packaging also remain ahead.
 
 For the current implementation checkpoint, see [CURRENT.md](CURRENT.md). Product scope, architecture, and accepted roadmap decisions live in [SocialTelemetry_Spec.md](SocialTelemetry_Spec.md); implementation/agent rules live in [AGENTS.md](AGENTS.md).
 
