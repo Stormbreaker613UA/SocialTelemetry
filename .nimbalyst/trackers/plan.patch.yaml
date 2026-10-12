@@ -1,0 +1,138 @@
+# Shared with your team. Saving this file updates it for everyone. Last changed by Stormbreaker613UA.
+
+type: plan
+fields:
+  - name: scope
+    set:
+      type: select
+      displayInline: true
+      default: v1
+    options:
+      set:
+        - value: v1
+          label: v1
+        - value: post-v1
+          label: Post-v1
+        - value: open-decision
+          label: Scope decision pending
+  - name: workstream
+    set:
+      type: select
+      displayInline: true
+    options:
+      set:
+        - value: planner
+          label: Planner / Architect
+        - value: backend
+          label: Backend Developer
+        - value: ui-ux
+          label: UI / UX Developer
+        - value: reviewer
+          label: Code Reviewer
+        - value: explainer
+          label: Engineering Explainer
+  - name: implemented
+    set:
+      type: select
+      displayInline: true
+      default: unknown
+    options:
+      set:
+        - value: unknown
+          label: Unknown
+        - value: not-started
+          label: Not started
+        - value: reported
+          label: Reported (evidence linked)
+        - value: verified
+          label: Verified
+        - value: not-applicable
+          label: Not applicable
+  - name: tested
+    set:
+      type: select
+      displayInline: true
+      default: unknown
+    options:
+      set:
+        - value: unknown
+          label: Unknown
+        - value: not-started
+          label: Not started
+        - value: reported
+          label: Reported (evidence linked)
+        - value: verified
+          label: Verified
+        - value: not-applicable
+          label: Not applicable
+  - name: reviewed
+    set:
+      type: select
+      displayInline: true
+      default: unknown
+    options:
+      set:
+        - value: unknown
+          label: Unknown
+        - value: not-started
+          label: Not started
+        - value: reported
+          label: Reported (evidence linked)
+        - value: verified
+          label: Verified
+        - value: not-applicable
+          label: Not applicable
+  - name: accepted
+    set:
+      type: select
+      displayInline: true
+      default: unknown
+    options:
+      set:
+        - value: unknown
+          label: Unknown
+        - value: not-started
+          label: Not started
+        - value: reported
+          label: Reported (evidence linked)
+        - value: verified
+          label: Verified
+        - value: not-applicable
+          label: Not applicable
+  - name: parent
+    set:
+      type: relationship
+      displayInline: true
+      relationshipTypeKey: subtask-of
+      targetTrackerTypes:
+        - plan
+        - task
+      multiValue: false
+      inverseFieldId: children
+      inverseRelationshipTypeKey: has-subtask
+  - name: children
+    set:
+      type: relationship
+      displayInline: true
+      relationshipTypeKey: has-subtask
+      targetTrackerTypes:
+        - plan
+        - task
+      multiValue: true
+      inverseFieldId: parent
+      inverseRelationshipTypeKey: subtask-of
+      childRelationship: true
+tableView:
+  defaultColumns:
+    - title
+    - status
+    - priority
+    - scope
+    - workstream
+    - implemented
+    - tested
+    - reviewed
+    - accepted
+  sortable: true
+  filterable: true
+  exportable: true
