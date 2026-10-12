@@ -40,3 +40,6 @@ SocialTelemetry.Api/attachments/
 chatgpt-state.bin*
 chatgpt-state.lock
 chatgpt-keys/
+
+# Local Nimbalyst recovery snapshots and private session context
+/.nimbalyst/recovery/
