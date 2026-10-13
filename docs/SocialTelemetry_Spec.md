@@ -351,6 +351,10 @@ The accepted reference local transcription implementation is `whisper.cpp`, usin
 
 Users should be able to review and correct a persisted transcript before analysis, especially for names, slang, mixed languages, noise, and informal speech. A corrected transcript remains normalized evidence, separate from raw audio and AI interpretation. Never silently overwrite the original audio; preserve available speaker attribution without guessing missing identities.
 
+Transcript lifecycle contract: generated text starts `Unreviewed`. Generated and corrected text remain separate; effective text prefers the user's correction. Editing invalidates review. Updates to an existing transcript require the expected concurrency version; review confirmation is a separate request using the returned version after any text change. A usable, source-current persisted transcript is reused without retranscription or overwriting user corrections, including manual, corrected, and reviewed text.
+
+Analysis may use only owned, reviewed, source-current transcripts as bounded normalized evidence, with transcript version/provenance included in freshness protection. Transcription must not run implicitly during analysis. The implementation and authorization status of this integration belongs in [CURRENT.md](CURRENT.md).
+
 Supported architectural combinations include:
 
 ```text
@@ -760,7 +764,7 @@ The rule:
 
 ## 16. Accepted Architecture
 
-Current v1 architecture:
+Accepted v1 architecture target (see [CURRENT.md](CURRENT.md) for implementation status):
 
 ```text
 .NET 10
@@ -779,7 +783,7 @@ Swagger / OpenAPI
 xUnit + integration tests / Testcontainers
 ```
 
-The core application should remain a single ASP.NET Core application rather than being split into Clean Architecture projects, a modular monolith, or microservices without a concrete reason. Multi-user support in the future would not, by itself, justify microservices.
+The core remains a .NET 10 VSA modular monolith in a single ASP.NET Core application, with logical feature boundaries and one AppDbContext/domain model. Do not split it into Clean Architecture projects, module class libraries, or microservices without a concrete technical/runtime reason and owner approval. Multi-user support in the future would not, by itself, justify microservices.
 
 A **small `SocialTelemetry.Desktop` host project is an allowed concrete exception** when WebView2 is implemented. Its responsibility should stay narrow: desktop window lifecycle, starting/stopping the local ASP.NET Core host, WebView2 navigation, single-instance behavior, and update/restart integration. It must not become a second business-logic/frontend architecture.
 
@@ -788,6 +792,8 @@ The Razor UI should use same-process application logic / DbContext where appropr
 ---
 
 ## 17. Approximate Project Structure
+
+This is an illustrative target structure, not an inventory of existing projects, folders, or implemented features. Planned Follow-up, Advisor, Razor Pages, and desktop areas may be absent from the current source. Use the repository for actual structure and [CURRENT.md](CURRENT.md) for the implementation checkpoint.
 
 ```text
 SocialTelemetry
@@ -901,6 +907,8 @@ Features/Analysis/AnalyzeInteraction
 ---
 
 ## 18. Approximate API
+
+These are product/API sketches, not the current endpoint contract. The `/api` prefix below is illustrative; implemented FastEndpoints routes currently have no `/api` prefix (for example, `POST /interactions/{interactionId}/analyze`). Analysis retrieval, Follow-up, suggestion review, and Person Advisor routes shown below are planned, not implemented endpoints. Actual paths and request/response contracts are defined in the corresponding feature source and generated OpenAPI; see [CURRENT.md](CURRENT.md) for status.
 
 ### User profile
 
@@ -1571,7 +1579,9 @@ Do not self-patch running executable/DLL files, accept arbitrary update URLs, or
 
 ---
 
-## 31. Current Implementation Checkpoint (2026-10-05)
+## 31. Historical Implementation Checkpoint (2026-10-05)
+
+This section preserves the earlier 7.1 checkpoint and its subsequent 2026-10-06 smoke result as historical evidence. Its progress statements, test counts, and numbered sequence are not current task status or authorization to begin work. Later implementation includes AnalyzeInteraction, SQLite, and Audio A/B; consult [CURRENT.md](CURRENT.md) for the latest implementation, verification qualifications, blockers, and recovery checkpoint. Task progress and dependencies belong in Tracker. This specification remains authoritative for approved requirements and architecture; historical reports and the separate UI prototype require no continuous synchronization.
 
 Completed:
 
@@ -1589,7 +1599,7 @@ ChatGPT-plan AI connection foundation (7.1)
 135/135 automated tests green at the completed 7.1 checkpoint
 ```
 
-AI 7.1 currently includes:
+AI 7.1 at this historical checkpoint included:
 
 ```text
 ChatGPT-plan OAuth / Authorization Code + PKCE
@@ -1603,7 +1613,7 @@ no live OpenAI calls in automated tests
 
 AI Pass 7.1 is complete: F1 refresh-rotation safety and F2 provider-neutral selected-model/provenance fixes are implemented. The real-account OAuth connection lifecycle smoke passed on 2026-10-06, including model selection, restart persistence, disconnect/revocation, reconnect, and safe errors. Natural refresh, tiny live inference, and HTTP selected-model metadata were accepted NOT EXERCISED checks; this does not establish live inference verification. Build passed with 0 warnings/errors and all 135 tests passed.
 
-Roadmap order (steps 1–6 complete; next is 7.2 AnalyzeInteraction, not yet started):
+Historical roadmap order recorded at that checkpoint (steps 1–6 complete then; 7.2 had not started then). Preserve the recorded sequence as evidence, not as a claim that later completed work remains TODO:
 
 ```text
 1. Documentation synchronization

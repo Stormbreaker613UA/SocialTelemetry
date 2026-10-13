@@ -109,27 +109,27 @@ ChatGPT is the first implemented provider, not a hard dependency. Provider-neutr
 
 V1 requires a usable free local path without a subscription or API key, subject to suitable hardware. The reference analysis/vision preset is **Qwen3-VL-8B-Instruct Q6_K**; the local transcription reference is **whisper.cpp + multilingual Whisper**. These are replaceable recommended choices, not domain dependencies. Advanced users will be able to connect compatible local endpoints.
 
-Local AI and transcription setup are planned, not available yet. Runtimes and model weights will be separate downloads, not bundled into the main installer; application updates should preserve them and user data.
+Local transcription is available with manually configured trusted FFmpeg and whisper.cpp binaries and a compatible multilingual model; see [local transcription setup](docs/LocalTranscription.md). It works without a subscription or API key. Local AI analysis and one-click runtime/model installation remain planned. Runtimes and model weights are separate from the main installer; application updates should preserve them and user data.
 
 ## Runtime Modes
 
-Accepted v1 direction:
+The v1 target is local Windows desktop use. The backend also supports browser/API access during development:
 
 ```text
 Local desktop
 → local ASP.NET Core host → SQLite → local/cloud AI
 
-Server/browser mode
+Development browser/API access
 → ASP.NET Core → PostgreSQL → configured AI provider
 ```
 
-The same Razor UI is intended for WebView2 and browser use. Authenticated multi-user hosting and a desktop client connected to a remote server are post-v1 directions, potentially using hosted/self-hosted AI through the same provider-neutral boundary.
+The same planned Razor UI is intended for WebView2 and browser use; the product UI is not implemented yet. Development browser/API access is distinct from authenticated hosted/browser mode and a desktop client connected to a remote server, which are post-v1 directions. These modes may use hosted/self-hosted AI through the same provider-neutral boundary.
 
 ## Current State
 
 The backend/domain and attachment foundation, ChatGPT connection, and AnalyzeInteraction pipeline are implemented. Live ChatGPT connection and synthetic text/image analysis have been verified, and required A1–A4 audit corrections are resolved. Audio attachment ingestion, editable/reviewable transcripts (7.2.1A), and local speech-to-text integration (7.2.1B) are implemented; using reviewed audio transcripts in AnalyzeInteraction (7.2.1C) is still pending. Real whisper.cpp/FFmpeg/model smoke testing has not yet been performed. The product UI and desktop packaging also remain ahead.
 
-For the current implementation checkpoint, see [CURRENT.md](CURRENT.md). Product scope, architecture, and accepted roadmap decisions live in [SocialTelemetry_Spec.md](SocialTelemetry_Spec.md); implementation/agent rules live in [AGENTS.md](AGENTS.md).
+For the current implementation checkpoint, see [docs/CURRENT.md](docs/CURRENT.md). Product scope, architecture, and accepted roadmap decisions live in [docs/SocialTelemetry_Spec.md](docs/SocialTelemetry_Spec.md); implementation/agent rules live in [AGENTS.md](AGENTS.md).
 
 ## Roadmap
 

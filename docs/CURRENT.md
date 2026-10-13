@@ -1,6 +1,6 @@
 # SocialTelemetry Current State
 
-Updated: 2026-10-09
+Updated: 2026-10-13 (documentation synchronization; implementation verification below is historical)
 
 ## Current Checkpoint
 
@@ -13,8 +13,9 @@ Updated: 2026-10-09
 - **OpenTelemetry diagnostics baseline COMPLETE.** Serilog remains with trace/span correlation; ASP.NET Core/HttpClient/native Npgsql tracing, HTTP/runtime metrics, and custom analysis/AI/storage telemetry are active. OTLP is optional/off by default, with privacy-safe metadata and no collector dependency.
 - **SQLite / multi-provider persistence COMPLETE.** Validated `Persistence` options select PostgreSQL (default) or real-file SQLite using `ApplicationPaths`. One AppDbContext/domain model remains; separate EF migration sets preserve PostgreSQL history. SQLite startup migrates before reconciliation, with FKs, WAL/full durability, UTC timestamp ordering, and privacy-safe coarse persistence traces. Synchronization is not implemented.
 - B1/R1/C1 are corrected: durable per-database StoreId and locator-bound media/staging ownership fail closed before reconciliation; explicit offline adoption/rebinding preserves legacy files. Startup establishes/verifies WAL for existing files; SQLite timeout validation applies only to SQLite in runtime/design time. Cooperative directory leases exclude conflicting owners/rebinding while hosts are active.
+- The later cross-staging layout defect is resolved by `0c41f84`: attachment/avatar roots nested inside another staging area are rejected before identity, directories, or markers are created. Correction source and regression tests were inspected; the reviewer did not rerun them.
 - **Audio 7.2.1A — COMPLETE.** GET/PUT transcripts for owned Ready Audio support manual text, separate generated/corrected text, version-checked review, edit invalidation, source key/digest, and optional STT provenance. Transcript writes use profile-scoped context guards; deletion cascades from attachments. Default text limit: 12,000 characters. `AddAttachmentTranscripts` migrations passed on both providers; development data/media were not changed. Transcript use in AnalyzeInteraction remains stage C.
-- **Audio 7.2.1B — implemented and automated verification green.** Independent ISpeechToTextClient/whisper.cpp uses FFmpeg and verified 16-kHz mono PCM WAV; auto language detection, bounded native execution, safe failures, isolated temp cleanup, and 429 admission control. TranscribeAttachment reuses current manual/generated transcripts and rejects changed sources/newer edits before guarded persistence. New text stays Unreviewed. No migration or real-binary/model smoke was required/performed; configure trusted binaries/model and use docs/LocalTranscription.md for optional verification. AnalyzeInteraction still rejects Audio until C.
+- **Audio 7.2.1B — implemented; automated success recorded.** Independent ISpeechToTextClient/whisper.cpp uses FFmpeg and verified 16-kHz mono PCM WAV; auto language detection, bounded native execution, safe failures, isolated temp cleanup, and 429 admission control. TranscribeAttachment reuses current manual/generated transcripts and rejects changed sources/newer edits before guarded persistence. New text stays Unreviewed. No migration was needed. Real FFmpeg/whisper.cpp/model smoke remains unperformed; recognition quality is unverified. Configure trusted binaries/model using [local transcription instructions](LocalTranscription.md). Independent B review and owner acceptance remain pending. AnalyzeInteraction still rejects Audio until C.
 - Runtime configuration is centralized in validated typed Options backed by `appsettings.json`; shipped defaults preserve prior behavior. Uploads, analysis input/aggregate-result limits, maintenance age, and provider timing/buffer policy are configurable within code-defined safety ceilings.
 - Provider-neutral `AiContextBuilder` supplies owned UserProfile/participant context, separates confirmed facts from inferences, and preserves unknown speakers rather than inventing attribution.
 - Default context bounds: 10 participants, latest 20 facts/10 relevant inferences per Person, and at most 5 earlier interactions with overlapping participants and no unrelated People; 64,000 total context characters.
@@ -27,24 +28,27 @@ Updated: 2026-10-09
 - F5 is complete: session generations/lifetime cancellation invalidate in-flight and late results on disconnect; reconnect cannot revive an old execution. No credential lock spans inference.
 - A3 uses a provider-neutral execution lease retaining shared credential-store protection from final session validation through save/commit. Disconnect/reconnect from another host cannot invalidate that protected commit.
 - PostgreSQL's original nine migrations are preserved; `20261008153159_AddStorageDatabaseIdentity` adds infrastructure identity only. SQLite adds `20261008153204_AddStorageDatabaseIdentity` after its baseline. Both models match snapshots and migrations apply in disposable tests. The existing development database/media were not modified: apply the new migration and explicitly adopt verified legacy media before normal startup (specification section 28).
-- Automated verification: **702 total / 702 passed / 0 failed / 0 skipped**; focused STT checks: **30 adapter/process + 48 HTTP passed**; build: **0 warnings / 0 errors**. PostgreSQL Testcontainers, real-file SQLite, and existing transcript/attachment/analysis regressions ran. STT/AI automated tests use fakes; native-runner checks use only SDK/system test processes.
+- Historical automated verification at the completed 2026-10-09 B implementation pass: **702 total / 702 passed / 0 failed / 0 skipped**; focused STT checks: **30 adapter/process + 48 HTTP passed**; build: **0 warnings / 0 errors**. PostgreSQL Testcontainers, real-file SQLite, and existing transcript/attachment/analysis regressions ran. These results were not rerun during onboarding or documentation maintenance and do not establish independent review or owner acceptance. STT/AI automated tests use fakes; native-runner checks use only SDK/system test processes. Implementation commit: `34658aa`; recorded report checkpoint: `a738358`.
 - Live synthetic text and screenshot analyses passed with `chatgpt-plan` / `gpt-5.6-sol`; typed results and persisted provider/model/schema/prompt/fingerprint were verified. Natural refresh occurred without expiry manipulation. Synthetic records/files were removed through normal deletion workflows; observed logs contained no evidence/prompts/tokens.
 - Tooling remains .NET SDK `10.0.401` (`global.json`, latestPatch, no prereleases), `net10.0`, xUnit v3/MTP v2, and Docker Compose `postgres:18` (18.6 previously verified). Compose configuration validates; it was not started in this pass while local PostgreSQL uses port 5432.
-- Root verification: `dotnet restore`, `dotnet build SocialTelemetry.slnx`, `dotnet test --solution SocialTelemetry.slnx --no-build`, and `docker compose config`.
+- Historical root verification commands: `dotnet restore`, `dotnet build SocialTelemetry.slnx`, `dotnet test --solution SocialTelemetry.slnx --no-build`, and `docker compose config`.
 
 ## Current Task
 
-Next checkpoint: **AI Pass 7.2.1C — Reviewed transcripts in AnalyzeInteraction.** A/B are implemented; C has not started.
+Current quality gate: **Independent Audio 7.2.1B Review → owner reviews findings and authorizes next work → Audio 7.2.1C.** A/B are implemented; independent B review has not started. **C has not started and remains blocked by this gate.**
+
+Recovery checkpoint: last backend implementation/report checkpoint `a738358`; subsequent repository changes through `5c93638` concern documentation and Tracker schemas. No implementation, tests, or migrations ran during this documentation pass. Resume from the B review gate; do not infer authorization for C from historical handoffs.
 
 ## Immediate Next Steps
 
-1. Integrate only owned, reviewed, source-current transcripts as bounded normalized evidence, including transcript provenance/version in freshness checks.
-2. Preserve speaker attribution and capability-based provider boundaries. Do not assume ChatGPT-plan inference supplies transcription.
+1. Assign the independent B review only when authorized; report findings and distinguish implementation, automated testing, independent review, and owner acceptance.
+2. Owner reviews findings, approves any necessary corrections, and explicitly authorizes the next work. Do not start C automatically.
+3. After authorization, C will use only owned, reviewed, source-current transcripts as bounded normalized evidence, including transcript provenance/version in freshness checks. Preserve speaker uncertainty and capability-based provider boundaries; do not invoke STT during analysis.
 
 ## Guardrails
 
-- `AGENTS.md` defines execution/coding rules; `SocialTelemetry_Spec.md` defines accepted product/architecture/roadmap decisions.
-- `AI_7_1_Architecture_Audit.md` is historical: F1/F2/F3/F5 are resolved; remaining provider-specific administration/error presentation can wait for another adapter.
+- The three authoritative internal documents are [AGENTS.md](../AGENTS.md) for engineering/agent rules, [SocialTelemetry_Spec.md](SocialTelemetry_Spec.md) for accepted requirements/architecture, and this file for implementation, verification, blockers, and the recovery checkpoint. Tracker owns task progress and dependencies; Memory holds working context. README is public information; historical reports are archival evidence and the prototype is a separate design experiment, neither requiring ongoing synchronization.
+- Historical AI 7.1 audit findings F1/F2/F3/F5 are resolved; remaining provider-specific administration/error presentation can wait for another adapter.
 - Keep provider independence, ownership, bounded context, evidence boundaries, and facts versus AI inferences intact.
 - Store only validated results; keep credentials, raw prompts, private evidence, and provider envelopes out of logs/checkpoint documents.
 - No speculative framework, architecture redesign, or early implementation of Follow-up, Accept/Edit/Reject, Advisor, UI, or Local AI. New persistence work must preserve both database providers.

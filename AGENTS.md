@@ -4,14 +4,14 @@
 
 Use these documents together:
 
-- `SocialTelemetry_Spec.md` = current product scope, accepted architecture, roadmap, and product decisions.
+- `docs/SocialTelemetry_Spec.md` = current product scope, accepted architecture, roadmap, and product decisions.
 - `AGENTS.md` = coding, implementation, and agent-execution rules.
 
-Always read `AGENTS.md` before doing work. Then read `CURRENT.md` first, when it exists, to understand the current implementation checkpoint and immediate task.
+Always read `AGENTS.md` before doing work. Then read `docs/CURRENT.md` first, when it exists, to understand the current implementation checkpoint and immediate task.
 
-For normal implementation tasks, read only the relevant sections of `SocialTelemetry_Spec.md`.
+For normal implementation tasks, read only the relevant sections of `docs/SocialTelemetry_Spec.md`.
 
-Read the complete `SocialTelemetry_Spec.md` only for:
+Read the complete `docs/SocialTelemetry_Spec.md` only for:
 
 - architecture audits;
 - major cross-cutting changes;
@@ -45,7 +45,7 @@ Accepted architecture:
 
 Keep the project simple.
 
-Do not introduce architectural patterns, abstractions, packages, or infrastructure unless they are required by the current task or an accepted requirement in `SocialTelemetry_Spec.md`.
+Do not introduce architectural patterns, abstractions, packages, or infrastructure unless they are required by the current task or an accepted requirement in `docs/SocialTelemetry_Spec.md`.
 
 Do not redesign the existing project structure without a concrete reason and user approval.
 
@@ -154,7 +154,7 @@ Local application upgrades must preserve user data. Do not design local schema c
 
 ## Architecture Restrictions
 
-Do not add unless explicitly requested by the current task or already accepted in `SocialTelemetry_Spec.md`:
+Do not add unless explicitly requested by the current task or already accepted in `docs/SocialTelemetry_Spec.md`:
 
 - MediatR
 - Carter
@@ -400,8 +400,8 @@ Do not build these integrations during unrelated v1 tasks.
 Before modifying code:
 
 1. Read `AGENTS.md`.
-2. Read `CURRENT.md` first, when it exists, for the implementation checkpoint and immediate task.
-3. Read the relevant sections of `SocialTelemetry_Spec.md`, or the complete specification when required by the Source of Truth rules above.
+2. Read `docs/CURRENT.md` first, when it exists, for the implementation checkpoint and immediate task.
+3. Read the relevant sections of `docs/SocialTelemetry_Spec.md`, or the complete specification when required by the Source of Truth rules above.
 4. Inspect the relevant existing implementation.
 5. Preserve existing conventions when reasonable.
 6. Change only what is necessary for the current task.

@@ -22,6 +22,10 @@ coverage/
 # Local UI prototypes
 /prototypes/
 
+# Local historical documents and optional reports
+/docs/archive/
+/docs/reports/
+
 # Local environment files
 .env
 .env.*
