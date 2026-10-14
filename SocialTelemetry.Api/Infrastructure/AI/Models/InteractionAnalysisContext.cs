@@ -15,8 +15,10 @@ public sealed record AnalysisPerson(Guid Id, string DisplayName, int? Age, strin
 
 // Unknown speakers stay null. Future normalized conversation sources can fill these fields.
 public sealed record EvidenceMessage(string Text, Guid? SpeakerPersonId = null, string? SpeakerLabel = null);
+public sealed record AnalysisTranscript(Guid Version, TranscriptReviewStatus ReviewStatus, DateTimeOffset ReviewedAt,
+    string SourceStorageKey, string SourceSha256, string? Provider, string? Model, string? TranscriptionVersion);
 public sealed record AnalysisEvidence(Guid Id, AttachmentType Type, IReadOnlyList<EvidenceMessage> Messages,
-    string? MimeType, string? ImageDigest);
+    string? MimeType, string? ImageDigest, AnalysisTranscript? Transcript = null);
 public sealed record InteractionAnalysisContext(AnalysisUser User, AnalysisInteraction CurrentInteraction,
     IReadOnlyList<AnalysisPerson> Participants, IReadOnlyList<AnalysisInteraction> PreviousInteractions,
     IReadOnlyList<AnalysisEvidence> Evidence, string? UserQuestion);

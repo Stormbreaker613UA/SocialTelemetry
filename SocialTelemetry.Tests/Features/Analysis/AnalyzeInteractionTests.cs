@@ -313,7 +313,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     [InlineData("missing", HttpStatusCode.BadRequest, "InvalidEvidenceSelection")]
     [InlineData("pending", HttpStatusCode.Conflict, "EvidenceNotReady")]
     [InlineData("deleting", HttpStatusCode.Conflict, "EvidenceNotReady")]
-    [InlineData("audio", HttpStatusCode.BadRequest, "UnsupportedEvidence")]
+    [InlineData("audio", HttpStatusCode.Conflict, "TranscriptNotReady")]
     [InlineData("mime", HttpStatusCode.BadRequest, "UnsupportedEvidence")]
     [InlineData("signature", HttpStatusCode.BadRequest, "UnsupportedEvidence")]
     [InlineData("missing-file", HttpStatusCode.NotFound, null)]
@@ -359,7 +359,8 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         using var app = CreateApp(provider);
         using var client = CreateClient(app);
         using var rejected = await AnalyzeAsync(client, data.InteractionId);
-        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, rejected.StatusCode);
+        Assert.Contains("TranscriptNotReady", await rejected.Content.ReadAsStringAsync(Cancellation));
         Assert.Equal(0, provider.Calls);
         using var explicitEmpty = await AnalyzeAsync(client, data.InteractionId, []);
         Assert.Equal(HttpStatusCode.Created, explicitEmpty.StatusCode);

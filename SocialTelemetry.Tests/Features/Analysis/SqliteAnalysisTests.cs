@@ -59,8 +59,8 @@ public sealed class SqliteAnalysisTests(SqliteApiFixture fixture) : IClassFixtur
         {
             Assert.Equal("sqlite-test-provider", analysis.Provider);
             Assert.Equal("executed-model", analysis.Model);
-            Assert.Equal("interaction-analysis-v1", analysis.SchemaVersion);
-            Assert.Equal("analyze-interaction-v1", analysis.PromptVersion);
+            Assert.Equal(AnalysisContract.SchemaVersion, analysis.SchemaVersion);
+            Assert.Equal(AnalysisContract.PromptVersion, analysis.PromptVersion);
             Assert.Equal(64, analysis.ContextFingerprint?.Length);
             Assert.NotNull(analysis.ResultJson);
         });

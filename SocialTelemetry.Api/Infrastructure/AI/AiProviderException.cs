@@ -23,6 +23,8 @@ public enum AiFailure
     LocalRequestRequired,
     UnsupportedEvidence,
     EvidenceNotReady,
+    TranscriptNotReady,
+    StaleTranscript,
     EvidenceLimitExceeded,
     InvalidEvidenceSelection,
     CapabilityMissing,
@@ -42,7 +44,8 @@ public sealed class AiProviderException(AiFailure failure) : Exception(GetDetail
         AiFailure.InferencePermissionMissing or AiFailure.LocalRequestRequired => 403,
         AiFailure.NotConnected or AiFailure.ReconnectRequired or AiFailure.ModelNotSelected or
             AiFailure.ModelUnavailable or AiFailure.ConnectionBusy or AiFailure.EvidenceNotReady or
-            AiFailure.CapabilityMissing or AiFailure.StaleContext or AiFailure.ExecutionInvalidated => 409,
+            AiFailure.TranscriptNotReady or AiFailure.StaleTranscript or AiFailure.CapabilityMissing or
+            AiFailure.StaleContext or AiFailure.ExecutionInvalidated => 409,
         AiFailure.UsageLimitReached => 429,
         AiFailure.ProviderUnavailable or AiFailure.RefreshFailed => 503,
         AiFailure.StorageUnavailable or AiFailure.BrowserUnavailable or AiFailure.InvalidClient => 500,
@@ -72,6 +75,8 @@ public sealed class AiProviderException(AiFailure failure) : Exception(GetDetail
         AiFailure.LocalRequestRequired => "Use a local connection and the X-SocialTelemetry-Local: 1 header.",
         AiFailure.UnsupportedEvidence => "This evidence type or media format is not supported for analysis.",
         AiFailure.EvidenceNotReady => "Selected evidence is not Ready.",
+        AiFailure.TranscriptNotReady => "Selected audio requires a non-empty, reviewed persisted transcript. Save and review its current version first.",
+        AiFailure.StaleTranscript => "The transcript no longer matches the selected audio. Provide a source-current transcript and review it before analysis.",
         AiFailure.EvidenceLimitExceeded => "The analysis context or evidence exceeds the supported limits.",
         AiFailure.InvalidEvidenceSelection => "Select only existing attachments belonging to this interaction.",
         AiFailure.CapabilityMissing => "The selected model does not support a required analysis capability.",

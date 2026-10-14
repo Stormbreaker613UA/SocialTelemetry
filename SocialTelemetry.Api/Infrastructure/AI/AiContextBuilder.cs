@@ -12,7 +12,8 @@ using SocialTelemetry.Api.Infrastructure.Observability;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
-public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage storage, IOptions<AnalysisOptions> options)
+public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage storage, IOptions<AnalysisOptions> options,
+    IOptions<TranscriptOptions> transcriptOptions, IOptions<UploadOptions> uploadOptions)
 {
     private readonly AnalysisOptions limits = options.Value;
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -143,6 +144,11 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
                 evidence.Add(new AnalysisEvidence(attachment.Id, attachment.Type, [new EvidenceMessage(attachment.TextContent)], null, null));
                 continue;
             }
+            if (attachment.Type == AttachmentType.Audio)
+            {
+                evidence.Add(await LoadTranscriptEvidenceAsync(attachment, cancellationToken));
+                continue;
+            }
             if (attachment.Type is not (AttachmentType.Image or AttachmentType.Screenshot))
                 throw new AiProviderException(AiFailure.UnsupportedEvidence);
             if (images.Count >= limits.ImageCount) throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
@@ -168,6 +174,51 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
         }
         operation.Complete();
         return (evidence, images);
+    }
+
+    private async Task<AnalysisEvidence> LoadTranscriptEvidenceAsync(InteractionAttachment attachment, CancellationToken cancellationToken)
+    {
+        var textLimit = Math.Min(limits.TextEvidenceCharacters, transcriptOptions.Value.TextCharacters);
+        var query = dbContext.AttachmentTranscripts.AsNoTracking().Where(transcript =>
+            transcript.AttachmentId == attachment.Id && transcript.Attachment.InteractionId == attachment.InteractionId);
+        // Reject before materialization; unused generated text must not enter corrected evidence.
+        if (await query.AnyAsync(transcript => (transcript.CorrectedText ?? transcript.GeneratedText ?? string.Empty).Length > textLimit, cancellationToken))
+            throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
+        var transcript = await query.Select(stored => new
+        {
+            Text = stored.CorrectedText ?? stored.GeneratedText, stored.Version, stored.ReviewStatus, stored.ReviewedAt,
+            stored.SourceStorageKey, stored.SourceSha256, stored.Provider, stored.Model, stored.TranscriptionVersion
+        }).SingleOrDefaultAsync(cancellationToken);
+        if (transcript is null || transcript.ReviewStatus != TranscriptReviewStatus.Reviewed ||
+            transcript.ReviewedAt is null || transcript.Version == Guid.Empty || string.IsNullOrWhiteSpace(transcript.Text))
+            throw new AiProviderException(AiFailure.TranscriptNotReady);
+        if (attachment.StorageKey is null || transcript.SourceStorageKey != attachment.StorageKey)
+            throw new AiProviderException(AiFailure.StaleTranscript);
+        CheckText(transcript.Text, textLimit);
+        var digest = await ReadAudioDigestAsync(attachment.StorageKey, cancellationToken);
+        if (transcript.SourceSha256 != digest) throw new AiProviderException(AiFailure.StaleTranscript);
+        // Audio bytes only establish freshness. Analysis receives normalized untrusted text and provenance.
+        return new AnalysisEvidence(attachment.Id, AttachmentType.Audio, [new EvidenceMessage(transcript.Text)], null, null,
+            new AnalysisTranscript(transcript.Version, transcript.ReviewStatus, transcript.ReviewedAt.Value,
+                transcript.SourceStorageKey, digest, transcript.Provider, transcript.Model, transcript.TranscriptionVersion));
+    }
+
+    private async Task<string> ReadAudioDigestAsync(string storageKey, CancellationToken cancellationToken)
+    {
+        await using var source = await storage.OpenReadAsync(storageKey, cancellationToken)
+            ?? throw new NotFoundException("Attachment content not found.");
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[81920];
+        long total = 0;
+        int count;
+        while ((count = await source.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
+        {
+            total += count;
+            if (total > uploadOptions.Value.AttachmentMaxBytes) throw new AiProviderException(AiFailure.EvidenceLimitExceeded);
+            hash.AppendData(buffer, 0, count);
+        }
+        if (total == 0) throw new AiProviderException(AiFailure.StaleTranscript);
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     private static bool HasImageSignature(byte[] bytes, string mimeType) => mimeType switch
