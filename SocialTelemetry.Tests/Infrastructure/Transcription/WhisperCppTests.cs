@@ -233,6 +233,53 @@ public sealed class WhisperCppTests : IDisposable
             new(executable, root, arguments, Path.Combine(root, "unused.txt"), 1024), cancellation.Token));
     }
 
+    [Theory]
+    [InlineData(false, false, "success", SpeechToTextFailure.DecoderFailed)]
+    [InlineData(true, false, "success", SpeechToTextFailure.TranscriptionFailed)]
+    [InlineData(false, true, "success", SpeechToTextFailure.TranscriptionFailed)]
+    [InlineData(true, true, "success", SpeechToTextFailure.TranscriptionFailed)]
+    [InlineData(false, false, "timeout", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(true, false, "timeout", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(false, true, "timeout", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(true, true, "timeout", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(false, false, "exception", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(true, false, "exception", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(false, true, "exception", SpeechToTextFailure.CleanupFailed)]
+    [InlineData(true, true, "exception", SpeechToTextFailure.CleanupFailed)]
+    public async Task Actual_runner_failure_precedence_survives_adapter_mapping_and_releases_work_and_admission(
+        bool whisperStage, bool nativeError, string teardown, SpeechToTextFailure expected)
+    {
+        var settings = Settings();
+        settings.TimeoutSeconds = 1;
+        Exception original = nativeError ? new System.ComponentModel.Win32Exception("private synthetic diagnostic")
+            : new IOException("private synthetic diagnostic");
+        var process = new FaultedTranscriptionProcess("stdout", original, teardown);
+        var actual = new TranscriptionProcessRunner(Options.Create(settings));
+        var injected = false;
+        var forwarding = new FakeProcess { Execute = async (command, token) =>
+        {
+            if (!injected && command.Arguments.Contains("--output-txt") == whisperStage)
+            {
+                injected = true;
+                return await actual.RunAsync(command, process, token);
+            }
+            if (command.Arguments.Contains("--output-txt")) await File.WriteAllTextAsync(command.OutputFile, "Synthetic words", token);
+            else await File.WriteAllBytesAsync(command.OutputFile, Wave(), token);
+            return 0;
+        } };
+        using var client = Client(settings, forwarding);
+        using var input = new MemoryStream(Header("mp3"));
+        var failure = await Assert.ThrowsAsync<SpeechToTextException>(() => client.TranscribeAsync(input, Cancellation));
+        Assert.Equal(expected, failure.Failure);
+        Assert.DoesNotContain(original.Message, failure.ToString());
+        process.AssertReleased();
+        AssertClean(settings);
+        // The next operation must acquire the same admission slot after failed teardown.
+        input.Position = 0;
+        Assert.Equal("Synthetic words", (await client.TranscribeAsync(input, Cancellation)).Text);
+        AssertClean(settings);
+    }
+
     private WhisperCppOptions Settings()
     {
         Directory.CreateDirectory(root);

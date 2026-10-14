@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Transcription;
 using SocialTelemetry.Tests.Features.People;
+using SocialTelemetry.Tests.Infrastructure.Transcription;
 using Transcribe = SocialTelemetry.Api.Features.Interactions.TranscribeAttachment;
 using PutTranscript = SocialTelemetry.Api.Features.Interactions.PutTranscript;
 
@@ -113,6 +115,7 @@ public abstract class TranscribeAttachmentTestsContract<TFixture>(TFixture fixtu
     [InlineData(SpeechToTextFailure.DecoderFailed, HttpStatusCode.BadGateway)]
     [InlineData(SpeechToTextFailure.TranscriptionFailed, HttpStatusCode.BadGateway)]
     [InlineData(SpeechToTextFailure.TimedOut, HttpStatusCode.GatewayTimeout)]
+    [InlineData(SpeechToTextFailure.CleanupFailed, HttpStatusCode.BadGateway)]
     public async Task Safe_provider_failures_leave_no_transcript(SpeechToTextFailure failure, HttpStatusCode status)
     {
         var data = await SeedAsync();
@@ -125,6 +128,36 @@ public abstract class TranscribeAttachmentTestsContract<TFixture>(TFixture fixtu
         Assert.Contains(failure.ToString(), body);
         Assert.DoesNotContain(data.Key, body);
         Assert.Null(await FindAsync(data));
+    }
+
+    [Theory]
+    [InlineData("stdout", "timeout")]
+    [InlineData("stderr", "timeout")]
+    [InlineData("monitor", "timeout")]
+    [InlineData("stdout", "exception")]
+    [InlineData("stderr", "exception")]
+    [InlineData("monitor", "exception")]
+    public async Task Actual_runner_cleanup_uncertainty_returns_safe_502_without_transcript(string site, string teardown)
+    {
+        var data = await SeedAsync();
+        var original = new IOException("private synthetic diagnostic");
+        var process = new FaultedTranscriptionProcess(site, original, teardown);
+        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { TimeoutSeconds = 1, FileCheckMilliseconds = 50 }));
+        using var application = App(new FakeSpeech { Execute = async token =>
+        {
+            await runner.RunAsync(FaultedTranscriptionProcess.Command(), process, token);
+            return Output;
+        } });
+        using var client = Client(application);
+        using var response = await client.PostAsync(Route(data), null, Cancellation).WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsStringAsync(Cancellation);
+        Assert.Contains(nameof(SpeechToTextFailure.CleanupFailed), body);
+        Assert.DoesNotContain(original.Message, body);
+        Assert.DoesNotContain(data.Key, body);
+        Assert.Null(await FindAsync(data));
+        process.AssertReleased();
     }
 
     [Theory]

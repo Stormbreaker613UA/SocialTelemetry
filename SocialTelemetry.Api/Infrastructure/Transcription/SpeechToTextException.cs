@@ -9,7 +9,8 @@ public enum SpeechToTextFailure
     TranscriptionFailed,
     InvalidResult,
     TimedOut,
-    Busy
+    Busy,
+    CleanupFailed
 }
 
 public sealed class SpeechToTextException(SpeechToTextFailure failure) : Exception(failure switch
@@ -21,6 +22,7 @@ public sealed class SpeechToTextException(SpeechToTextFailure failure) : Excepti
     SpeechToTextFailure.TranscriptionFailed => "Local transcription could not complete.",
     SpeechToTextFailure.InvalidResult => "Local transcription did not produce usable text.",
     SpeechToTextFailure.Busy => "Local transcription is busy. Retry when the current operation finishes.",
+    SpeechToTextFailure.CleanupFailed => "Owned native process cleanup could not be confirmed within the configured time limit.",
     _ => "Local transcription exceeded its time limit."
 })
 {

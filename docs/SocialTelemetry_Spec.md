@@ -61,7 +61,7 @@ self-generated bullshit loop
 
 ### User / UserProfile
 
-Represents the human receiving advice and owns their SocialTelemetry context. Authentication/account identity remains separate; see section 33's future server direction.
+Represents the human receiving advice and owns their SocialTelemetry context. V1 must support creating and selecting multiple local profiles in the same SQLite database, with separate journals and profile-owned data and no mandatory registration/login. Authentication/account identity remains separate; see section 33's future server direction. This local-profile workflow is required but not implemented; its pass is scheduled after Audio 7.2.1C.
 
 Possible fields:
 
@@ -135,7 +135,7 @@ UserProfile is the ownership root. Validate matching profiles on writable cross-
 
 UserProfile and Person may each have one optional avatar. Avatars are presentation media, not InteractionAttachments or AI evidence: changing them does not enter AI context or invalidate analysis fingerprints. Upload/replace/get/delete supports bounded PNG/JPEG/WebP with MIME/signature validation. Finalize new bytes before changing the reference; retain the old avatar on failure and clean obsolete files after successful persistence. Aged orphan files are recovered through startup cleanup.
 
-`Person.ArchivedAt` records archive state without deleting Facts, Inferences, interactions/history, analyses, or external connections. Archive/unarchive is explicit; People lists include all profiles by default, with an optional explicit archive filter. UI grouping comes later.
+`Person.ArchivedAt` records archive state without deleting Facts, Inferences, interactions/history, analyses, or external connections. Archive/unarchive is explicit; People lists include all profiles by default, with an optional explicit archive filter. Profile-owned Favorites and custom Groups are required in v1 and scheduled after Audio 7.2.1C; implementation remains pending. One Person may belong to several Groups and Favorites simultaneously without duplicate Person records. Deleting a Group removes its memberships, never its People. Group/member operations must validate matching UserProfile ownership.
 
 External identities use separate `UserProfileExternalConnection` and `PersonExternalConnection` entities, each with its own owner FK and cascade deletion. Fields: Id, owner ID, Platform, optional ExternalUserId/Handle/DisplayName/ProfileUrl, CreatedAt, UpdatedAt. Platform is a normalized lowercase string, not a database enum; stable external IDs stay opaque. An owner/platform/stable-ID combination is unique when the ID is present; absent IDs do not imply identity equivalence. URLs are optional HTTP(S) profile links, not instructions to fetch content.
 
@@ -694,6 +694,8 @@ Keep MVP focused, but the current v1 target is a usable local desktop applicatio
 
 ```text
 UserProfile
+Local profile creation and selection in one SQLite database
+Profile-owned Favorites and custom Groups
 People CRUD
 PersonFacts
 PersonInferences
@@ -1680,6 +1682,8 @@ The product scope should now be treated as stable enough to continue implementat
 
 ```text
 Core social telemetry domain
+Local profile creation and selection in one SQLite database
+Profile-owned Favorites and custom Groups
 People / facts / inferences
 Interactions / participants
 Text, screenshots, images, audio evidence
@@ -1702,6 +1706,10 @@ Optional one-click local AI setup
 Installer + manual updater
 Architecture walkthrough / decision documentation
 ```
+
+Owner-approved v1 scope clarification (2026-10-13): local profiles, Favorites and custom Groups are required for the first release. Implement their bounded pass after Audio 7.2.1C, preserving UserProfile as the ownership root, stable IDs, one AppDbContext and both database providers. The owner accepted the minimal extension approach on 2026-10-14 (below). Implementation still requires a scoped assignment; request/response details, active-profile selection persistence and exact shared-connection lifecycle must be specified within that pass. Local profile switching must preserve existing journals and keep operations bound to their original profile during in-flight AI/STT work. Server authentication and synchronization remain post-v1.
+
+Accepted minimal extension approach (2026-10-14): keep UserProfile as the data-owner identity and create/select local profiles within the same database. Resolve the current profile through one small boundary and consistently scope feature reads/writes by that owner. Favorites use Person.IsFavorite (default false); custom Groups use PersonGroup (Id, UserProfileId, Name and timestamps) plus PersonGroupMembership with a unique GroupId/PersonId pair. Check both sides of membership against the same owner; deleting a Group removes memberships, never People. Archive keeps favorite/group membership, with explicit archive visibility filters. Provider/model/connection selection is per profile; any reuse of one protected connection must be explicit, with shared disconnect/revocation consequences defined before enabling it. Do not duplicate credentials into domain records. Keep existing ownership guards, source freshness and execution protection; operations begun before switching remain bound to their original profile. Maintain both provider migration sets and meaningful regressions. Do not add Identity/OpenIddict, sync infrastructure, a new OwnerUserId/Tenant model, projects or layers in this pass. This records architectural acceptance, not implemented/tested/reviewed/accepted feature status.
 
 The required free local baseline includes text/vision analysis and local persisted transcription as defined in sections 19 and 6. Recommended model/runtime presets are replaceable; the capability and evidence boundaries remain provider-neutral.
 
@@ -1753,7 +1761,7 @@ Three eventual client usage modes (one SocialTelemetry product and shared UI):
 ```text
 Desktop Local (v1)
 → local ASP.NET Core host → SQLite → local or cloud AI
-→ single local owner, no mandatory SocialTelemetry login
+→ multiple selectable local profiles with separate journals, no mandatory SocialTelemetry login
 
 Desktop Remote (post-v1)
 → installed Windows client → authenticated remote SocialTelemetry server
