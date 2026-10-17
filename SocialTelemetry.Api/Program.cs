@@ -13,6 +13,7 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Runtime;
 using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Api.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +33,7 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 
 builder.Services.AddSocialTelemetryDiagnostics(builder.Configuration, builder.Environment);
 builder.Services.AddPersistence(builder.Configuration);
+builder.Services.AddIdentityFoundation();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();

@@ -2,17 +2,20 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Observability;
+using SocialTelemetry.Api.Infrastructure.Identity;
 
 namespace SocialTelemetry.Api.Infrastructure.Persistence;
 
 public sealed partial class AppDbContext(
     DbContextOptions<AppDbContext> options,
-    ProfileAvatarCleanup? avatarCleanup = null) : DbContext(options)
+    ProfileAvatarCleanup? avatarCleanup = null) : IdentityUserContext<ApplicationUser, Guid>(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<StorageDatabaseIdentity> StorageDatabaseIdentities => Set<StorageDatabaseIdentity>();
@@ -130,6 +133,7 @@ public sealed partial class AppDbContext(
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
+        optionsBuilder.UseOpenIddict<Guid>();
         optionsBuilder.ReplaceService<IMigrationsAssembly, ProviderMigrationsAssembly>();
         optionsBuilder.AddInterceptors(SqliteSnapshotTransactions.Instance);
     }
@@ -137,6 +141,11 @@ public sealed partial class AppDbContext(
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        // Explicit key bounds keep direct/design-time contexts identical to DI-created contexts.
+        modelBuilder.Entity<IdentityUserLogin<Guid>>().Property(login => login.LoginProvider).HasMaxLength(128);
+        modelBuilder.Entity<IdentityUserLogin<Guid>>().Property(login => login.ProviderKey).HasMaxLength(128);
+        modelBuilder.Entity<IdentityUserToken<Guid>>().Property(token => token.LoginProvider).HasMaxLength(128);
+        modelBuilder.Entity<IdentityUserToken<Guid>>().Property(token => token.Name).HasMaxLength(128);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
         modelBuilder.Entity<StorageDatabaseIdentity>().ToTable("StorageDatabaseIdentity", table =>
             table.HasCheckConstraint("CK_StorageDatabaseIdentity_Singleton", "\"Id\" = 1"));

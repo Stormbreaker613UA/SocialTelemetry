@@ -61,7 +61,7 @@ self-generated bullshit loop
 
 ### User / UserProfile
 
-Represents the human receiving advice and owns their SocialTelemetry context. V1 must support creating and selecting multiple local profiles in the same SQLite database, with separate journals and profile-owned data and no mandatory registration/login. Authentication/account identity remains separate; see section 33's future server direction. This local-profile workflow is required but not implemented; its pass is scheduled after Audio 7.2.1C.
+Represents the human receiving advice and owns their SocialTelemetry context. V1 must support creating and selecting multiple local profiles in the same SQLite database, with separate journals and profile-owned data and no mandatory registration/login. Optional local password protection uses a separate Account; UserProfile remains the data owner. Section 33 defines the owner-approved Account foundation, local access rules and later server direction. The local-profile workflow is required but not implemented; its passes follow accepted Audio 7.2.1C.
 
 Possible fields:
 
@@ -135,7 +135,7 @@ UserProfile is the ownership root. Validate matching profiles on writable cross-
 
 UserProfile and Person may each have one optional avatar. Avatars are presentation media, not InteractionAttachments or AI evidence: changing them does not enter AI context or invalidate analysis fingerprints. Upload/replace/get/delete supports bounded PNG/JPEG/WebP with MIME/signature validation. Finalize new bytes before changing the reference; retain the old avatar on failure and clean obsolete files after successful persistence. Aged orphan files are recovered through startup cleanup.
 
-`Person.ArchivedAt` records archive state without deleting Facts, Inferences, interactions/history, analyses, or external connections. Archive/unarchive is explicit; People lists include all profiles by default, with an optional explicit archive filter. Profile-owned Favorites and custom Groups are required in v1 and scheduled after Audio 7.2.1C; implementation remains pending. One Person may belong to several Groups and Favorites simultaneously without duplicate Person records. Deleting a Group removes its memberships, never its People. Group/member operations must validate matching UserProfile ownership.
+`Person.ArchivedAt` records archive state without deleting Facts, Inferences, interactions/history, analyses, or external connections. Archive/unarchive is explicit; People lists include active and archived People within the selected UserProfile by default, with an optional explicit archive filter. This never means listing unrelated owners' People. Profile-owned Favorites and custom Groups are required in v1 and scheduled after Audio 7.2.1C; implementation remains pending. One Person may belong to several Groups and Favorites simultaneously without duplicate Person records. Deleting a Group removes its memberships, never its People. Group/member operations must validate matching UserProfile ownership.
 
 External identities use separate `UserProfileExternalConnection` and `PersonExternalConnection` entities, each with its own owner FK and cascade deletion. Fields: Id, owner ID, Platform, optional ExternalUserId/Handle/DisplayName/ProfileUrl, CreatedAt, UpdatedAt. Platform is a normalized lowercase string, not a database enum; stable external IDs stay opaque. An owner/platform/stable-ID combination is unique when the ID is present; absent IDs do not imply identity equivalence. URLs are optional HTTP(S) profile links, not instructions to fetch content.
 
@@ -1670,7 +1670,7 @@ Logging uses technical identifiers, operation/status, counts/sizes, duration, ex
 - No automatic promotion of AI guesses to confirmed facts.
 ```
 
-Local SQLite and attachment files are not automatically equivalent to full application-level encryption at rest. The local Windows account/security boundary is acceptable for initial v1 unless encryption becomes an explicit requirement. Export/backup/restore is a useful follow-up feature but is not currently a blocker for the first v1 release.
+Local SQLite and attachment files are not automatically equivalent to full application-level encryption at rest. Optional profile password protection controls application access; it does not encrypt SQLite or media or replace the backend host's OS/filesystem security boundary. Application-level encryption remains a separate requirement if later approved. Export/backup/restore is a useful follow-up feature but is not currently a blocker for the first v1 release.
 
 ---
 
@@ -1683,6 +1683,8 @@ The product scope should now be treated as stable enough to continue implementat
 ```text
 Core social telemetry domain
 Local profile creation and selection in one SQLite database
+Account/UserProfile foundation with ASP.NET Core Identity and OpenIddict.Core/EF
+Optional local password protection, remembered sign-in and offline recovery
 Profile-owned Favorites and custom Groups
 People / facts / inferences
 Interactions / participants
@@ -1707,9 +1709,25 @@ Installer + manual updater
 Architecture walkthrough / decision documentation
 ```
 
-Owner-approved v1 scope clarification (2026-10-13): local profiles, Favorites and custom Groups are required for the first release. Implement their bounded pass after Audio 7.2.1C, preserving UserProfile as the ownership root, stable IDs, one AppDbContext and both database providers. The owner accepted the minimal extension approach on 2026-10-14 (below). Implementation still requires a scoped assignment; request/response details, active-profile selection persistence and exact shared-connection lifecycle must be specified within that pass. Local profile switching must preserve existing journals and keep operations bound to their original profile during in-flight AI/STT work. Server authentication and synchronization remain post-v1.
+Owner-approved v1 scope clarification (2026-10-13): local profiles, Favorites and custom Groups are required for the first release. Their bounded passes follow accepted Audio 7.2.1C, preserving UserProfile as the ownership root, stable IDs, one AppDbContext and both database providers. The owner accepted the minimal extension approach on 2026-10-14 and added the separate Account foundation and optional local protection on 2026-10-17 (below). Each implementation increment requires a scoped assignment; the Account foundation does not authorize the selector, AI isolation, password or Groups passes automatically. Server authentication and synchronization remain post-v1.
 
-Accepted minimal extension approach (2026-10-14): keep UserProfile as the data-owner identity and create/select local profiles within the same database. Resolve the current profile through one small boundary and consistently scope feature reads/writes by that owner. Favorites use Person.IsFavorite (default false); custom Groups use PersonGroup (Id, UserProfileId, Name and timestamps) plus PersonGroupMembership with a unique GroupId/PersonId pair. Check both sides of membership against the same owner; deleting a Group removes memberships, never People. Archive keeps favorite/group membership, with explicit archive visibility filters. Provider/model/connection selection is per profile; any reuse of one protected connection must be explicit, with shared disconnect/revocation consequences defined before enabling it. Do not duplicate credentials into domain records. Keep existing ownership guards, source freshness and execution protection; operations begun before switching remain bound to their original profile. Maintain both provider migration sets and meaningful regressions. Do not add Identity/OpenIddict, sync infrastructure, a new OwnerUserId/Tenant model, projects or layers in this pass. This records architectural acceptance, not implemented/tested/reviewed/accepted feature status.
+Accepted minimal extension approach (2026-10-14, clarified 2026-10-17): keep UserProfile as the data-owner identity and create/select local profiles within the same database. Resolve the current profile through one small boundary and consistently scope feature reads/writes by that owner. Favorites use Person.IsFavorite (default false); custom Groups use PersonGroup (Id, UserProfileId, Name and timestamps) plus PersonGroupMembership with a unique GroupId/PersonId pair. Check both sides of membership against the same owner; deleting a Group removes memberships, never People. Archive keeps favorite/group membership, with explicit archive visibility filters. Provider/model/connection selection is per profile; the first increment does not share one protected connection between profiles. Any later sharing needs explicit consent and defined disconnect/revocation consequences. Do not duplicate credentials into domain records. Keep existing ownership guards, source freshness and execution protection; operations begun before switching remain bound to their original profile. Maintain both provider migration sets and meaningful regressions. The original exclusion of Identity/OpenIddict is superseded only by the separately authorized foundation below; sync infrastructure, a new OwnerUserId/Tenant model, projects and layers remain excluded. These requirements do not establish implementation, testing, review or acceptance status.
+
+### Account foundation and optional local access (owner-approved 2026-10-17)
+
+Implement in bounded order: Account foundation, then local-profile selection/owner resolution together with AI isolation/cancellation, then one integrated optional-password/session/recovery pass, then Favorites/Groups. Preserve logical feature boundaries in the existing VSA modular monolith. Framework account/store types belong in infrastructure; social feature/domain ownership remains UserProfileId. Future authentication and sync may extend these boundaries, not replace all feature logic. This is preparation for extension, not a promise that later migrations or targeted refactoring are unnecessary.
+
+The first authorized foundation adds a real GUID ApplicationUser using roleless ASP.NET Core Identity stores and OpenIddict.Core/EF persistence/services in the existing AppDbContext. Account.UserProfileId is a required unique FK: each Account refers to one existing UserProfile, while a UserProfile may have no Account and at most one. Do not create fake accounts for unprotected profiles. Deleting an Account must not delete its journal; deleting a linked UserProfile is restricted pending explicit handling of that link. Preserve existing IDs and both provider migration histories. The foundation alone has no login/password/session/recovery endpoints, cookies, profile selector, roles/admin or OAuth/OIDC Server/Client/Validation activation and provides no new access-protection guarantee.
+
+One selected profile is remembered per running local application; it is not a future server-wide authentication identity. Old forms cannot save into a newly selected profile. Owner binding is captured before asynchronous work. Confirmed exit/switch or changing that profile's AI selection cancels/invalidates unfinished work; late cancelled output cannot become a successful analysis. Already committed valid results remain with their original owner. Define the final commit/cancellation boundary under existing guards; no DB/credential protection spans inference. The future UI warns before leaving active work: Stay/default/Escape continues it; confirmation cancels then switches. Showing the dialog does not cancel work.
+
+Optional local protection must enforce access on the backend, not only hide UI controls. Unprotected local profiles remain usable without Account, password, email or network. Password handling uses Identity hashing; do not store plaintext or reversibly encrypted passwords for autofill. The agreed entry-screen direction is Login/Password alongside previous profiles, using VRCX as a behavioral reference; remembered identity is not authentication. This is future UI/UX work, not authorization for Backend to edit the prototype or build Razor pages.
+
+Approved local defaults: without Stay signed in, protected access ends on app end/restart, 30 minutes of inactivity or 8 hours from sign-in, whichever occurs first. With opt-in, per-profile/device remembered authorization expires absolutely 14 days after password sign-in, without indefinite sliding renewal. Ordinary A-to-B-to-A switching can retain each profile's opted-in remembered authorization while only one owner is active; explicit logout/lock revokes the applicable authorization and prevents automatic re-entry. Password/reset/linkage/security changes invalidate applicable sessions. Saved authorization must never bypass a completed lock. Activity detection, long-operation behavior, active tickets and remembered-ticket persistence require a concrete password-pass contract and both-provider lifecycle tests; do not silently broaden the inactivity rule to another mode or implement a new auth framework. Durable key storage must respect ApplicationPaths, privacy and Windows/Linux host behavior. No current implementation is implied.
+
+Offline password recovery issues a random code once when protection is enabled, for the owner to store separately. Store only its hash, throttle verification and enforce single use. Successful recovery atomically sets a new password, consumes/replaces the code and revokes applicable sessions with concurrency protection. Do not expose an unchecked password-reset token or treat Identity's 2FA recovery API as a complete password-recovery implementation. There is no ordinary unauthenticated bypass if both password and code are lost. Separate OS/admin recovery is not authorized. This recovery code does not enable 2FA.
+
+UI, public email/registration, 2FA and full remote/server authentication remain separate later passes. Per-Account sessions must not be confused with ChatGPT/provider OAuth. For every implementation increment, keep implemented/tested/independently reviewed/owner accepted/published distinct; source changes, review and Git publication follow explicit scoped authorization. Do not generate automatic reports or start the next increment from green tests alone.
 
 The required free local baseline includes text/vision analysis and local persisted transcription as defined in sections 19 and 6. Recommended model/runtime presets are replaceable; the capability and evidence boundaries remain provider-neutral.
 
@@ -1744,6 +1762,7 @@ Conversation / Interaction Importers
 Data/product expansion
 - backup / restore
 - server multi-user/auth
+- public registration/email flows, 2FA and optional Google/other external account sign-in
 - bidirectional Local Desktop ↔ Hosted Server synchronization, including offline change reconciliation (accepted post-v1; design and implementation pending)
 - cloud/blob attachment storage
 - mobile/cross-platform client if justified
@@ -1754,7 +1773,7 @@ External integrations should map into the existing domain rather than creating p
 
 ### Future server / multi-user / desktop-client direction
 
-This is accepted **post-v1 direction**, not current implementation or additional v1 scope. The existing roadmap order remains unchanged.
+Remote hosting, authenticated Remote/Web usage and synchronization below are accepted **post-v1 direction**, not current implementation. The separately approved v1 Account foundation and optional local protection above do not activate hosted authentication or change the sync timeline.
 
 Three eventual client usage modes (one SocialTelemetry product and shared UI):
 
@@ -1776,7 +1795,7 @@ Local Desktop must remain usable without an account or network connection for it
 
 **Synchronization is an accepted post-v1 product requirement, not an optional idea.** The intended experience includes bidirectional synchronization between a user's local SQLite journal and authenticated hosted PostgreSQL account, with continued local/offline work and later reconciliation of changes. Switching between Local and Remote must never silently copy, merge, or overwrite data. Exact sync protocol, scope per entity/media type, deletions/tombstones, conflict resolution, account/device mapping, and first-sync consent/recovery behavior require separate design before implementation. No synchronization infrastructure or migrations are required for v1; current provider parity and stable IDs are preparation, not working sync.
 
-**Identity and ownership.** Future authentication identity is separate from social profile data:
+**Identity and ownership.** The v1 Account foundation and future server authentication keep account identity separate from social profile data:
 
 ```text
 ApplicationUser (authentication/account identity)
@@ -1798,7 +1817,7 @@ UserProfile (social profile and AI context)
 
 `UserProfile` is the domain ownership root. Future server authorization and cross-link validation must enforce matching profiles on both sides: InteractionParticipant's Interaction/Person, PersonInference's Person/SourceInteraction, and SuggestedProfileUpdate's Person/InteractionAnalysis. Attachments, analyses, history, and AI context must remain within that ownership boundary. This direction does not require new constraints now beyond current v1 requirements.
 
-**Authentication direction.** ASP.NET Core Identity + OpenIddict is the preferred conceptual .NET-native stack for future server mode. It is separate from ChatGPT/provider authorization. Keycloak may be considered for a larger always-on multi-client/multi-user deployment if a dedicated external identity service is justified; it is not an accepted dependency now.
+**Authentication direction.** ASP.NET Core Identity and OpenIddict.Core/EF are approved for the bounded v1 foundation above; actual server OAuth/OIDC flows remain post-v1. They are separate from ChatGPT/provider authorization. Later Google/other external sign-in must use explicit Account linking; optional contact/People import requires separate consent and an importer, never automatic import or merging on login. A future common entry screen may serve Local/Remote/Web, but local profile selection never grants remote access or enumerates server users. Keycloak may be considered for a larger always-on multi-client/multi-user deployment if a dedicated external identity service is justified; it is not an accepted dependency now.
 
 **Desktop modes.** `SocialTelemetry.Desktop` may eventually offer `Local` and `Connect to server`:
 
