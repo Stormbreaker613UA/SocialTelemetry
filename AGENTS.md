@@ -31,7 +31,8 @@ SocialTelemetry is a local-first .NET 10 ASP.NET Core application for recording 
 
 Accepted architecture:
 
-- Vertical Slice Architecture
+- Clean Architecture dependency boundaries with Vertical Slice organization of application scenarios
+- Clean Code: explicit, readable code and small, focused methods
 - FastEndpoints
 - Entity Framework Core
 - PostgreSQL for development/server mode
@@ -109,11 +110,11 @@ Features/People/Create
 
 Use FastEndpoints directly.
 
-For small features, logic may live inside the Endpoint.
+In the owner-approved layered target, `SocialTelemetry.Api/Features/<Feature>/<UseCase>` contains FastEndpoints, HTTP Request/Response models and transport validation. `SocialTelemetry.Application/Features/<Feature>/<UseCase>` contains the corresponding use case, business validation and neutral input/result models. Domain rules belong in `SocialTelemetry.Domain`; external implementations belong in `SocialTelemetry.Infrastructure`.
 
-If feature logic becomes non-trivial, extract it only when doing so improves readability.
+Use direct DI calls to focused application scenarios. MediatR has not been approved. Extract the existing behavior instead of introducing parallel service/handler chains. Keep related operations grouped by feature and respect subsystem ownership; do not reach into another feature's private implementation.
 
-Do not introduce a separate handler, service, command, or query merely for architectural ceremony. Respect feature/subsystem ownership; use a small existing stable boundary instead of reaching into another feature's private implementation.
+Existing unmigrated slices may temporarily retain their current implementation until their assigned migration batch. This is a bounded transition, not permission to add new EF/Infrastructure dependencies to migrated application code.
 
 ---
 
@@ -125,12 +126,14 @@ Operational policy (limits, sizes, counts, timeouts, cache lifetimes, retries, m
 
 ## Persistence
 
-Use EF Core directly from feature code where appropriate.
+EF Core belongs in `SocialTelemetry.Infrastructure`: the one concrete AppDbContext, all its partials, configurations, both provider migration sets, SQL, transactions and provider exception translation move together in the assigned infrastructure batch. Application and Domain must not depend on EF Core, database providers, Identity/OpenIddict stores or HTTP types.
+
+Application defines small operation-specific persistence contracts and neutral inputs/results; Infrastructure implements them. Contracts must not expose DbSet, IQueryable, DatabaseFacade, EF transactions or provider exceptions. Preserve business decisions in Application/Domain while Infrastructure performs queries, locking and atomic persistence. A multi-step protected operation must retain its existing all-or-nothing behavior, owner/freshness checks and lock order; splitting it into separately committed calls is not an acceptable migration.
 
 Do not introduce:
 
-- Repository pattern
-- Unit of Work abstraction
+- Generic Repository / generic CRUD abstractions
+- A duplicate Unit of Work wrapper around DbContext
 - Generic CRUD services
 - AutoMapper
 
@@ -159,8 +162,8 @@ Do not add unless explicitly requested by the current task or already accepted i
 - MediatR
 - Carter
 - AutoMapper
-- Repository abstractions
-- Unit of Work abstractions
+- Generic Repository abstractions
+- Duplicate Unit of Work abstractions
 - Microservices
 - Redis
 - RabbitMQ
@@ -174,7 +177,29 @@ Do not add unless explicitly requested by the current task or already accepted i
 - React
 - TypeScript SPA architecture
 
-The core remains a VSA modular monolith. Do not split `SocialTelemetry.Api` into Domain/Application/Infrastructure or module class libraries without a concrete technical/runtime reason and user approval. Prefer logical boundaries; extract physical projects only when justified.
+The core remains ONE modular monolith, one ASP.NET Core product/backend and one AppDbContext/domain model. On 2026-10-18 the owner approved reorganizing the existing backend into `SocialTelemetry.Domain`, `SocialTelemetry.Application`, `SocialTelemetry.Infrastructure` and `SocialTelemetry.Api`, retaining VSA scenario organization and applying Clean Code. The purpose is easier development/maintenance and compiler-enforced dependencies, not new services or changed functionality.
+
+Final compile-time references:
+
+- Domain: no references to the other product projects or persistence/HTTP frameworks.
+- Application -> Domain only among product projects; neutral contracts and use cases, no EF/HTTP/provider implementation types.
+- Infrastructure -> Application and Domain; implements the external mechanisms.
+- Api -> Application (and Domain for genuinely shared types); its Infrastructure reference is restricted to composition root/native bootstrap. HTTP slices and future Razor Pages call Application, not concrete persistence/adapters.
+- Tests may explicitly reference the layers they verify. Infrastructure must never reference Api/Program.
+
+### Enforce layer boundaries
+
+Do not rely on folder names or agent discipline alone. Add dependency guards using existing test facilities as the layers are introduced: check project/package references, compiled assembly/type dependencies and exposed contract types. Preserve existing behavior tests alongside these guards; an allowed project graph alone does not prove correct separation.
+
+- Domain must not reference EF, HTTP, Infrastructure, Application or Api implementation assemblies. Application must not reference EF/providers, ASP.NET/FastEndpoints, Identity/OpenIddict stores, Infrastructure or Api.
+- Inspect contract signatures and their nested/generic input/result types: an interface is not neutral if it returns an Infrastructure DTO, EF entity entry/query/transaction or HTTP result. Existing plain Domain entities are allowed; transport/provider/EF-specific types and attributes are not.
+- Api's allowed composition-root Infrastructure reference must not become a shortcut inside Endpoints or Razor Pages. Check migrated feature-level dependencies, not only Api assembly references; direct concrete context/adapter construction, static calls and service-location bypasses are prohibited there.
+- Do not conceal forbidden dependencies through object/dynamic wrappers, reflection, IServiceProvider lookups or shared catch-all projects. Do not move business decisions into Infrastructure just to make reference tests pass.
+- During migration, explicitly identify remaining legacy feature paths and the batch that removes their old dependencies. Do not globally disable guards, broaden an allowlist or weaken assertions to make a migrated batch green.
+
+Independent review must inspect architectural leaks and preservation of application/persistence responsibilities when separately authorized. Automated guards cannot establish complete correctness, especially for indirect/runtime behavior; report their actual coverage and limitations.
+
+OS-specific mechanisms initially stay under Infrastructure platform folders with Windows/Linux implementations. Separate Platform/Windows/Linux projects are not approved. Preserve the real executable-host entry for the Linux native launcher; moving its implementation to a library must not cause `dotnet Infrastructure.dll` execution. Desktop remains a separate deferred thin host, not a business layer.
 
 `SocialTelemetry.Desktop` is an approved exception when WebView2 is implemented. It must remain a thin Windows host only.
 
@@ -189,7 +214,17 @@ Allowed responsibilities for `SocialTelemetry.Desktop`:
 
 Do not place domain logic, AI feature logic, persistence rules, or duplicated product UI/business logic in the desktop host.
 
-Logical boundaries now are preferred over creating many physical projects prematurely.
+No additional physical projects, framework packages or architectural patterns beyond the approved four-project migration are authorized without a concrete need and owner approval.
+
+### Migration execution (owner-approved 2026-10-18)
+
+- Reorganize the whole existing backend in bounded, coherent functional batches, with a shared-foundation batch first. People/Interactions are examples of batch granularity, not a limit to migration scope or a disposable pilot. Map real dependencies before assigning files; preserve profile selection, immutable operation owner and AI generation/lifetime/final-commit protection together at their boundaries.
+- Keep each completed batch buildable; run meaningful affected tests on PostgreSQL and real-file SQLite, fix in-scope failures, then record a recovery checkpoint before the next agreed batch. Native/bootstrap changes require actual Windows/Linux synthetic verification; a broad run excluding native tests does not cover them.
+- Preserve existing behavior, API contracts/status codes, prompt/schema versions, limits/defaults, privacy, credential purpose/paths, media ownership and all concurrency/freshness/cancellation protections. Preserve existing CLR/migration namespaces initially and both migration histories; goal is no schema/DDL change, verified with model/upgrade checks. No reset/rebaseline or database deletion as a migration shortcut.
+- Apply Clean Code to touched code without unrelated rewrites or renaming all types/namespaces. Do not add new product features, UI, auth/password/session/recovery, Favorites/Groups, server infrastructure or synchronization during the move.
+- Only one worker edits shared files/implementation at a time. Planner updates rules/plan first; Backend then owns its source batch and targeted CURRENT checkpoint. Workers return actual file ownership, verification, limitations and remaining work directly to Planner; the owner need not relay reports.
+- Record significant checkpoints in `docs/CURRENT.md` and the existing Tracker; do not create an automatic report/index after each pass. Keep implemented, tested, independently reviewed, owner accepted and published distinct. Historical evidence is not verification of the new layout.
+- Owner authorized this staged migration and ordinary in-scope build/test corrections. New behavior, packages, changed architecture or unexpected destructive/schema work require explicit approval. Independent review and Git commit/push need their scoped authorization; green tests alone do not authorize them.
 
 ---
 
@@ -204,7 +239,7 @@ The same product UI should be usable:
 
 Do not introduce a separate SPA/frontend stack without a concrete product need.
 
-When UI and backend run in the same process, do not call the application's own HTTP API merely for architectural purity if direct same-process application logic / DbContext usage is simpler and consistent with the project.
+When UI and backend run in the same process, call the same Application scenarios directly rather than the application's own HTTP API. Future Razor Pages must use equivalent owner binding/access checks and must not bypass the Application boundary with direct DbContext access.
 
 The UI should render AI results as readable structured sections, not raw provider JSON.
 

@@ -61,7 +61,7 @@ self-generated bullshit loop
 
 ### User / UserProfile
 
-Represents the human receiving advice and owns their SocialTelemetry context. V1 must support creating and selecting multiple local profiles in the same SQLite database, with separate journals and profile-owned data and no mandatory registration/login. Optional local password protection uses a separate Account; UserProfile remains the data owner. Section 33 defines the owner-approved Account foundation, local access rules and later server direction. The local-profile workflow is required but not implemented; its passes follow accepted Audio 7.2.1C.
+Represents the human receiving advice and owns their SocialTelemetry context. V1 must support creating and selecting multiple local profiles in the same SQLite database, with separate journals and profile-owned data and no mandatory registration/login. Optional local password protection uses a separate Account; UserProfile remains the data owner. Section 33 defines the owner-approved Account foundation, local access rules and later server direction. See [CURRENT.md](CURRENT.md) for delivered local-profile/AI isolation and verification; optional password/session/recovery and Groups/Favorites remain distinct later work.
 
 Possible fields:
 
@@ -772,8 +772,9 @@ Accepted v1 architecture target (see [CURRENT.md](CURRENT.md) for implementation
 .NET 10
 ASP.NET Core Web API + Razor Pages
 FastEndpoints
-Vertical Slice Architecture
-EF Core
+Clean Architecture dependency boundaries + Vertical Slice application scenarios
+Clean Code throughout the migration and subsequent development
+EF Core in Infrastructure only
 PostgreSQL for development/server mode
 SQLite for local Windows mode
 Local attachment storage
@@ -785,126 +786,61 @@ Swagger / OpenAPI
 xUnit + integration tests / Testcontainers
 ```
 
-The core remains a .NET 10 VSA modular monolith in a single ASP.NET Core application, with logical feature boundaries and one AppDbContext/domain model. Do not split it into Clean Architecture projects, module class libraries, or microservices without a concrete technical/runtime reason and owner approval. Multi-user support in the future would not, by itself, justify microservices.
+The core remains ONE .NET 10 modular monolith and one ASP.NET Core product/backend with one AppDbContext/domain model. On 2026-10-18 the owner approved a staged physical reorganization because the growing codebase needs clearer development/maintenance boundaries: Domain, Application, Infrastructure and Api, with VSA use cases and Clean Code. Multiple assemblies do not introduce separate business services, processes or duplicated product logic. Multi-user support does not, by itself, justify microservices.
+
+Domain contains framework-independent entities/rules. Application contains feature/use-case scenarios, business validation and small neutral contracts, with a reference to Domain only among product projects. Application has no EF Core, HTTP, Identity/OpenIddict store or provider implementation dependency. Infrastructure implements its contracts and references Application/Domain; it contains EF Core, the single concrete AppDbContext/all partials/configurations/both migration sets, Identity/Core stores, adapters, files, native processes and runtime mechanisms. Api contains HTTP/FastEndpoints, transport validation/status mapping, configuration/DI and executable bootstrap; its Infrastructure usage is restricted to composition root/bootstrap, not feature business logic. Tests may explicitly reference the layers under test.
+
+Persistence contracts must not expose DbSet, IQueryable, DatabaseFacade, EF transactions or provider errors. Use specific operations and neutral data/results, not generic Repository/UoW/CRUD frameworks. Preserve application-owned business decisions and infrastructure-owned atomic data access, with the existing selector/profile/credential guard order and no DB or credential protection across AI/network inference. MediatR or other new dispatch/framework packages are not part of the approved migration; direct DI calls to application scenarios suffice.
+
+Migrate the complete existing backend in dependency-aware functional batches plus a shared-foundation batch, not a partial prototype. Each batch builds, runs meaningful affected PostgreSQL/real-file SQLite tests, corrects in-scope failures and records a checkpoint before the next agreed batch. Keep completed features and behavior, APIs/statuses, prompt/schema versions, defaults, privacy, stable IDs/logical keys, credential identity/paths and concurrency/cancellation/source-freshness protections. Preserve CLR/migration namespaces and histories initially; no DDL/schema change is intended, and model/upgrade checks must prove it. Clean Code improvements stay within touched behavior. No new product features or unrelated rewrites. Independent review and publication remain separately coordinated owner gates.
+
+Windows/Linux mechanisms initially live in Infrastructure platform folders, not additional OS projects. Preserve/adapt the Linux launcher to the real executable Api host when moving implementation to a class library; a class-library DLL must not become its launch target. Verify changed native/host boundaries on Windows and Linux; native-excluded regression evidence is insufficient for that boundary. Existing application paths, media binding/reconciliation order and provider-neutral AI/STT separation remain unchanged. This is a deployment-preserving reorganization, not a platform redesign.
 
 A **small `SocialTelemetry.Desktop` host project is an allowed concrete exception** when WebView2 is implemented. Its responsibility should stay narrow: desktop window lifecycle, starting/stopping the local ASP.NET Core host, WebView2 navigation, single-instance behavior, and update/restart integration. It must not become a second business-logic/frontend architecture.
 
-The Razor UI should use same-process application logic / DbContext where appropriate rather than calling the application's own HTTP API merely for architectural purity. The same Razor UI should be reusable inside WebView2 locally and in a normal browser for server mode.
+The Razor UI should call the same Application scenarios directly in-process, with equivalent owner binding/access checks, rather than calling the application's own HTTP API or bypassing Application with direct DbContext access. The same Razor UI should be reusable inside WebView2 locally and in a normal browser for server mode.
 
 ---
 
 ## 17. Approximate Project Structure
 
-This is an illustrative target structure, not an inventory of existing projects, folders, or implemented features. Planned Follow-up, Advisor, Razor Pages, and desktop areas may be absent from the current source. Use the repository for actual structure and [CURRENT.md](CURRENT.md) for the implementation checkpoint.
+This is the owner-approved migration target (2026-10-18), not an inventory of already-created projects or completed features. [CURRENT.md](CURRENT.md) records actual batch status. Keep the existing solution and one Tests project.
 
-```text
-SocialTelemetry
-│
-├── SocialTelemetry.Api
-│   │
-│   ├── Features
-│   │   ├── UserProfile
-│   │   │   ├── Get
-│   │   │   └── Update
-│   │   │
-│   │   ├── People
-│   │   │   ├── Create
-│   │   │   ├── GetById
-│   │   │   ├── GetAll
-│   │   │   ├── Update
-│   │   │   └── Delete
-│   │   │
-│   │   ├── PersonFacts
-│   │   │   ├── Add
-│   │   │   ├── Update
-│   │   │   ├── Delete
-│   │   │   └── ConfirmSuggestion
-│   │   │
-│   │   ├── Interactions
-│   │   │   ├── Create
-│   │   │   ├── GetById
-│   │   │   ├── GetForPerson
-│   │   │   ├── Update
-│   │   │   ├── Delete
-│   │   │   └── AddAttachment
-│   │   │
-│   │   ├── Analysis
-│   │   │   ├── AnalyzeInteraction
-│   │   │   ├── GetAnalysis
-│   │   │   └── FollowUp
-│   │   │
-│   │   ├── AiConnection
-│   │   │   └── provider connection/status/model selection
-│   │   │
-│   │   └── Advisor
-│   │       └── AskAboutPerson
-│   │
-│   ├── Domain
-│   │   ├── Users
-│   │   │   └── UserProfile.cs
-│   │   │
-│   │   ├── People
-│   │   │   ├── Person.cs
-│   │   │   ├── PersonFact.cs
-│   │   │   ├── PersonInference.cs
-│   │   │   └── RelationshipContext.cs
-│   │   │
-│   │   └── Interactions
-│   │       ├── Interaction.cs
-│   │       ├── InteractionParticipant.cs
-│   │       ├── InteractionAttachment.cs
-│   │       ├── InteractionAnalysis.cs
-│   │       ├── AnalysisConversationMessage.cs
-│   │       └── AttachmentType.cs
-│   │
-│   ├── Infrastructure
-│   │   ├── Persistence
-│   │   │   ├── AppDbContext.cs
-│   │   │   ├── Configurations
-│   │   │   └── Migrations
-│   │   │
-│   │   ├── AI
-│   │   │   ├── IAiClient.cs
-│   │   │   ├── ChatGptPlanAiClient.cs     first provider adapter
-│   │   │   ├── AiContextBuilder.cs
-│   │   │   ├── Prompts
-│   │   │   │   ├── AnalyzeInteractionPrompt.cs
-│   │   │   │   └── PersonAdvisorPrompt.cs
-│   │   │   └── Models
-│   │   │       ├── InteractionAnalysisResult.cs
-│   │   │       └── SuggestedProfileUpdate.cs
-│   │   │
-│   │   └── Storage
-│   │       ├── IAttachmentStorage.cs
-│   │       └── LocalAttachmentStorage.cs
-│   │
-│   ├── Common
-│   │   ├── Exceptions
-│   │   ├── Extensions
-│   │   └── Result.cs
-│   │
-│   ├── Program.cs
-│   └── appsettings.json
-│
-├── SocialTelemetry.Tests
-│   ├── Features
-│   ├── Domain
-│   └── Infrastructure
-│
-└── SocialTelemetry.Desktop          required v1 shell; added when WebView2 is implemented
-    └── thin Windows host only; no duplicated domain/business logic
+- `SocialTelemetry.Domain`: existing Users, People and Interactions entities/enums; no framework/persistence/HTTP dependencies.
+- `SocialTelemetry.Application`:
+  - `Features/<Feature>/<UseCase>`: application scenario, neutral input/result and use-case-specific contracts where needed.
+  - Shared neutral AI/STT/storage/profile-access contracts and policy/failure types used by actual scenarios.
+  - Analysis orchestration, context policy/fingerprint and structured validation remain business/application responsibilities; no EF query implementation.
+- `SocialTelemetry.Infrastructure`:
+  - Persistence: one AppDbContext with every partial, configurations, design-time factory, provider selection, PostgreSQL and SQLite migrations/designers/snapshots.
+  - Identity/Core stores, AI connections/adapters/protected credentials, STT/native execution, storage/reconciliation, paths and observability implementations.
+  - Platform folders for Windows/Linux process mechanisms; no separate OS project initially.
+- `SocialTelemetry.Api`:
+  - `Features/<Feature>/<UseCase>`: FastEndpoints Endpoint, HTTP Request/Response and transport validation/mapping.
+  - HTTP middleware/local-request protection/ProblemDetails; Program/configuration and real-host native bootstrap.
+  - Future Razor Pages reuse Application scenarios with equivalent ownership checks.
+- `SocialTelemetry.Tests`: existing tests adapted to physical references; meaningful application, HTTP, persistence, lifecycle and architecture dependency coverage.
+- `SocialTelemetry.Desktop`: deferred thin Windows/WebView2 host only; created with its separately authorized product pass.
+
+Compile-time product references (arrows are project references, not the order of runtime calls):
+
+```mermaid
+flowchart TD
+    Api --> Application
+    Api --> Domain
+    Api -->|Composition root and native bootstrap only| Infrastructure
+    Application --> Domain
+    Infrastructure --> Application
+    Infrastructure --> Domain
 ```
 
-Example feature slice:
+Api/Tests are the starting projects; introduce the other projects in buildable stages. Preserve existing CLR namespaces initially where model/migration identity depends on them. A folder/assembly move does not authorize changing schema, endpoints, prompt versions, ownership or product scope.
 
-```text
-Features/Analysis/AnalyzeInteraction
-├── Endpoint.cs
-├── Request.cs
-├── Response.cs
-├── Handler.cs                      optional; only when logic warrants extraction
-└── Validator.cs                    optional; only when validation warrants it
-```
+Example target slice: Api `Features/People/Create` owns Endpoint/Request/Response; Application `Features/People/Create` owns the creation scenario and neutral input/result. Its persistence contract is implemented with EF only in Infrastructure. Do not introduce an interface per class, generic Repository/UoW, or dispatch framework merely to fill folders.
+
+Migrate complete existing functional areas in coherent packages. Profile owner/selection and AI-generation/credential/final-commit boundaries must remain consistent across package boundaries. Unmigrated Api slices may temporarily retain existing concrete dependencies, explicitly recorded until migrated; completed slices obey the target graph. Existing application scenario behavior is retained, not redeveloped.
+
+Suggestion review, Follow-up, Advisor, local password/session/recovery, Local AI and the UI/desktop work retain their separately approved feature timelines. Their appearance in product requirements does not authorize adding them during this migration.
 
 ---
 
@@ -1711,7 +1647,7 @@ Architecture walkthrough / decision documentation
 
 Owner-approved v1 scope clarification (2026-10-13): local profiles, Favorites and custom Groups are required for the first release. Their bounded passes follow accepted Audio 7.2.1C, preserving UserProfile as the ownership root, stable IDs, one AppDbContext and both database providers. The owner accepted the minimal extension approach on 2026-10-14 and added the separate Account foundation and optional local protection on 2026-10-17 (below). Each implementation increment requires a scoped assignment; the Account foundation does not authorize the selector, AI isolation, password or Groups passes automatically. Server authentication and synchronization remain post-v1.
 
-Accepted minimal extension approach (2026-10-14, clarified 2026-10-17): keep UserProfile as the data-owner identity and create/select local profiles within the same database. Resolve the current profile through one small boundary and consistently scope feature reads/writes by that owner. Favorites use Person.IsFavorite (default false); custom Groups use PersonGroup (Id, UserProfileId, Name and timestamps) plus PersonGroupMembership with a unique GroupId/PersonId pair. Check both sides of membership against the same owner; deleting a Group removes memberships, never People. Archive keeps favorite/group membership, with explicit archive visibility filters. Provider/model/connection selection is per profile; the first increment does not share one protected connection between profiles. Any later sharing needs explicit consent and defined disconnect/revocation consequences. Do not duplicate credentials into domain records. Keep existing ownership guards, source freshness and execution protection; operations begun before switching remain bound to their original profile. Maintain both provider migration sets and meaningful regressions. The original exclusion of Identity/OpenIddict is superseded only by the separately authorized foundation below; sync infrastructure, a new OwnerUserId/Tenant model, projects and layers remain excluded. These requirements do not establish implementation, testing, review or acceptance status.
+Accepted minimal extension approach (2026-10-14, clarified 2026-10-17): keep UserProfile as the data-owner identity and create/select local profiles within the same database. Resolve the current profile through one small boundary and consistently scope feature reads/writes by that owner. Favorites use Person.IsFavorite (default false); custom Groups use PersonGroup (Id, UserProfileId, Name and timestamps) plus PersonGroupMembership with a unique GroupId/PersonId pair. Check both sides of membership against the same owner; deleting a Group removes memberships, never People. Archive keeps favorite/group membership, with explicit archive visibility filters. Provider/model/connection selection is per profile; the first increment does not share one protected connection between profiles. Any later sharing needs explicit consent and defined disconnect/revocation consequences. Do not duplicate credentials into domain records. Keep existing ownership guards, source freshness and execution protection; operations begun before switching remain bound to their original profile. Maintain both provider migration sets and meaningful regressions. The original exclusion of Identity/OpenIddict is superseded only by the separately authorized foundation below. The owner-approved 2026-10-18 four-project migration is defined in sections 16–17; sync infrastructure and a new OwnerUserId/Tenant model remain excluded. These requirements do not establish implementation, testing, review or acceptance status.
 
 ### Account foundation and optional local access (owner-approved 2026-10-17)
 

@@ -22,6 +22,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SocialTelemetry.Api\SocialTelemetry.Api.csproj" />
+    <ProjectReference Include="..\SocialTelemetry.Domain\SocialTelemetry.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\SocialTelemetry.Domain\SocialTelemetry.Domain.csproj"
+          Link="Architecture\SocialTelemetry.Domain.csproj" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

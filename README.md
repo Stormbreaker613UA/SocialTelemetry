@@ -93,7 +93,7 @@ This describes the product target, not a list of features already shipped. Audio
 
 ## Architecture
 
-The core is intentionally a simple ASP.NET Core application, not microservices. Features live under `Features/<Feature>/<UseCase>` and use EF Core directly where appropriate.
+The core remains one ASP.NET Core modular monolith. The accepted structure separates Domain, Application, Infrastructure and Api, with application scenarios grouped under `Features/<Feature>/<UseCase>`. EF Core and external implementations belong in Infrastructure; the staged reorganization preserves existing functionality.
 
 - .NET 10 / ASP.NET Core, Vertical Slice Architecture, and FastEndpoints.
 - EF Core with PostgreSQL for development/server mode and SQLite persistence for local mode.
@@ -101,7 +101,7 @@ The core is intentionally a simple ASP.NET Core application, not microservices. 
 - Provider-neutral AI, local attachment storage, and Swagger / OpenAPI.
 - xUnit v3, PostgreSQL Testcontainers, and real-file SQLite integration tests.
 
-The repository currently contains `SocialTelemetry.Api` and `SocialTelemetry.Tests`. The planned `SocialTelemetry.Desktop` project will host the window and local application lifecycle, without duplicating domain or AI logic.
+The repository is being migrated from the existing Api/Tests structure to those boundaries; see the implementation checkpoint below for actual progress. The planned `SocialTelemetry.Desktop` project will host the window and local application lifecycle, without duplicating domain or AI logic.
 
 ## AI Providers and Local AI
 
