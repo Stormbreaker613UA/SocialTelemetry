@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Infrastructure.AI;
+namespace SocialTelemetry.Application.Contracts.AI;
 
 // Retains execution validity through the caller's short persistence phase, never inference.
 public interface IAiExecutionLease : IDisposable

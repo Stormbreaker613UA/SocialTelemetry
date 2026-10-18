@@ -1,6 +1,6 @@
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Users;
 
-namespace SocialTelemetry.Api.Domain.People;
+namespace SocialTelemetry.Domain.People;
 
 public sealed class Person
 {

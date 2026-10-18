@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.AI;
 using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;

@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;

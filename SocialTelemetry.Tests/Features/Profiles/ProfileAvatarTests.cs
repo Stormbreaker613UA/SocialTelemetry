@@ -1,10 +1,12 @@
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
@@ -186,7 +188,7 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
         var secondOwner = await secondService.FindOwnerAsync(personId, Cancellation);
         await firstService.UploadAsync(firstOwner, Png, "image/png", Cancellation);
         var winningKey = await KeyAsync($"/people/{personId}/avatar");
-        await Assert.ThrowsAsync<SocialTelemetry.Api.Common.Exceptions.ConflictException>(() =>
+        await Assert.ThrowsAsync<SocialTelemetry.Application.Exceptions.ConflictException>(() =>
             secondService.UploadAsync(secondOwner, Png, "image/png", Cancellation));
         Assert.Equal(winningKey, await KeyAsync($"/people/{personId}/avatar"));
         Assert.True(File.Exists(AvatarPath(winningKey)));

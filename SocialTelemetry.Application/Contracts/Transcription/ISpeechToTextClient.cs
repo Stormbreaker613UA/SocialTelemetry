@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Infrastructure.Transcription;
+namespace SocialTelemetry.Application.Contracts.Transcription;
 
 public interface ISpeechToTextClient
 {

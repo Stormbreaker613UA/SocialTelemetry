@@ -1,6 +1,7 @@
+using SocialTelemetry.Application.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Infrastructure.Profiles;

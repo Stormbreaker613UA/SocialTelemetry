@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;

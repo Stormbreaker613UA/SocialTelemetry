@@ -1,5 +1,6 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Infrastructure.Storage;

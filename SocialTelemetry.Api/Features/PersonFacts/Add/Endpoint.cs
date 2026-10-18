@@ -1,7 +1,7 @@
 using FastEndpoints;
 using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.PersonFacts.Add;

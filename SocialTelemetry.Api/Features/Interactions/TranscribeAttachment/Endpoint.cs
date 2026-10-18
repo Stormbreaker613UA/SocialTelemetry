@@ -1,10 +1,13 @@
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Contracts.Storage;
+using SocialTelemetry.Application.Contracts.Transcription;
 using System.Security.Cryptography;
 using FastEndpoints;
 using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;

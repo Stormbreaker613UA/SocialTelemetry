@@ -1,12 +1,13 @@
+using SocialTelemetry.Application.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using SocialTelemetry.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Api.Infrastructure.Identity;
@@ -37,7 +38,7 @@ public sealed partial class AppDbContext(
     public async Task LockAnalysisContextAsync(Guid userProfileId, CancellationToken cancellationToken)
     {
         if (profileOperation?.Binding is { } binding && binding.UserProfileId != userProfileId)
-            throw new SocialTelemetry.Api.Common.Exceptions.NotFoundException();
+            throw new SocialTelemetry.Application.Exceptions.NotFoundException();
         // Bulk source writes must acquire this protection explicitly; tracked async saves do so below.
         if (Database.CurrentTransaction is null)
             throw new InvalidOperationException("Analysis context protection requires a transaction.");

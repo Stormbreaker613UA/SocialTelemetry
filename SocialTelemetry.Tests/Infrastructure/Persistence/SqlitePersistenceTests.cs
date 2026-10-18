@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Diagnostics;
@@ -7,9 +8,9 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using SocialTelemetry.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;

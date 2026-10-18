@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Infrastructure.Persistence;

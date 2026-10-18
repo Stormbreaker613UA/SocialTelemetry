@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -6,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;

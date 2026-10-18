@@ -1,7 +1,7 @@
 using FastEndpoints;
 using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetAttachment;

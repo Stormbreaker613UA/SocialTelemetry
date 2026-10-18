@@ -1,7 +1,7 @@
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
 
-namespace SocialTelemetry.Api.Domain.Users;
+namespace SocialTelemetry.Domain.Users;
 
 public sealed class UserProfile
 {

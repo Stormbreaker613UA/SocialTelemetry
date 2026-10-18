@@ -1,9 +1,10 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using SocialTelemetry.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;

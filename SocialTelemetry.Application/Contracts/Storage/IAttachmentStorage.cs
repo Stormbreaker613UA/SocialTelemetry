@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Infrastructure.Storage;
+namespace SocialTelemetry.Application.Contracts.Storage;
 
 public interface IAttachmentStorage
 {

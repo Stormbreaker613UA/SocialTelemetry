@@ -1,3 +1,5 @@
+using SocialTelemetry.Application.Contracts.Storage;
+using SocialTelemetry.Application.Contracts.Transcription;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -7,7 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Transcription;

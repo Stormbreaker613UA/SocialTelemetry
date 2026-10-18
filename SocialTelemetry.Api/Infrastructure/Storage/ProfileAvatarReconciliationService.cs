@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Infrastructure.Persistence;

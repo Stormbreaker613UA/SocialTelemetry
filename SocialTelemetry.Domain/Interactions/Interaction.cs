@@ -1,6 +1,6 @@
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Users;
 
-namespace SocialTelemetry.Api.Domain.Interactions;
+namespace SocialTelemetry.Domain.Interactions;
 
 public sealed class Interaction
 {

@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Infrastructure.AI;

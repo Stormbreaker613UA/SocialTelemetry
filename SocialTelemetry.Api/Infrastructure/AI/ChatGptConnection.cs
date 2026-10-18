@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.AI;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Text;

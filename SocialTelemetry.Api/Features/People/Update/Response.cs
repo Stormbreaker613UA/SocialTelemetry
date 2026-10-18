@@ -1,4 +1,4 @@
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.People;
 
 namespace SocialTelemetry.Api.Features.People.Update;
 

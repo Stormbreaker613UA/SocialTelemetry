@@ -1,11 +1,13 @@
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Observability;
@@ -93,7 +95,7 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
     }
 
     private async Task<IReadOnlyList<AnalysisPerson>> LoadParticipantsAsync(Guid userProfileId,
-        IReadOnlyList<SocialTelemetry.Api.Domain.People.Person> people, Guid[] sourceIds, CancellationToken cancellationToken)
+        IReadOnlyList<SocialTelemetry.Domain.People.Person> people, Guid[] sourceIds, CancellationToken cancellationToken)
     {
         var participants = new List<AnalysisPerson>();
         foreach (var person in people)

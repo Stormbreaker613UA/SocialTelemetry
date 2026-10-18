@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Profiles;
 

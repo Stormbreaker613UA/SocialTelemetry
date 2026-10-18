@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Domain.Interactions;
+namespace SocialTelemetry.Domain.Interactions;
 
 public enum AttachmentType
 {

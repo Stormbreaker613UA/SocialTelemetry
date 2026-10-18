@@ -1,7 +1,8 @@
+using SocialTelemetry.Application.Contracts.AI;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI.Models;
 
 namespace SocialTelemetry.Tests.Infrastructure.AI;
 

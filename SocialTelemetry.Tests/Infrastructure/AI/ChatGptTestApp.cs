@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.AI;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
@@ -170,10 +171,10 @@ internal sealed class ChatGptTestApp : IDisposable
             return new ChatGptPlanAiClient(services.GetRequiredService<ChatGptConnection>(),
                 services.GetRequiredService<ChatGptHttpClient>(), services.GetRequiredService<ProfileAiAccess>());
         }
-        public Task<SocialTelemetry.Api.Infrastructure.AI.Models.AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) => Resolve().GetSelectedModelAsync(cancellationToken);
-        public Task<SocialTelemetry.Api.Infrastructure.AI.Models.AiTextResponse> GenerateTextAsync(SocialTelemetry.Api.Infrastructure.AI.Models.AiTextRequest request, CancellationToken cancellationToken) => Resolve().GenerateTextAsync(request, cancellationToken);
-        public Task ValidateExecutionAsync(SocialTelemetry.Api.Infrastructure.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => Resolve().ValidateExecutionAsync(result, cancellationToken);
-        public Task<IAiExecutionLease> AcquireExecutionLeaseAsync(SocialTelemetry.Api.Infrastructure.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => Resolve().AcquireExecutionLeaseAsync(result, cancellationToken);
+        public Task<SocialTelemetry.Application.Contracts.AI.Models.AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) => Resolve().GetSelectedModelAsync(cancellationToken);
+        public Task<SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse> GenerateTextAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextRequest request, CancellationToken cancellationToken) => Resolve().GenerateTextAsync(request, cancellationToken);
+        public Task ValidateExecutionAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => Resolve().ValidateExecutionAsync(result, cancellationToken);
+        public Task<IAiExecutionLease> AcquireExecutionLeaseAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => Resolve().AcquireExecutionLeaseAsync(result, cancellationToken);
     }
 
     public sealed class OwnedConnectionFixture(ChatGptTestApp app)

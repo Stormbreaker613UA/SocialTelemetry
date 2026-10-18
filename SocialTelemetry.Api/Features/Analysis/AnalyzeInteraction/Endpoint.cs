@@ -1,17 +1,19 @@
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Contracts.AI;
 using System.Data;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Observability;
-using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdate;
+using StoredSuggestion = SocialTelemetry.Domain.People.SuggestedProfileUpdate;
 
 namespace SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
 

@@ -7,7 +7,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI.Models;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 

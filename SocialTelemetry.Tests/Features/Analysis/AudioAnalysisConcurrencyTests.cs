@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;

@@ -1,4 +1,4 @@
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI.Models;
 
 namespace SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
 

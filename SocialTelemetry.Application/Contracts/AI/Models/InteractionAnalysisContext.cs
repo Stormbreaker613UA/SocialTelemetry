@@ -1,7 +1,7 @@
-using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using SocialTelemetry.Domain.Interactions;
 
-namespace SocialTelemetry.Api.Infrastructure.AI.Models;
+namespace SocialTelemetry.Application.Contracts.AI.Models;
 
 public sealed record AnalysisUser(Guid Id, string DisplayName, string? AboutMe, string? CommunicationStyle,
     string? Goals, string? Preferences, string? Boundaries, string? AiInstructions);

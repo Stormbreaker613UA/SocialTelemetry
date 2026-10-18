@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Domain.Users;
+namespace SocialTelemetry.Domain.Users;
 
 public sealed class UserProfileExternalConnection
 {

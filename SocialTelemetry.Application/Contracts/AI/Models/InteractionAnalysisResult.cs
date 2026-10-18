@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Infrastructure.AI.Models;
+namespace SocialTelemetry.Application.Contracts.AI.Models;
 
 public sealed record InteractionAnalysisResult(string Summary)
 {

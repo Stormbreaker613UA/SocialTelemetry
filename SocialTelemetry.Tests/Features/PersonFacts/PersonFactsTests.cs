@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Tests.Features.People;
 using AddFact = SocialTelemetry.Api.Features.PersonFacts.Add;
 using GetFacts = SocialTelemetry.Api.Features.PersonFacts.GetForPerson;

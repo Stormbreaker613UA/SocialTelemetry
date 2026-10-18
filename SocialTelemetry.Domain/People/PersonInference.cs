@@ -1,6 +1,6 @@
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 
-namespace SocialTelemetry.Api.Domain.People;
+namespace SocialTelemetry.Domain.People;
 
 public sealed class PersonInference
 {

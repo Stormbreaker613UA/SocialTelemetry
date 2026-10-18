@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -6,8 +7,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Tests.Features.People;
 using AddAttachment = SocialTelemetry.Api.Features.Interactions.AddAttachment;
 using CreateInteraction = SocialTelemetry.Api.Features.Interactions.Create;

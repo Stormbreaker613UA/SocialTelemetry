@@ -1,8 +1,8 @@
 using System.Reflection;
 using System.Xml.Linq;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using SocialTelemetry.Domain.Users;
 
 namespace SocialTelemetry.Tests.Architecture;
 

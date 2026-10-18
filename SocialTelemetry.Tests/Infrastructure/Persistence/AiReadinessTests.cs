@@ -3,14 +3,14 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 using CreateInteraction = SocialTelemetry.Api.Features.Interactions.Create;
 using CreatePerson = SocialTelemetry.Api.Features.People.Create;
-using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdate;
+using StoredSuggestion = SocialTelemetry.Domain.People.SuggestedProfileUpdate;
 
 namespace SocialTelemetry.Tests.Infrastructure.Persistence;
 

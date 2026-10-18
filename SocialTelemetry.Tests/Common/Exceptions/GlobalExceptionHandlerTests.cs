@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

@@ -1,12 +1,13 @@
+using SocialTelemetry.Application.Exceptions;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
-using SocialTelemetry.Api.Domain.Users;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
+using SocialTelemetry.Domain.Users;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Api.Infrastructure.Identity;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Profiles;
@@ -285,7 +286,7 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
         await using var scope = fixture.CreateAsyncScope();
         var lifetimes = scope.ServiceProvider.GetRequiredService<LocalProfileLifetimes>();
         var lifetime = lifetimes.Capture(selected.Version);
-        await Assert.ThrowsAsync<SocialTelemetry.Api.Common.Exceptions.NotFoundException>(() => SelectAsync(Guid.NewGuid(), selected.Version));
+        await Assert.ThrowsAsync<SocialTelemetry.Application.Exceptions.NotFoundException>(() => SelectAsync(Guid.NewGuid(), selected.Version));
         Assert.False(lifetime.IsCancellationRequested);
         Assert.Equal(first, (await CurrentAsync()).UserProfileId);
         using var callback = lifetime.Register(() => throw new InvalidOperationException("Synthetic cancellation callback failure"));
@@ -319,7 +320,7 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
             Assert.Equal(first, operation.RequireOwner());
             var database = request.ServiceProvider.GetRequiredService<AppDbContext>();
             (await database.People.SingleAsync(person => person.Id == personId, Cancellation)).DisplayName = "Forbidden change";
-            await Assert.ThrowsAsync<SocialTelemetry.Api.Common.Exceptions.NotFoundException>(() => database.SaveChangesAsync(Cancellation));
+            await Assert.ThrowsAsync<SocialTelemetry.Application.Exceptions.NotFoundException>(() => database.SaveChangesAsync(Cancellation));
         }
         await using var check = fixture.CreateAsyncScope();
         Assert.Equal("Foreign person", (await check.ServiceProvider.GetRequiredService<AppDbContext>().People.SingleAsync(person => person.Id == personId, Cancellation)).DisplayName);

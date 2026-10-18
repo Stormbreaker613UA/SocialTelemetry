@@ -1,3 +1,6 @@
+using SocialTelemetry.Application.Contracts.Storage;
+using SocialTelemetry.Application.Contracts.Transcription;
+using SocialTelemetry.Application.Contracts.AI;
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;

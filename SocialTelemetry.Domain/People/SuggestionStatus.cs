@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Domain.People;
+namespace SocialTelemetry.Domain.People;
 
 public enum SuggestionStatus
 {

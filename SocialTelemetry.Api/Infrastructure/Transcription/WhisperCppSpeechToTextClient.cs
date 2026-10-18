@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Transcription;
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Options;

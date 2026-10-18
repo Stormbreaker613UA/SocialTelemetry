@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Storage;
 namespace SocialTelemetry.Api.Infrastructure.Storage;
 
 public sealed class LocalFileStorage : IFileStorage

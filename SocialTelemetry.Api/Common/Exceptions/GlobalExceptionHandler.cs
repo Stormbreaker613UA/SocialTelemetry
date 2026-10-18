@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using SocialTelemetry.Api.Infrastructure.AI;

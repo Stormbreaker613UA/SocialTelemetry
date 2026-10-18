@@ -1,7 +1,8 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.DependencyInjection;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;

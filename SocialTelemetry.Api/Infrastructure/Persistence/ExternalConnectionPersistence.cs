@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Microsoft.Data.Sqlite;

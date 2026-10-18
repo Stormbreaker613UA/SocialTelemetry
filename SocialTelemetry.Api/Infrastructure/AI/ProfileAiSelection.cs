@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SocialTelemetry.Api.Domain.Users;
+using SocialTelemetry.Domain.Users;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 

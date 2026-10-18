@@ -1,4 +1,4 @@
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 
 namespace SocialTelemetry.Api.Features.Interactions.TranscribeAttachment;
 

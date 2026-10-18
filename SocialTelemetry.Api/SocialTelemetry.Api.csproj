@@ -30,6 +30,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\SocialTelemetry.Application\SocialTelemetry.Application.csproj" />
         <ProjectReference Include="..\SocialTelemetry.Domain\SocialTelemetry.Domain.csproj" />
     </ItemGroup>
 

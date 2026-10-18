@@ -1,4 +1,5 @@
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI;
+using SocialTelemetry.Application.Contracts.AI.Models;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 

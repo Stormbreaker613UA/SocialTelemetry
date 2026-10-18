@@ -1,3 +1,5 @@
+using SocialTelemetry.Application.Contracts.Storage;
+using SocialTelemetry.Application.Contracts.AI;
 using System.Net;
 using System.Diagnostics;
 using System.Collections.Concurrent;
@@ -12,18 +14,18 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
-using SocialTelemetry.Api.Domain.Interactions;
-using SocialTelemetry.Api.Domain.People;
-using DomainUserProfile = SocialTelemetry.Api.Domain.Users.UserProfile;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
+using DomainUserProfile = SocialTelemetry.Domain.Users.UserProfile;
 using SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
 using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.AI.Models;
+using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Tests.Features.People;
 using SocialTelemetry.Tests.Infrastructure.AI;
-using StoredSuggestion = SocialTelemetry.Api.Domain.People.SuggestedProfileUpdate;
+using StoredSuggestion = SocialTelemetry.Domain.People.SuggestedProfileUpdate;
 
 namespace SocialTelemetry.Tests.Features.Analysis;
 

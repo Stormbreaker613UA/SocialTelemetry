@@ -1,8 +1,9 @@
+using SocialTelemetry.Application.Contracts.Storage;
 using Microsoft.Extensions.Options;
 using FastEndpoints;
 using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Domain.Interactions;
+using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 

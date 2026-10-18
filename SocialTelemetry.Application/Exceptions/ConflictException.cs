@@ -1,4 +1,4 @@
-namespace SocialTelemetry.Api.Common.Exceptions;
+namespace SocialTelemetry.Application.Exceptions;
 
 public sealed class ConflictException : Exception
 {
