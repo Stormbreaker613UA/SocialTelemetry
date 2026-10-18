@@ -235,6 +235,7 @@ public abstract class InteractionsTestsContract<TFixture> : IClassFixture<TFixtu
         var (userProfileId, personId, _) = await CreatePeopleAsync();
         var otherProfileId = await fixture.CreateUserProfileAsync();
         var otherPersonId = await CreatePersonAsync(otherProfileId, "Other profile");
+        await fixture.SelectProfileAsync(userProfileId);
         var interactionId = await CreateInteractionAsync(
             CreateRequest(userProfileId, "Original", [personId], DateTimeOffset.UtcNow));
         var request = CreateRequest(userProfileId, "Invalid", [otherPersonId], DateTimeOffset.UtcNow);

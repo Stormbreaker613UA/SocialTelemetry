@@ -196,6 +196,7 @@ public abstract class AttachmentTranscriptTestsContract<TFixture>(TFixture fixtu
     {
         var data = await SeedAsync();
         var other = await SeedAsync();
+        await fixture.SelectProfileAsync(data.ProfileId);
         var original = await CreateAsync(data);
         var foreignRoute = data with { InteractionId = other.InteractionId };
         using var put = await PutAsync(foreignRoute, new { ExpectedVersion = original.Version, CorrectedText = "Foreign edit" });
@@ -211,6 +212,7 @@ public abstract class AttachmentTranscriptTestsContract<TFixture>(TFixture fixtu
     {
         var data = await SeedAsync();
         var other = await SeedAsync();
+        await fixture.SelectProfileAsync(data.ProfileId);
         using var response = await PutAsync(data, new { other.InteractionId, other.AttachmentId, CorrectedText = "Owned text" });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal(data.AttachmentId, (await ReadAsync(response)).AttachmentId);
@@ -293,14 +295,18 @@ public abstract class AttachmentTranscriptTestsContract<TFixture>(TFixture fixtu
     {
         var data = await SeedAsync();
         var other = await SeedAsync();
+        await fixture.SelectProfileAsync(data.ProfileId);
         await CreateAsync(data);
+        await fixture.SelectProfileAsync(other.ProfileId);
         var otherTranscript = await CreateAsync(other);
+        await fixture.SelectProfileAsync(data.ProfileId);
         var route = interaction ? $"/interactions/{data.InteractionId}" : $"/interactions/{data.InteractionId}/attachments/{data.AttachmentId}";
         using var deleted = await fixture.Client.DeleteAsync(route, Cancellation);
         Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
         await using var scope = fixture.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.False(await database.AttachmentTranscripts.AnyAsync(transcript => transcript.AttachmentId == data.AttachmentId, Cancellation));
+        await fixture.SelectProfileAsync(other.ProfileId);
         using var get = await fixture.Client.GetAsync(Route(other), Cancellation);
         AssertPersistedResponse(otherTranscript, await ReadAsync(get));
     }

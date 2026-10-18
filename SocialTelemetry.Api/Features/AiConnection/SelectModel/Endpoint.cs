@@ -6,7 +6,7 @@ namespace SocialTelemetry.Api.Features.AiConnection.SelectModel;
 public sealed record Request(string ModelId);
 public sealed record Response(string ModelId);
 
-public sealed class Endpoint(ChatGptConnection connection) : Endpoint<Request, Response>
+public sealed class Endpoint(ProfileAiAccess connection) : Endpoint<Request, Response>
 {
     public override void Configure()
     {

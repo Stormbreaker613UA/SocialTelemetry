@@ -14,6 +14,7 @@ using SocialTelemetry.Api.Infrastructure.Runtime;
 using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Api.Infrastructure.Transcription;
 using SocialTelemetry.Api.Infrastructure.Identity;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +35,11 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 builder.Services.AddSocialTelemetryDiagnostics(builder.Configuration, builder.Environment);
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddIdentityFoundation();
+builder.Services.AddScoped<LocalProfileOperation>();
+builder.Services.AddScoped<LocalProfileSelectionService>();
+builder.Services.AddSingleton<LocalProfileLifetimes>();
+builder.Services.AddScoped<ProfileAiAccess>();
+builder.Services.AddSingleton<ProfileAiLifetimes>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();
@@ -136,9 +142,11 @@ if (app.Services.GetRequiredService<IOptions<MediaBindingOptions>>().Value.Actio
 
 app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
 app.UseExceptionHandler();
-app.UseWhen(context => context.Request.Path.StartsWithSegments("/ai-connection") ||
+app.UseRouting();
+app.UseWhen(context => context.Request.Path.StartsWithSegments("/ai-connection") || context.Request.Path.StartsWithSegments("/local-profiles") ||
     context.GetEndpoint()?.Metadata.GetMetadata<RequireLocalAiRequestAttribute>() is not null,
     localConnection => localConnection.UseMiddleware<LocalAiConnectionMiddleware>());
+app.UseMiddleware<LocalProfileMiddleware>();
 // OpenAI requires an HTTP 127.0.0.1 callback. Other API routes keep their HTTPS behavior.
 app.UseWhen(context => !context.Request.Path.StartsWithSegments("/ai-connection"), api => api.UseHttpsRedirection());
 app.UseFastEndpoints();

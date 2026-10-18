@@ -218,8 +218,9 @@ public class PeopleApiFixture : IAsyncLifetime
             await dbContext.Database.MigrateAsync();
         }
 
-        application = new PeopleWebApplicationFactory(database?.GetConnectionString(), attachmentStorageDirectory, sqlite);
+        application = new PeopleWebApplicationFactory(database?.GetConnectionString(), attachmentStorageDirectory, sqlite, ConfigureProfileClient);
         Client = application.CreateClient();
+        await CreateUserProfileAsync("Fixture initial local owner");
     }
 
     public async ValueTask DisposeAsync()
@@ -245,7 +246,7 @@ public class PeopleApiFixture : IAsyncLifetime
         }
     }
 
-    public async Task<Guid> CreateUserProfileAsync(string displayName = "Test user")
+    public async Task<Guid> CreateUserProfileAsync(string displayName = "Test user", bool select = true)
     {
         await using var scope = application!.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -258,7 +259,30 @@ public class PeopleApiFixture : IAsyncLifetime
         dbContext.UserProfiles.Add(userProfile);
         await dbContext.SaveChangesAsync();
 
+        if (select) await SelectProfileAsync(userProfile.Id);
+
         return userProfile.Id;
+    }
+
+    private SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileBinding? currentBinding;
+
+    public void ConfigureProfileClient(HttpClient client)
+    {
+        if (currentBinding is not { } binding) return;
+        client.DefaultRequestHeaders.Remove("X-SocialTelemetry-ProfileId");
+        client.DefaultRequestHeaders.Remove("X-SocialTelemetry-ProfileVersion");
+        client.DefaultRequestHeaders.Add("X-SocialTelemetry-ProfileId", binding.UserProfileId.ToString());
+        client.DefaultRequestHeaders.Add("X-SocialTelemetry-ProfileVersion", binding.SelectionVersion.ToString());
+    }
+
+    public async Task SelectProfileAsync(Guid owner)
+    {
+        await using var scope = CreateAsyncScope();
+        var selector = scope.ServiceProvider.GetRequiredService<SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileSelectionService>();
+        var before = await selector.GetAsync(TestContext.Current.CancellationToken);
+        var selected = await selector.SelectAsync(owner, before.Version, TestContext.Current.CancellationToken);
+        currentBinding = new(owner, selected.Version);
+        ConfigureProfileClient(Client);
     }
 
     public async Task ClearUserProfilesAsync()
@@ -266,7 +290,12 @@ public class PeopleApiFixture : IAsyncLifetime
         await using var scope = application!.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        await dbContext.Set<SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileSelection>().ExecuteDeleteAsync();
+        await dbContext.Set<SocialTelemetry.Api.Infrastructure.AI.ProfileAiSelection>().ExecuteDeleteAsync();
         await dbContext.UserProfiles.ExecuteDeleteAsync();
+        currentBinding = null;
+        Client.DefaultRequestHeaders.Remove("X-SocialTelemetry-ProfileId");
+        Client.DefaultRequestHeaders.Remove("X-SocialTelemetry-ProfileVersion");
     }
 
     public async Task<Guid> CreatePersonAsync(CreatePerson.Request request)
@@ -301,8 +330,13 @@ public class PeopleApiFixture : IAsyncLifetime
     private sealed class PeopleWebApplicationFactory(
         string? connectionString,
         string attachmentStorageDirectory,
-        bool sqlite) : WebApplicationFactory<Program>
+        bool sqlite, Action<HttpClient> configureClient) : WebApplicationFactory<Program>
     {
+        protected override void ConfigureClient(HttpClient client)
+        {
+            base.ConfigureClient(client);
+            configureClient(client);
+        }
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("AttachmentStorage:LocalDirectory", attachmentStorageDirectory);

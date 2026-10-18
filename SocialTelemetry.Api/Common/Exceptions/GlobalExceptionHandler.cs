@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Common.Exceptions;
 
@@ -16,6 +17,7 @@ public sealed class GlobalExceptionHandler(
     {
         var (statusCode, title, detail) = exception switch
         {
+            LocalProfileAccessException profile => (profile.StatusCode, "Local profile access failed.", profile.Message),
             SpeechToTextException transcription => (transcription.StatusCode, "Transcription failed.", transcription.Message),
             AiProviderException providerException => (providerException.StatusCode, "AI connection or request failed.", providerException.Message),
             NotFoundException => (StatusCodes.Status404NotFound, "Resource not found.", "The requested resource was not found."),
@@ -45,6 +47,8 @@ public sealed class GlobalExceptionHandler(
         };
         if (exception is SpeechToTextException transcriptionException)
             problemDetails.Extensions["code"] = transcriptionException.Failure.ToString();
+        if (exception is LocalProfileAccessException profileException)
+            problemDetails.Extensions["code"] = profileException.Failure.ToString();
         if (exception is AiProviderException aiException)
         {
             problemDetails.Extensions["code"] = aiException.Failure.ToString();

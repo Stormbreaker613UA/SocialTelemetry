@@ -3,24 +3,27 @@ using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.Storage;
 
 public sealed class ProfileAvatarService(
     AppDbContext database,
     [FromKeyedServices("avatars")] IFileStorage storage,
-    ProfileAvatarCleanup cleanup)
+    ProfileAvatarCleanup cleanup, LocalProfileOperation operation)
 {
     public async Task<object> FindOwnerAsync(Guid? personId, CancellationToken cancellationToken, bool readOnly = false)
     {
         if (personId is Guid id)
         {
             var people = readOnly ? database.People.AsNoTracking() : database.People;
-            return await people.SingleOrDefaultAsync(person => person.Id == id, cancellationToken)
+            var owner = operation.RequireOwner();
+            return await people.SingleOrDefaultAsync(person => person.Id == id && person.UserProfileId == owner, cancellationToken)
                 ?? throw new NotFoundException();
         }
         var profiles = readOnly ? database.UserProfiles.AsNoTracking() : database.UserProfiles;
-        return await profiles.OrderBy(profile => profile.Id).FirstOrDefaultAsync(cancellationToken)
+        var profileId = operation.RequireOwner();
+        return await profiles.SingleOrDefaultAsync(profile => profile.Id == profileId, cancellationToken)
             ?? throw new NotFoundException();
     }
 

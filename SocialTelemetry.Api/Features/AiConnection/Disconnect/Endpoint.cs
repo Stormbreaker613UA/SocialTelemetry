@@ -3,7 +3,7 @@ using SocialTelemetry.Api.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Disconnect;
 
-public sealed class Endpoint(ChatGptConnection connection) : EndpointWithoutRequest<ChatGptDisconnectResult>
+public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutRequest<ChatGptDisconnectResult>
 {
     public override void Configure()
     {

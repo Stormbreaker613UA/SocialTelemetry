@@ -1,11 +1,12 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetAttachment;
 
-public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -15,7 +16,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var attachment = await dbContext.InteractionAttachments
+        var attachment = await dbContext.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner())
             .AsNoTracking()
             .Where(attachment =>
                 attachment.Id == request.AttachmentId &&

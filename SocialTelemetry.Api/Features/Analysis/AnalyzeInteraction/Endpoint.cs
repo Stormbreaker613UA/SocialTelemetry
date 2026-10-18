@@ -74,6 +74,8 @@ public sealed class Endpoint(AppDbContext dbContext, AiContextBuilder contextBui
             }
         }
         InteractionAnalysisResult result;
+        if (completed.Binding is { } binding && binding.UserProfileId != built.Context.User.Id)
+            throw new AiProviderException(AiFailure.ExecutionInvalidated);
         using (var validation = SocialTelemetryTelemetry.Start("analysis.validate_result", cancellationToken))
         {
             result = AnalysisContract.Validate(completed.Text, built.Context, options.Value.ResultCharacters);

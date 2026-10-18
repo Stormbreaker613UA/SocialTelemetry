@@ -1,4 +1,5 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
@@ -6,7 +7,7 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.Interactions.DownloadAttachment;
 
-public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachmentStorage) : Endpoint<Request>
+public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation, IAttachmentStorage attachmentStorage) : Endpoint<Request>
 {
     public override void Configure()
     {
@@ -16,7 +17,7 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var attachment = await dbContext.InteractionAttachments
+        var attachment = await dbContext.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner())
             .AsNoTracking()
             .Where(attachment =>
                 attachment.Id == request.AttachmentId &&

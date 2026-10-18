@@ -801,6 +801,38 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("UserProfileExternalConnections");
                 });
 
+            modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.AI.ProfileAiSelection", b =>
+                {
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("Generation")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ProviderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("UserProfileId");
+
+                    b.HasIndex("ConnectionId")
+                        .IsUnique();
+
+                    b.ToTable("ProfileAiSelections", (string)null);
+                });
+
             modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Identity.ApplicationUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -894,6 +926,31 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("StorageDatabaseIdentity", null, t =>
                         {
                             t.HasCheckConstraint("CK_StorageDatabaseIdentity_Singleton", "\"Id\" = 1");
+                        });
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileSelection", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("LegacySingleProfileAccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("UserProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserProfileId");
+
+                    b.ToTable("LocalProfileSelection", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalProfileSelection_Singleton", "\"Id\" = 1");
                         });
                 });
 
@@ -1099,6 +1156,15 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.AI.ProfileAiSelection", b =>
+                {
+                    b.HasOne("SocialTelemetry.Api.Domain.Users.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("UserProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Identity.ApplicationUser", b =>
                 {
                     b.HasOne("SocialTelemetry.Api.Domain.Users.UserProfile", null)
@@ -1106,6 +1172,14 @@ namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SocialTelemetry.Api.Infrastructure.Identity.ApplicationUser", "UserProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileSelection", b =>
+                {
+                    b.HasOne("SocialTelemetry.Api.Domain.Users.UserProfile", null)
+                        .WithMany()
+                        .HasForeignKey("UserProfileId")
+                        .OnDelete(DeleteBehavior.ClientNoAction);
                 });
 
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", b =>

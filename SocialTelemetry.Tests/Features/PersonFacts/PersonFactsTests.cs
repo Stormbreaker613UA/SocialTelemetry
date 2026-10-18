@@ -109,7 +109,9 @@ public abstract class PersonFactsTestsContract<TFixture> : IClassFixture<TFixtur
     public async Task GetForPerson_returns_only_facts_for_that_person()
     {
         var firstPersonId = await CreatePersonAsync("Alex");
-        var secondPersonId = await CreatePersonAsync("Sam");
+        // Two people under the same selected owner; two-profile isolation has its own tests.
+        var owner = Guid.Parse(fixture.Client.DefaultRequestHeaders.GetValues("X-SocialTelemetry-ProfileId").Single());
+        var secondPersonId = await fixture.CreatePersonAsync(new CreatePerson.Request { UserProfileId = owner, DisplayName = "Sam" });
         await AddFactAsync(firstPersonId, "First person's fact");
 
         var firstPersonFacts = await GetFactsAsync(firstPersonId);

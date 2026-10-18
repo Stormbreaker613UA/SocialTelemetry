@@ -9,11 +9,12 @@ using SocialTelemetry.Api.Infrastructure.AI.Models;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Observability;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
 public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage storage, IOptions<AnalysisOptions> options,
-    IOptions<TranscriptOptions> transcriptOptions, IOptions<UploadOptions> uploadOptions)
+    IOptions<TranscriptOptions> transcriptOptions, IOptions<UploadOptions> uploadOptions, LocalProfileOperation? operation = null)
 {
     private readonly AnalysisOptions limits = options.Value;
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -23,6 +24,8 @@ public sealed class AiContextBuilder(AppDbContext dbContext, IAttachmentStorage 
     {
         CheckText(userQuestion, limits.QuestionCharacters);
         var interactionQuery = dbContext.Interactions.AsNoTracking().Where(stored => stored.Id == interactionId);
+        if (operation?.Binding is { } binding)
+            interactionQuery = interactionQuery.Where(stored => stored.UserProfileId == binding.UserProfileId);
         if (await interactionQuery.AnyAsync(stored => stored.Title.Length > limits.InteractionTitleCharacters || stored.Description.Length > limits.InteractionDescriptionCharacters ||
             (stored.UserThoughts != null && stored.UserThoughts.Length > limits.UserThoughtsCharacters), cancellationToken))
             throw new AiProviderException(AiFailure.EvidenceLimitExceeded);

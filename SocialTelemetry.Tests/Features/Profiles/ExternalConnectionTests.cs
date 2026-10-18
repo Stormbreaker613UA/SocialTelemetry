@@ -126,11 +126,10 @@ public abstract class ExternalConnectionTestsContract<TFixture>(TFixture fixture
     public async Task Current_profile_connection_routes_cannot_access_another_profiles_connections()
     {
         await OwnerAsync(false);
-        await fixture.CreateUserProfileAsync();
+        var foreignProfileId = await fixture.CreateUserProfileAsync(select: false);
         await using var scope = fixture.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var foreignProfile = await database.UserProfiles.OrderByDescending(profile => profile.Id).FirstAsync(Cancellation);
-        var foreign = new UserProfileExternalConnection { Id = Guid.NewGuid(), UserProfileId = foreignProfile.Id, Platform = "custom" };
+        var foreign = new UserProfileExternalConnection { Id = Guid.NewGuid(), UserProfileId = foreignProfileId, Platform = "custom" };
         database.UserProfileExternalConnections.Add(foreign);
         await database.SaveChangesAsync(Cancellation);
         await AssertForeignAsync("/user-profile/external-connections", foreign.Id);
@@ -143,6 +142,7 @@ public abstract class ExternalConnectionTestsContract<TFixture>(TFixture fixture
     {
         var (route, ownerId) = await OwnerAsync(person);
         var connection = await AddAsync(route, new { Platform = "custom" });
+        if (!person) await fixture.CreateUserProfileAsync("Retained local owner");
         await using var scope = fixture.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         if (person) database.People.Remove(await database.People.SingleAsync(owner => owner.Id == ownerId, Cancellation));
@@ -154,15 +154,15 @@ public abstract class ExternalConnectionTestsContract<TFixture>(TFixture fixture
     }
 
     [Fact]
-    public async Task Missing_owner_and_connection_return_not_found()
+    public async Task Missing_selection_returns_conflict_and_missing_owned_connection_returns_not_found()
     {
         await fixture.ClearUserProfilesAsync();
         foreach (var route in new[] { "/user-profile/external-connections", $"/people/{Guid.NewGuid()}/external-connections" })
         {
             using var list = await fixture.Client.GetAsync(route, Cancellation);
             using var add = await fixture.Client.PostAsJsonAsync(route, new { Platform = "custom" }, Cancellation);
-            Assert.Equal(HttpStatusCode.NotFound, list.StatusCode);
-            Assert.Equal(HttpStatusCode.NotFound, add.StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, list.StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, add.StatusCode);
         }
         var (existingRoute, _) = await OwnerAsync(true);
         await AssertForeignAsync(existingRoute, Guid.NewGuid());

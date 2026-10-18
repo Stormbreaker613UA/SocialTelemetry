@@ -225,7 +225,7 @@ public sealed class ChatGptConnectionTests
         app.Server.IncludeIdTokenOnRefresh = true;
         using var cancellation = new CancellationTokenSource();
         app.Server.CancelDuringRefresh = cancellation;
-        var connection = app.Services.GetRequiredService<ChatGptConnection>();
+        var connection = app.OwnedConnection;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => connection.GetModelsAsync(cancellation.Token));
         await connection.GetModelsAsync(CancellationToken.None);
         Assert.Equal(1, app.Server.RefreshCount);

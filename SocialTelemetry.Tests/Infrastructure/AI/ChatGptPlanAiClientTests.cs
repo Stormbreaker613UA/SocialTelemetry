@@ -120,7 +120,7 @@ public sealed class ChatGptPlanAiClientTests
         await app.ConnectAsync();
         app.Server.CancelModels = true;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        var connection = app.Services.GetRequiredService<ChatGptConnection>();
+        var connection = app.OwnedConnection;
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => connection.GetModelsAsync(cancellation.Token));
 

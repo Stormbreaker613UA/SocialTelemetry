@@ -1,10 +1,11 @@
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetForPerson;
 
-public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -14,7 +15,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var personExists = await dbContext.People
+        var personExists = await dbContext.People.Where(person => person.UserProfileId == operation.RequireOwner())
             .AsNoTracking()
             .AnyAsync(person => person.Id == request.PersonId, cancellationToken);
 
@@ -24,7 +25,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
             return;
         }
 
-        var interactions = await dbContext.Interactions
+        var interactions = await dbContext.Interactions.Where(interaction => interaction.UserProfileId == operation.RequireOwner())
             .AsNoTracking()
             .Where(interaction => interaction.Participants.Any(participant => participant.PersonId == request.PersonId))
             .OrderByDescending(interaction => interaction.OccurredAt)

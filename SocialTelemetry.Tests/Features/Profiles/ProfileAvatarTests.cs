@@ -8,6 +8,7 @@ using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Profiles;
@@ -117,6 +118,7 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
         var (route, ownerId) = await CreateOwnerAsync(person);
         await UploadAsync(fixture.Client, route, Png);
         var key = await KeyAsync(route);
+        if (!person) await fixture.CreateUserProfileAsync("Retained local owner");
         await using var scope = fixture.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         if (person) database.People.Remove(await database.People.SingleAsync(owner => owner.Id == ownerId, Cancellation));
@@ -176,6 +178,8 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
         var (_, personId) = await CreateOwnerAsync(true);
         await using var first = fixture.CreateAsyncScope();
         await using var second = fixture.CreateAsyncScope();
+        await BindCurrentAsync(first.ServiceProvider);
+        await BindCurrentAsync(second.ServiceProvider);
         var firstService = first.ServiceProvider.GetRequiredService<ProfileAvatarService>();
         var secondService = second.ServiceProvider.GetRequiredService<ProfileAvatarService>();
         var firstOwner = await firstService.FindOwnerAsync(personId, Cancellation);
@@ -221,6 +225,7 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
         using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options =>
             options.AddInterceptors(new CancelledSave())));
         await using var scope = application.Services.CreateAsyncScope();
+        await BindCurrentAsync(scope.ServiceProvider);
         var service = scope.ServiceProvider.GetRequiredService<ProfileAvatarService>();
         var owner = await service.FindOwnerAsync(personId, Cancellation);
         var originalFiles = Directory.GetFiles(Path.GetDirectoryName(AvatarPath(originalKey))!).Order().ToArray();
@@ -254,19 +259,35 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
     }
 
     [Fact]
-    public async Task Missing_owner_returns_not_found()
+    public async Task Missing_selection_fails_clearly_and_unknown_owned_media_returns_not_found()
     {
         await fixture.ClearUserProfilesAsync();
-        foreach (var route in new[] { "/user-profile/avatar", $"/people/{Guid.NewGuid()}/avatar" })
+        await CheckAsync(HttpStatusCode.Conflict);
+        await fixture.CreateUserProfileAsync();
+        await CheckAsync(HttpStatusCode.NotFound, includeProfile: false);
+
+        async Task CheckAsync(HttpStatusCode expected, bool includeProfile = true)
         {
-            using var get = await fixture.Client.GetAsync(route, Cancellation);
-            using var delete = await fixture.Client.DeleteAsync(route, Cancellation);
-            using var form = Form(Png, "image/png");
-            using var upload = await fixture.Client.PutAsync(route, form, Cancellation);
-            Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
-            Assert.Equal(HttpStatusCode.NotFound, delete.StatusCode);
-            Assert.Equal(HttpStatusCode.NotFound, upload.StatusCode);
+            foreach (var route in new[] { "/user-profile/avatar", $"/people/{Guid.NewGuid()}/avatar" })
+            {
+                if (!includeProfile && route == "/user-profile/avatar") continue;
+                using var get = await fixture.Client.GetAsync(route, Cancellation);
+                using var delete = await fixture.Client.DeleteAsync(route, Cancellation);
+                using var form = Form(Png, "image/png");
+                using var upload = await fixture.Client.PutAsync(route, form, Cancellation);
+                Assert.Equal(expected, get.StatusCode);
+                Assert.Equal(expected, delete.StatusCode);
+                Assert.Equal(expected, upload.StatusCode);
+            }
         }
+    }
+
+    private async Task BindCurrentAsync(IServiceProvider services)
+    {
+        var selection = await services.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+        var owner = Assert.IsType<Guid>(selection.UserProfileId);
+        services.GetRequiredService<LocalProfileOperation>().Bind(new(owner, selection.Version),
+            services.GetRequiredService<LocalProfileLifetimes>().Capture(selection.Version));
     }
 
     private async Task<string> KeyAsync(string route)

@@ -215,7 +215,9 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
     {
         var firstInteractionId = await CreateInteractionAsync();
         var secondInteractionId = await CreateInteractionAsync();
+        await SelectInteractionOwnerAsync(firstInteractionId);
         var attachment = await AddTextAttachmentAsync(firstInteractionId, "Only on the first interaction.");
+        await SelectInteractionOwnerAsync(secondInteractionId);
 
         using var response = await fixture.Client.GetAsync($"/interactions/{secondInteractionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
 
@@ -280,8 +282,11 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
     {
         var interactionId = await CreateInteractionAsync();
         var otherInteractionId = await CreateInteractionAsync();
+        await SelectInteractionOwnerAsync(interactionId);
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
+        await SelectInteractionOwnerAsync(otherInteractionId);
         var otherAttachment = await AddFileAttachmentAsync(otherInteractionId, AttachmentType.Image, [2], "image/png");
+        await SelectInteractionOwnerAsync(interactionId);
 
         using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
 
@@ -434,6 +439,15 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
 
         public Task DeleteAsync(string storageKey, CancellationToken cancellationToken) =>
             throw new IOException("Simulated file deletion failure.");
+    }
+
+    private async Task SelectInteractionOwnerAsync(Guid interactionId)
+    {
+        await using var scope = fixture.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var owner = await database.Interactions.Where(interaction => interaction.Id == interactionId)
+            .Select(interaction => interaction.UserProfileId).SingleAsync(TestContext.Current.CancellationToken);
+        await fixture.SelectProfileAsync(owner);
     }
 
     private async Task<Guid> CreateInteractionAsync()

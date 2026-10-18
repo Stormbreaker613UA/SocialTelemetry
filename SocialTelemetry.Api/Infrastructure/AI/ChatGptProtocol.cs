@@ -22,6 +22,7 @@ internal sealed class ChatGptState
 
 internal sealed class ChatGptAccount
 {
+    public Guid? UserProfileId { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public string ClientId { get; set; } = string.Empty;
     public string? Subject { get; set; }

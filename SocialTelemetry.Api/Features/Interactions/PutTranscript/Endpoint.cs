@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Common.Exceptions;
@@ -9,7 +10,7 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.Interactions.PutTranscript;
 
-public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage,
+public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation, IAttachmentStorage storage,
     IOptions<TranscriptOptions> options, IOptions<UploadOptions> uploadOptions) : Endpoint<Request, Response>
 {
     public override void Configure()
@@ -26,7 +27,7 @@ public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage,
             await BadRequestAsync("Transcript text must be non-empty and within the configured limit.", cancellationToken);
             return;
         }
-        var attachment = await database.InteractionAttachments.AsNoTracking().SingleOrDefaultAsync(
+        var attachment = await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking().SingleOrDefaultAsync(
             attachment => attachment.Id == request.AttachmentId && attachment.InteractionId == request.InteractionId, cancellationToken)
             ?? throw new NotFoundException();
         if (attachment.Type != AttachmentType.Audio)
@@ -42,13 +43,13 @@ public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage,
         {
             await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
             await database.LockAttachmentAnalysisContextAsync(attachment.Id, request.InteractionId, cancellationToken);
-            var currentAttachment = await database.InteractionAttachments.AsNoTracking()
+            var currentAttachment = await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking()
                 .SingleOrDefaultAsync(current => current.Id == attachment.Id && current.InteractionId == request.InteractionId, cancellationToken)
                 ?? throw new NotFoundException();
             if (currentAttachment.Status != AttachmentStatus.Ready || currentAttachment.Type != AttachmentType.Audio ||
                 currentAttachment.StorageKey != attachment.StorageKey) throw new ConflictException();
 
-            var transcript = await database.AttachmentTranscripts.SingleOrDefaultAsync(
+            var transcript = await database.AttachmentTranscripts.Where(transcript => transcript.Attachment.Interaction.UserProfileId == operation.RequireOwner()).SingleOrDefaultAsync(
                 transcript => transcript.AttachmentId == attachment.Id, cancellationToken);
             var created = transcript is null;
             if (transcript is null)

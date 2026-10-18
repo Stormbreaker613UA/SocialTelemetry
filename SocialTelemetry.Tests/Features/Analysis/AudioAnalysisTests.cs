@@ -133,6 +133,7 @@ public abstract partial class AudioAnalysisTestsContract<TFixture>(TFixture fixt
     {
         var data = await SeedAsync();
         var foreign = fault == "foreign" ? await SeedAsync() : null;
+        await fixture.SelectProfileAsync(data.ProfileId);
         var provider = new FakeAnalysisClient();
         var speech = new ForbiddenSpeechClient();
         using var application = App(provider, speech);
@@ -411,7 +412,13 @@ public abstract partial class AudioAnalysisTestsContract<TFixture>(TFixture fixt
                 await File.WriteAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, data.StorageKey), replacement, Cancellation);
                 transcript.SourceSha256 = Convert.ToHexString(SHA256.HashData(replacement));
                 break;
-            case "reparent": attachment.InteractionId = (await SeedAsync()).InteractionId; break;
+            case "reparent":
+                var foreignOwner = await fixture.CreateUserProfileAsync(select: false);
+                var destination = new Interaction { Id = Guid.NewGuid(), UserProfileId = foreignOwner,
+                    Title = "Foreign synthetic source", OccurredAt = DateTimeOffset.UtcNow };
+                database.Interactions.Add(destination);
+                attachment.InteractionId = destination.Id;
+                break;
             default: throw new ArgumentOutOfRangeException(nameof(change));
         }
         await database.SaveChangesAsync(Cancellation);

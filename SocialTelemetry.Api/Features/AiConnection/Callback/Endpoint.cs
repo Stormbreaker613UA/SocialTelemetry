@@ -3,7 +3,7 @@ using SocialTelemetry.Api.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Callback;
 
-public sealed class Endpoint(ChatGptConnection connection) : EndpointWithoutRequest<ChatGptConnectionStatus>
+public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutRequest<ChatGptConnectionStatus>
 {
     public override void Configure()
     {

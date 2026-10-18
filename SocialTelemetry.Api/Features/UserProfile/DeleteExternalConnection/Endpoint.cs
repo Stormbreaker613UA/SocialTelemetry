@@ -1,4 +1,5 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Users;
 using SocialTelemetry.Api.Features.ProfileConnections;
@@ -6,7 +7,7 @@ using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.UserProfile.DeleteExternalConnection;
 
-public sealed class Endpoint(AppDbContext database) : Endpoint<Request>
+public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : Endpoint<Request>
 {
     public override void Configure()
     {
@@ -16,7 +17,7 @@ public sealed class Endpoint(AppDbContext database) : Endpoint<Request>
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var ownerId = await database.UserProfiles.AsNoTracking().OrderBy(profile => profile.Id)
+        var ownerId = await database.UserProfiles.Where(profile => profile.Id == operation.RequireOwner()).AsNoTracking()
             .Select(profile => (Guid?)profile.Id).FirstOrDefaultAsync(cancellationToken);
         if (ownerId is null)
         {
@@ -24,7 +25,7 @@ public sealed class Endpoint(AppDbContext database) : Endpoint<Request>
             return;
         }
 
-        var connection = await database.UserProfileExternalConnections.SingleOrDefaultAsync(connection =>
+        var connection = await database.UserProfileExternalConnections.Where(connection => connection.UserProfileId == operation.RequireOwner()).SingleOrDefaultAsync(connection =>
             connection.Id == request.ConnectionId && connection.UserProfileId == ownerId, cancellationToken);
         if (connection is null)
         {

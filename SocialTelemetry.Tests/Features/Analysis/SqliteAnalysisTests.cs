@@ -264,6 +264,7 @@ public sealed class SqliteAnalysisTests(SqliteApiFixture fixture) : IClassFixtur
         var profileId = await fixture.CreateUserProfileAsync();
         var personId = await fixture.CreatePersonAsync(new() { UserProfileId = profileId, DisplayName = "Synthetic participant" });
         await fixture.CreatePersonAsync(new() { UserProfileId = await fixture.CreateUserProfileAsync(), DisplayName = "Unrelated private person" });
+        await fixture.SelectProfileAsync(profileId);
         await using var scope = fixture.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var instant = new DateTimeOffset(2026, 10, 7, 18, 0, 0, TimeSpan.Zero);

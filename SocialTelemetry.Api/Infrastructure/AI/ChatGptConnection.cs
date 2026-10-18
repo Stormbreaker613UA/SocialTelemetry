@@ -3,10 +3,11 @@ using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 
-public sealed class ChatGptConnection(
+public sealed partial class ChatGptConnection(
     ChatGptCredentialStore store,
     ChatGptHttpClient provider,
     ISystemBrowser browser,
@@ -17,13 +18,18 @@ public sealed class ChatGptConnection(
     private PendingAuthorization? pending;
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> lifetimes = new();
 
-    public async Task BeginAsync(Guid? connectionId, bool newAccount, bool requestConsent, CancellationToken cancellationToken)
+    internal async Task BeginAsync(Guid? connectionId, bool newAccount, bool requestConsent, CancellationToken cancellationToken,
+        LocalProfileBinding? ownerBinding = null, Guid? selectionGeneration = null, CancellationToken ownerLifetime = default,
+        CancellationToken selectionLifetime = default)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
         var state = await store.ReadAsync(cancellationToken);
-        var selectedId = connectionId ?? state.ActiveConnectionId;
-        if (selectedId is null && state.Accounts.Count == 1) selectedId = state.Accounts[0].Id;
+        CheckPending();
+        var selectedId = ownerBinding is null ? connectionId ?? state.ActiveConnectionId : connectionId;
+        if (ownerBinding is null && selectedId is null && state.Accounts.Count == 1) selectedId = state.Accounts[0].Id;
         var account = newAccount ? null : state.Accounts.SingleOrDefault(account => account.Id == selectedId);
+        if (ownerBinding is not null && account is not null && account.UserProfileId != ownerBinding.UserProfileId)
+            throw new AiProviderException(AiFailure.NotConnected);
         if (connectionId is not null && (newAccount || account is null))
             throw new AiProviderException(AiFailure.InvalidCallback);
 
@@ -35,7 +41,9 @@ public sealed class ChatGptConnection(
             ExpiresAt = clock.GetUtcNow().Add(options.Value.AuthorizationLifetime),
             ConnectionId = account?.Id ?? Guid.NewGuid(),
             ClientId = account?.ClientId,
-            CallbackUri = options.Value.CallbackUri
+            CallbackUri = options.Value.CallbackUri,
+            OwnerBinding = ownerBinding, SelectionGeneration = selectionGeneration, OwnerLifetime = ownerLifetime,
+            SelectionLifetime = selectionLifetime
         };
         var parameters = new Dictionary<string, string?>
         {
@@ -67,7 +75,19 @@ public sealed class ChatGptConnection(
         logger.LogInformation("ChatGPT authorization started");
     }
 
-    public async Task<ChatGptConnectionStatus> CompleteAsync(
+    internal async Task<ChatGptConnectionStatus> CompleteAsync(
+        string? returnedState, string? code, string? clientId, string? error, CancellationToken cancellationToken)
+        => (await CompleteCoreAsync(returnedState, code, clientId, error, cancellationToken)).Status;
+
+    internal async Task<CompletedAuthorization> CompleteBoundAsync(
+        string? returnedState, string? code, string? clientId, string? error, CancellationToken cancellationToken)
+    {
+        var completed = await CompleteCoreAsync(returnedState, code, clientId, error, cancellationToken);
+        if (completed.Binding is null) throw new AiProviderException(AiFailure.InvalidCallback);
+        return completed;
+    }
+
+    private async Task<CompletedAuthorization> CompleteCoreAsync(
         string? returnedState, string? code, string? clientId, string? error, CancellationToken cancellationToken)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
@@ -75,6 +95,10 @@ public sealed class ChatGptConnection(
         pending = null;
         if (attempt is null || attempt.ExpiresAt <= clock.GetUtcNow() || !ChatGptHttpClient.FixedEquals(attempt.State, returnedState))
             throw new AiProviderException(AiFailure.InvalidCallback);
+        if (attempt.OwnerLifetime.IsCancellationRequested || attempt.SelectionLifetime.IsCancellationRequested)
+            throw new AiProviderException(AiFailure.ExecutionInvalidated);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, attempt.OwnerLifetime, attempt.SelectionLifetime);
+        cancellationToken = lifetime.Token;
         if (error is not null)
             throw new AiProviderException(error == "access_denied" ? AiFailure.AuthorizationDenied : AiFailure.InvalidCallback);
         if (string.IsNullOrWhiteSpace(code) ||
@@ -90,10 +114,10 @@ public sealed class ChatGptConnection(
         {
             if (state.Accounts.Any(existing => existing.ClientId == issuedClientId))
                 throw new AiProviderException(AiFailure.InvalidCallback);
-            account = new ChatGptAccount { Id = attempt.ConnectionId, ClientId = issuedClientId };
+            account = new ChatGptAccount { Id = attempt.ConnectionId, ClientId = issuedClientId, UserProfileId = attempt.OwnerBinding?.UserProfileId };
             state.Accounts.Add(account);
         }
-        else if (account.ClientId != issuedClientId)
+        else if (account.ClientId != issuedClientId || account.UserProfileId != attempt.OwnerBinding?.UserProfileId)
         {
             throw new AiProviderException(AiFailure.InvalidCallback);
         }
@@ -112,24 +136,27 @@ public sealed class ChatGptConnection(
         if (account.Subject is not null && account.Subject != subject)
             throw new AiProviderException(AiFailure.InvalidIdentity);
         account.Subject = subject;
-        var previousAccount = state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId);
+        cancellationToken.ThrowIfCancellationRequested();
+        var previousAccount = attempt.OwnerBinding is null
+            ? state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId) : account;
         InvalidateLifetime(previousAccount?.Tokens?.SessionId);
         tokens.SessionId = Guid.NewGuid();
         account.Tokens = tokens;
-        state.ActiveConnectionId = account.Id;
+        if (attempt.OwnerBinding is null) state.ActiveConnectionId = account.Id;
         await store.SaveAsync(state, cancellationToken);
         logger.LogInformation("ChatGPT connection {ConnectionId} authorized; inference permission {InferencePermission}",
             account.Id, HasInferencePermission(tokens));
-        return Status(state);
+        return new CompletedAuthorization(attempt.OwnerBinding is null ? Status(state) : OwnedStatus(state, attempt.OwnerBinding.UserProfileId, account.Id),
+            attempt.OwnerBinding, attempt.SelectionGeneration, attempt.OwnerLifetime);
     }
 
-    public async Task<ChatGptConnectionStatus> GetStatusAsync(CancellationToken cancellationToken)
+    internal async Task<ChatGptConnectionStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
         return Status(await store.ReadAsync(cancellationToken));
     }
 
-    public async Task<ChatGptModelCatalog> GetModelsAsync(CancellationToken cancellationToken)
+    internal async Task<ChatGptModelCatalog> GetModelsAsync(CancellationToken cancellationToken)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
         var state = await store.ReadAsync(cancellationToken);
@@ -138,7 +165,7 @@ public sealed class ChatGptConnection(
         return new ChatGptModelCatalog(models, account.SelectedModel, models.Any(model => model.Id == account.SelectedModel));
     }
 
-    public async Task SelectModelAsync(string modelId, CancellationToken cancellationToken)
+    internal async Task SelectModelAsync(string modelId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(modelId)) throw new AiProviderException(AiFailure.ModelNotSelected);
         using var storageLock = await store.LockAsync(cancellationToken);
@@ -151,7 +178,7 @@ public sealed class ChatGptConnection(
         logger.LogInformation("ChatGPT model {ModelId} selected for connection {ConnectionId}", modelId, account.Id);
     }
 
-    public async Task<ChatGptDisconnectResult> DisconnectAsync(CancellationToken cancellationToken)
+    internal async Task<ChatGptDisconnectResult> DisconnectAsync(CancellationToken cancellationToken)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
         pending = null;
@@ -236,10 +263,11 @@ public sealed class ChatGptConnection(
         }
     }
 
-    private async Task ValidateLockedSessionAsync(Guid sessionId, CancellationToken cancellationToken)
+    private async Task ValidateLockedSessionAsync(Guid sessionId, CancellationToken cancellationToken, Guid? owner = null, Guid? connectionId = null)
     {
         var state = await store.ReadAsync(cancellationToken);
-        var account = state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId);
+        var account = owner is null ? state.Accounts.SingleOrDefault(saved => saved.Id == state.ActiveConnectionId)
+            : state.Accounts.SingleOrDefault(saved => saved.Id == connectionId && saved.UserProfileId == owner);
         if (account?.Tokens?.SessionId != sessionId)
         {
             InvalidateLifetime(sessionId);
@@ -248,7 +276,7 @@ public sealed class ChatGptConnection(
     }
 
     private sealed class ExecutionLease(ChatGptConnection connection, Guid sessionId,
-        CancellationToken lifetimeCancellationToken, IDisposable storageLock) : IAiExecutionLease
+        CancellationToken lifetimeCancellationToken, IDisposable storageLock, Guid? owner = null, Guid? connectionId = null) : IAiExecutionLease
     {
         private IDisposable? heldLock = storageLock;
 
@@ -260,7 +288,7 @@ public sealed class ChatGptConnection(
                 throw new AiProviderException(AiFailure.ExecutionInvalidated);
             // The shared file lock stays held: another host cannot disconnect/reconnect between
             // this persisted-generation check and the caller's database commit.
-            await connection.ValidateLockedSessionAsync(sessionId, cancellationToken);
+            await connection.ValidateLockedSessionAsync(sessionId, cancellationToken, owner, connectionId);
             if (lifetimeCancellationToken.IsCancellationRequested)
                 throw new AiProviderException(AiFailure.ExecutionInvalidated);
         }
@@ -376,6 +404,10 @@ public sealed class ChatGptConnection(
 
     private sealed class PendingAuthorization
     {
+        public LocalProfileBinding? OwnerBinding { get; init; }
+        public Guid? SelectionGeneration { get; init; }
+        public CancellationToken OwnerLifetime { get; init; }
+        public CancellationToken SelectionLifetime { get; init; }
         public required string State { get; init; }
         public required string Nonce { get; init; }
         public required string Verifier { get; init; }

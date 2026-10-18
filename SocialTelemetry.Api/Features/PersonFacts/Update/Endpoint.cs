@@ -1,10 +1,11 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.PersonFacts.Update;
 
-public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -21,7 +22,7 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
             return;
         }
 
-        var fact = await dbContext.PersonFacts
+        var fact = await dbContext.PersonFacts.Where(fact => fact.Person.UserProfileId == operation.RequireOwner())
             .SingleOrDefaultAsync(
                 fact => fact.Id == request.Id && fact.PersonId == request.PersonId,
                 cancellationToken);

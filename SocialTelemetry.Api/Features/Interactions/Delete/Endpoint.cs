@@ -1,4 +1,5 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
@@ -6,7 +7,7 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.Interactions.Delete;
 
-public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachmentStorage) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation, IAttachmentStorage attachmentStorage) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -16,7 +17,7 @@ public sealed class Endpoint(AppDbContext dbContext, IAttachmentStorage attachme
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var interaction = await dbContext.Interactions
+        var interaction = await dbContext.Interactions.Where(interaction => interaction.UserProfileId == operation.RequireOwner())
             .Include(interaction => interaction.Attachments)
             .SingleOrDefaultAsync(interaction => interaction.Id == request.Id, cancellationToken);
 

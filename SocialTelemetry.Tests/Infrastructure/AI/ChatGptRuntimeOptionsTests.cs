@@ -28,7 +28,7 @@ public sealed class ChatGptRuntimeOptionsTests
         });
         await app.ConnectAsync();
         app.Server.RevokeStatus = HttpStatusCode.ServiceUnavailable;
-        var connection = app.Services.GetRequiredService<ChatGptConnection>();
+        var connection = app.OwnedConnection;
         var result = await connection.DisconnectAsync(TestContext.Current.CancellationToken);
         Assert.False(result.RemoteRevocationConfirmed);
         Assert.Equal(3, app.Server.RevokeCount);

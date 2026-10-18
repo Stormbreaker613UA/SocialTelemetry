@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.Interactions;
 using SocialTelemetry.Api.Infrastructure.Persistence;
@@ -8,7 +9,7 @@ using SocialTelemetry.Api.Infrastructure.Storage;
 namespace SocialTelemetry.Api.Features.Interactions.AddAttachment;
 
 public sealed class Endpoint(
-    AppDbContext dbContext,
+    AppDbContext dbContext, LocalProfileOperation operation,
     IAttachmentStorage attachmentStorage,
     ILogger<Endpoint> logger,
     IOptions<UploadOptions> options) : Endpoint<Request, Response>
@@ -49,7 +50,7 @@ public sealed class Endpoint(
             return;
         }
 
-        var interactionExists = await dbContext.Interactions
+        var interactionExists = await dbContext.Interactions.Where(interaction => interaction.UserProfileId == operation.RequireOwner())
             .AsNoTracking()
             .AnyAsync(interaction => interaction.Id == request.InteractionId, cancellationToken);
 
@@ -128,7 +129,7 @@ public sealed class Endpoint(
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(CancellationToken.None);
             await dbContext.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
-            await dbContext.InteractionAttachments
+            await dbContext.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner())
                 .Where(existingAttachment => existingAttachment.Id == attachment.Id)
                 .ExecuteUpdateAsync(update => update.SetProperty(existingAttachment => existingAttachment.Status, AttachmentStatus.Deleting),
                     CancellationToken.None);
@@ -146,7 +147,7 @@ public sealed class Endpoint(
             await dbContext.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
             await AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(
                 dbContext, attachmentStorage, attachment.StorageKey, CancellationToken.None);
-            await dbContext.InteractionAttachments
+            await dbContext.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner())
                 .Where(existingAttachment => existingAttachment.Id == attachment.Id)
                 .ExecuteDeleteAsync(CancellationToken.None);
             await transaction.CommitAsync(CancellationToken.None);

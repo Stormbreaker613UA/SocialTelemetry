@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Common.Exceptions;
@@ -11,7 +12,7 @@ using SocialTelemetry.Api.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Api.Features.Interactions.TranscribeAttachment;
 
-public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage, ISpeechToTextClient speech,
+public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation, IAttachmentStorage storage, ISpeechToTextClient speech,
     IOptions<UploadOptions> uploads, IOptions<TranscriptOptions> transcripts) : Endpoint<Request, Response>
 {
     public override void Configure()
@@ -29,7 +30,7 @@ public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage, 
         if (source.StorageKey is null) throw new NotFoundException();
         var audio = await ReadAudioAsync(source.StorageKey, cancellationToken);
         var digest = Convert.ToHexString(SHA256.HashData(audio));
-        var initial = await database.AttachmentTranscripts.AsNoTracking().SingleOrDefaultAsync(
+        var initial = await database.AttachmentTranscripts.Where(transcript => transcript.Attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking().SingleOrDefaultAsync(
             transcript => transcript.AttachmentId == request.AttachmentId, cancellationToken);
         if (initial is not null && (initial.SourceStorageKey != source.StorageKey || initial.SourceSha256 != digest))
             throw new ConflictException();
@@ -55,7 +56,7 @@ public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage, 
             await database.LockAttachmentAnalysisContextAsync(request.AttachmentId, request.InteractionId, cancellationToken);
             var currentSource = await LoadSourceAsync(request, cancellationToken);
             if (currentSource != source) throw new ConflictException();
-            var transcript = await database.AttachmentTranscripts.SingleOrDefaultAsync(
+            var transcript = await database.AttachmentTranscripts.Where(transcript => transcript.Attachment.Interaction.UserProfileId == operation.RequireOwner()).SingleOrDefaultAsync(
                 transcript => transcript.AttachmentId == request.AttachmentId, cancellationToken);
             if (transcript?.Version != initial?.Version) throw new ConflictException();
             if (reusable)
@@ -92,7 +93,7 @@ public sealed class Endpoint(AppDbContext database, IAttachmentStorage storage, 
     }
 
     private async Task<SourceState> LoadSourceAsync(Request request, CancellationToken cancellationToken) =>
-        await database.InteractionAttachments.AsNoTracking()
+        await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking()
             .Where(attachment => attachment.Id == request.AttachmentId && attachment.InteractionId == request.InteractionId)
             .Select(attachment => new SourceState(attachment.Interaction.UserProfileId, attachment.Type, attachment.Status, attachment.StorageKey))
             .SingleOrDefaultAsync(cancellationToken) ?? throw new NotFoundException();

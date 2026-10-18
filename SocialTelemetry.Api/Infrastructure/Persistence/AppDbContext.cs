@@ -10,12 +10,14 @@ using SocialTelemetry.Api.Domain.Users;
 using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.Observability;
 using SocialTelemetry.Api.Infrastructure.Identity;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.Persistence;
 
 public sealed partial class AppDbContext(
     DbContextOptions<AppDbContext> options,
-    ProfileAvatarCleanup? avatarCleanup = null) : IdentityUserContext<ApplicationUser, Guid>(options)
+    ProfileAvatarCleanup? avatarCleanup = null,
+    LocalProfileOperation? profileOperation = null) : IdentityUserContext<ApplicationUser, Guid>(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<StorageDatabaseIdentity> StorageDatabaseIdentities => Set<StorageDatabaseIdentity>();
@@ -34,9 +36,13 @@ public sealed partial class AppDbContext(
 
     public async Task LockAnalysisContextAsync(Guid userProfileId, CancellationToken cancellationToken)
     {
+        if (profileOperation?.Binding is { } binding && binding.UserProfileId != userProfileId)
+            throw new SocialTelemetry.Api.Common.Exceptions.NotFoundException();
         // Bulk source writes must acquire this protection explicitly; tracked async saves do so below.
         if (Database.CurrentTransaction is null)
             throw new InvalidOperationException("Analysis context protection requires a transaction.");
+
+        await ProtectLocalProfileOperationAsync(cancellationToken);
 
         // PostgreSQL and SQLite share this upsert syntax. The unique key makes first use race-safe;
         // the no-op update protects this profile until commit. SQL stays inside persistence.
@@ -73,7 +79,7 @@ public sealed partial class AppDbContext(
             : await avatarCleanup.FindObsoleteKeysAsync(this, cancellationToken);
         var hasExternalTransaction = Database.CurrentTransaction is not null;
         var sourceChanges = AnalysisSourceChanges();
-        if (sourceChanges.Length == 0)
+        if (sourceChanges.Length == 0 && profileOperation?.Binding is null)
         {
             var savedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             if (!hasExternalTransaction && avatarCleanup is not null)
@@ -83,11 +89,13 @@ public sealed partial class AppDbContext(
 
         if (Database.CurrentTransaction is not null)
         {
+            await ProtectLocalProfileOperationAsync(cancellationToken);
             await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
+        await ProtectLocalProfileOperationAsync(cancellationToken);
         await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
         var affectedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await transaction.CommitAsync(cancellationToken);

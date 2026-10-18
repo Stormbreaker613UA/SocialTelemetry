@@ -1,4 +1,5 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Domain.Interactions;
@@ -6,7 +7,7 @@ using SocialTelemetry.Api.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetTranscript;
 
-public sealed class Endpoint(AppDbContext database) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -16,7 +17,7 @@ public sealed class Endpoint(AppDbContext database) : Endpoint<Request, Response
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var attachment = await database.InteractionAttachments.AsNoTracking()
+        var attachment = await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking()
             .Where(attachment => attachment.Id == request.AttachmentId && attachment.InteractionId == request.InteractionId)
             .Select(attachment => new { attachment.Type, attachment.Status })
             .SingleOrDefaultAsync(cancellationToken);
@@ -28,7 +29,7 @@ public sealed class Endpoint(AppDbContext database) : Endpoint<Request, Response
             return;
         }
         if (attachment.Status != AttachmentStatus.Ready) throw new ConflictException();
-        var response = await database.AttachmentTranscripts.AsNoTracking()
+        var response = await database.AttachmentTranscripts.Where(transcript => transcript.Attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking()
             .Where(transcript => transcript.AttachmentId == request.AttachmentId &&
                 transcript.Attachment.InteractionId == request.InteractionId &&
                 transcript.Attachment.Type == AttachmentType.Audio && transcript.Attachment.Status == AttachmentStatus.Ready)

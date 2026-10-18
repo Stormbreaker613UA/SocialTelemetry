@@ -47,6 +47,7 @@ public sealed class FoundationLifecycleTests(PeopleApiFixture fixture) : IClassF
         }
         else
         {
+            await fixture.SelectProfileAsync(first.ProfileId);
             var route = deletion == "interaction" ? $"/interactions/{first.InteractionId}" :
                 $"/interactions/{first.InteractionId}/attachments/{firstAttachmentId}";
             using var response = await fixture.Client.DeleteAsync(route, Cancellation);
@@ -58,6 +59,7 @@ public sealed class FoundationLifecycleTests(PeopleApiFixture fixture) : IClassF
             using var client = restarted.CreateClient();
         }
         Assert.Null(await fixture.FindAttachmentAsync(firstAttachmentId));
+        await fixture.SelectProfileAsync(other.ProfileId);
         using var download = await fixture.Client.GetAsync($"/interactions/{other.InteractionId}/attachments/{otherAttachmentId}/content", Cancellation);
         Assert.Equal(HttpStatusCode.OK, download.StatusCode);
         Assert.Equal(new byte[] { 1, 2, 3 }, await download.Content.ReadAsByteArrayAsync(Cancellation));
@@ -93,8 +95,11 @@ public sealed class FoundationLifecycleTests(PeopleApiFixture fixture) : IClassF
         await using var verification = fixture.CreateAsyncScope();
         var files = verification.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars");
         Assert.True(await files.ExistsAsync(key, Cancellation));
+        await fixture.SelectProfileAsync(other.ProfileId);
         using var response = await fixture.Client.GetAsync($"/people/{other.PersonId}/avatar", Cancellation);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Profile deletion is a direct maintenance test, not an exposed selector operation.
+        await fixture.CreateUserProfileAsync("Retained local selection");
         await DeleteProfileAsync(other.ProfileId);
         Assert.False(await files.ExistsAsync(key, Cancellation));
     }

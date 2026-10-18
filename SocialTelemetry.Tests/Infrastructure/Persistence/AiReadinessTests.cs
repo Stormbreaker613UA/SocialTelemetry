@@ -78,6 +78,11 @@ public abstract class AiReadinessTestsContract<TFixture>(TFixture fixture) : ICl
 
         if (deleteInteraction)
         {
+            await using var selectionScope = fixture.CreateAsyncScope();
+            var owner = await selectionScope.ServiceProvider.GetRequiredService<AppDbContext>().Interactions
+                .Where(interaction => interaction.Id == interactionId).Select(interaction => interaction.UserProfileId)
+                .SingleAsync(TestContext.Current.CancellationToken);
+            await fixture.SelectProfileAsync(owner);
             using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }

@@ -3,7 +3,7 @@ using SocialTelemetry.Api.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Status;
 
-public sealed class Endpoint(ChatGptConnection connection) : EndpointWithoutRequest<ChatGptConnectionStatus>
+public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutRequest<ChatGptConnectionStatus>
 {
     public override void Configure()
     {
@@ -12,5 +12,5 @@ public sealed class Endpoint(ChatGptConnection connection) : EndpointWithoutRequ
     }
 
     public override async Task HandleAsync(CancellationToken cancellationToken) =>
-        await Send.OkAsync(await connection.GetStatusAsync(cancellationToken), cancellationToken);
+        await Send.OkAsync(await connection.StatusAsync(cancellationToken), cancellationToken);
 }

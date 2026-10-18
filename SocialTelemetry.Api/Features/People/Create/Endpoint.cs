@@ -2,10 +2,11 @@ using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Domain.People;
 using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Api.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Features.People.Create;
 
-public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Response>
+public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -29,9 +30,9 @@ public sealed class Endpoint(AppDbContext dbContext) : Endpoint<Request, Respons
             return;
         }
 
-        var userProfileExists = await dbContext.UserProfiles
+        var userProfileExists = await dbContext.UserProfiles.Where(profile => profile.Id == operation.RequireOwner())
             .AsNoTracking()
-            .AnyAsync(userProfile => userProfile.Id == request.UserProfileId, cancellationToken);
+            .AnyAsync(userProfile => userProfile.Id == request.UserProfileId && userProfile.Id == operation.RequireOwner(), cancellationToken);
 
         if (!userProfileExists)
         {

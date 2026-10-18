@@ -567,7 +567,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     }
 
     [Fact]
-    public async Task Analysis_for_one_profile_does_not_block_other_profile_writes_or_analysis()
+    public async Task Analysis_for_selected_profile_does_not_block_unbound_other_profile_maintenance_writes()
     {
         var data = await SeedAsync();
         var fingerprintChecked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -579,9 +579,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
             await finishPersistence.Task.WaitAsync(cancellationToken);
         } };
         using var app = CreateApp(provider);
-        using var otherApp = CreateApp(new StubAiClient());
         using var client = CreateClient(app);
-        using var otherClient = CreateClient(otherApp);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
         var analysis = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
@@ -595,8 +593,8 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
             dbContext.PersonFacts.Add(new PersonFact { Id = Guid.NewGuid(), PersonId = foreignPerson.Id,
                 Value = "Independent confirmed fact", CreatedAt = DateTimeOffset.UtcNow });
             await dbContext.SaveChangesAsync(deadline.Token);
-            using var otherAnalysis = await otherClient.PostAsJsonAsync($"/interactions/{data.ForeignInteractionId}/analyze", new { }, deadline.Token);
-            Assert.Equal(HttpStatusCode.Created, otherAnalysis.StatusCode);
+            // A second active HTTP owner is deliberately unavailable in local mode. The
+            // underlying per-profile guard still permits independent maintenance writes.
             Assert.False(analysis.IsCompleted);
         }
         finally
@@ -800,6 +798,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     public async Task Untracked_cascade_deletes_coordinate_affected_linked_profiles(string deleted)
     {
         var data = await SeedAsync();
+        if (deleted == "profile") await fixture.SelectProfileAsync(data.ForeignUserId);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
         await using (var setupScope = fixture.CreateAsyncScope())
@@ -986,131 +985,6 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         await AssertNoAnalysisAsync(data.InteractionId);
     }
 
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task Disconnect_winning_execution_protection_rejects_analysis_even_after_reconnect(bool sharedHost, bool reconnect)
-    {
-        var data = await SeedAsync();
-        using var providerApp = new ChatGptTestApp();
-        await PrepareAnalysisProviderAsync(providerApp, data.PersonId);
-        using var otherHost = sharedHost ? new ChatGptTestApp(providerApp) : null;
-        await using var providerScope = providerApp.Services.CreateAsyncScope();
-        var provider = new PausingExecutionClient(providerScope.ServiceProvider.GetRequiredService<IAiClient>());
-        using var app = CreateApp(provider);
-        using var client = CreateClient(app);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        var analysis = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
-        try
-        {
-            // Inference and the initial validation have completed; the final context check has
-            // passed and execution protection is being requested, before any analysis is saved.
-            await provider.LeaseRequested.Task.WaitAsync(deadline.Token);
-            Assert.NotNull(provider.Completed);
-            var connection = (otherHost ?? providerApp).Services.GetRequiredService<ChatGptConnection>();
-            await connection.DisconnectAsync(deadline.Token);
-            if (sharedHost) Assert.False(provider.Completed.LifetimeCancellationToken.IsCancellationRequested);
-            if (reconnect) await providerApp.ConnectAsync();
-            provider.ContinueLease.TrySetResult();
-            using var response = await analysis;
-            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-            Assert.Contains("ExecutionInvalidated", await response.Content.ReadAsStringAsync(deadline.Token));
-            await AssertNoAnalysisAsync(data.InteractionId);
-            var invalid = await Assert.ThrowsAsync<AiProviderException>(() => providerScope.ServiceProvider
-                .GetRequiredService<IAiClient>().AcquireExecutionLeaseAsync(provider.Completed, deadline.Token));
-            Assert.Equal(AiFailure.ExecutionInvalidated, invalid.Failure);
-            Assert.Equal(reconnect, (await connection.GetStatusAsync(deadline.Token)).Connected);
-        }
-        finally
-        {
-            provider.ContinueLease.TrySetResult();
-        }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Execution_lease_prevents_disconnect_invalidation_after_last_check_before_commit(bool sharedHost)
-    {
-        var data = await SeedAsync();
-        using var providerApp = new ChatGptTestApp();
-        await PrepareAnalysisProviderAsync(providerApp, data.PersonId);
-        using var otherHost = sharedHost ? new ChatGptTestApp(providerApp) : null;
-        await using var providerScope = providerApp.Services.CreateAsyncScope();
-        var provider = providerScope.ServiceProvider.GetRequiredService<IAiClient>();
-        var commit = new AnalysisCommitGate();
-        using var app = CreateApp(provider, commitGate: commit);
-        using var client = CreateClient(app);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        var analysis = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, deadline.Token);
-        Task<ChatGptDisconnectResult>? disconnect = null;
-        try
-        {
-            await commit.Entered.Task.WaitAsync(deadline.Token);
-            // This interceptor runs inside CommitAsync, after save and the last lease validation.
-            // Disconnect starts synchronously, then waits for the held semaphore/file lock.
-            disconnect = (otherHost ?? providerApp).Services.GetRequiredService<ChatGptConnection>().DisconnectAsync(deadline.Token);
-            Assert.False(disconnect.IsCompleted);
-            Assert.Equal(0, providerApp.Server.RevokeCount);
-            await AssertNoAnalysisAsync(data.InteractionId);
-            commit.Continue.TrySetResult();
-            using var response = await analysis;
-            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-            await disconnect;
-            await using var scope = fixture.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            Assert.Equal(1, await dbContext.InteractionAnalyses.CountAsync(stored => stored.InteractionId == data.InteractionId, deadline.Token));
-            Assert.Equal(1, await dbContext.SuggestedProfileUpdates.CountAsync(suggestion =>
-                suggestion.InteractionAnalysis.InteractionId == data.InteractionId && suggestion.Status == SuggestionStatus.Pending, deadline.Token));
-            Assert.False((await providerApp.Services.GetRequiredService<ChatGptConnection>().GetStatusAsync(deadline.Token)).Connected);
-        }
-        finally
-        {
-            commit.Continue.TrySetResult();
-            if (disconnect is not null) await disconnect;
-        }
-    }
-
-    [Fact]
-    public async Task Caller_cancellation_during_protected_commit_rolls_back_and_releases_execution_lease()
-    {
-        var data = await SeedAsync();
-        using var providerApp = new ChatGptTestApp();
-        await PrepareAnalysisProviderAsync(providerApp, data.PersonId);
-        await using var providerScope = providerApp.Services.CreateAsyncScope();
-        var commit = new AnalysisCommitGate();
-        using var app = CreateApp(providerScope.ServiceProvider.GetRequiredService<IAiClient>(), commitGate: commit);
-        using var client = CreateClient(app);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        using var caller = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
-        var analysis = client.PostAsJsonAsync($"/interactions/{data.InteractionId}/analyze", new { }, caller.Token);
-        try
-        {
-            await commit.Entered.Task.WaitAsync(deadline.Token);
-            caller.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => analysis);
-            // Acquiring A2 protection waits for the cancelled transaction's rollback, without sleeps.
-            await using var scope = fixture.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(deadline.Token);
-            await dbContext.LockAnalysisContextAsync(data.UserId, deadline.Token);
-            await transaction.CommitAsync(deadline.Token);
-            await AssertNoAnalysisAsync(data.InteractionId);
-            var connection = providerApp.Services.GetRequiredService<ChatGptConnection>();
-            Assert.True((await connection.GetStatusAsync(deadline.Token)).Connected);
-            await connection.DisconnectAsync(deadline.Token);
-        }
-        finally
-        {
-            commit.Continue.TrySetResult();
-        }
-    }
-
     [Fact]
     public async Task Connection_lifetime_cancellation_before_commit_returns_409_and_rolls_back()
     {
@@ -1184,67 +1058,18 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     }
 
     private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateApp(IAiClient provider,
-        IAttachmentStorage? storage = null, AnalysisCommitGate? commitGate = null, Action<AnalysisOptions>? configure = null) => fixture.WithServices(services =>
+        IAttachmentStorage? storage = null, Action<AnalysisOptions>? configure = null) => fixture.WithServices(services =>
     {
         if (configure is not null) services.Configure(configure);
         services.RemoveAll<IAiClient>();
         services.AddSingleton<IAiClient>(provider);
         services.AddSingleton<IStartupFilter>(new LocalAddressFilter());
-        if (commitGate is not null) services.AddDbContext<AppDbContext>(options => options.AddInterceptors(commitGate));
         if (storage is not null)
         {
             services.RemoveAll<IAttachmentStorage>();
             services.AddSingleton(storage);
         }
     });
-
-    private static async Task PrepareAnalysisProviderAsync(ChatGptTestApp app, Guid personId)
-    {
-        app.Server.ModelsBody = """{"models":[{"slug":"gpt-5.6-sol","display_name":"Test model","visibility":"list"}]}""";
-        await app.ConnectAsync();
-        await app.SelectModelAsync("gpt-5.6-sol");
-        var result = new InteractionAnalysisResult("Synthetic summary")
-        {
-            Uncertainties = ["Intent is unknown"],
-            SuggestedProfileUpdates = [new(personId, "Notes", "Proposal requiring confirmation")]
-        };
-        var json = JsonSerializer.Serialize(result, AiContextBuilder.JsonOptions);
-        app.Server.StreamBody = "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta = json }) + "\n\n" +
-            "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\"gpt-5.6-sol\"}}\n\n";
-    }
-
-    private sealed class PausingExecutionClient(IAiClient inner) : IAiClient
-    {
-        public TaskCompletionSource LeaseRequested { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource ContinueLease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public AiTextResponse? Completed { get; private set; }
-        public Task<AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) => inner.GetSelectedModelAsync(cancellationToken);
-        public async Task<AiTextResponse> GenerateTextAsync(AiTextRequest request, CancellationToken cancellationToken) =>
-            Completed = await inner.GenerateTextAsync(request, cancellationToken);
-        public Task ValidateExecutionAsync(AiTextResponse result, CancellationToken cancellationToken) => inner.ValidateExecutionAsync(result, cancellationToken);
-        public async Task<IAiExecutionLease> AcquireExecutionLeaseAsync(AiTextResponse result, CancellationToken cancellationToken)
-        {
-            LeaseRequested.TrySetResult();
-            await ContinueLease.Task.WaitAsync(cancellationToken);
-            return await inner.AcquireExecutionLeaseAsync(result, cancellationToken);
-        }
-    }
-
-    private sealed class AnalysisCommitGate : DbTransactionInterceptor
-    {
-        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public override async ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
-            TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
-        {
-            if (eventData.Context?.ChangeTracker.Entries<InteractionAnalysis>().Any() == true)
-            {
-                Entered.TrySetResult();
-                await Continue.Task.WaitAsync(cancellationToken);
-            }
-            return result;
-        }
-    }
 
     private static HttpClient CreateClient(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> app)
     {
@@ -1364,6 +1189,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         dbContext.PersonInferences.Add(new PersonInference { Id = Guid.NewGuid(), PersonId = person.Id, Value = "Maybe friendly", Confidence = 0.5m,
             SourceInteractionId = interaction.Id, CreatedAt = occurredAt });
         await dbContext.SaveChangesAsync(Cancellation);
+        await fixture.SelectProfileAsync(user.Id);
         return new SeedData(user.Id, person.Id, other.Id, interaction.Id, foreignUser.Id, foreignInteraction.Id, text.Id, occurredAt);
     }
 

@@ -307,7 +307,7 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
             var storeId = Guid.NewGuid();
             await using (var legacy = new AppDbContext(options.Options))
             {
-                var previous = legacy.Database.GetMigrations().Last(migration => !migration.EndsWith("AddAccountFoundation", StringComparison.Ordinal));
+                var previous = legacy.Database.GetMigrations().Single(migration => migration.EndsWith("AddAttachmentTranscripts", StringComparison.Ordinal));
                 await legacy.GetService<IMigrator>().MigrateAsync(previous, Cancellation);
                 legacy.UserProfiles.Add(new UserProfile { Id = profileId, DisplayName = "Legacy synthetic owner" });
                 legacy.StorageDatabaseIdentities.Add(new() { Id = 1, StoreId = storeId });

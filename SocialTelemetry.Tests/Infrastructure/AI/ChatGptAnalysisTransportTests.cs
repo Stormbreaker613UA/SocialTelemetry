@@ -150,7 +150,7 @@ public sealed class ChatGptAnalysisTransportTests
         var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
         var running = client.GenerateTextAsync(new AiTextRequest("Instructions", "Input"), Cancellation);
         await app.Server.InferenceStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
-        var connection = disconnectingHost.Services.GetRequiredService<ChatGptConnection>();
+        var connection = disconnectingHost.OwnedConnection;
         await connection.DisconnectAsync(Cancellation);
         // Reconnect uses a new generation. The old completed response cannot become valid again.
         await app.ConnectAsync();
@@ -172,7 +172,7 @@ public sealed class ChatGptAnalysisTransportTests
         await using var scope = app.Services.CreateAsyncScope();
         var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
         var result = await client.GenerateTextAsync(new AiTextRequest("Instructions", "Input"), Cancellation);
-        await app.Services.GetRequiredService<ChatGptConnection>().DisconnectAsync(Cancellation);
+        await app.OwnedConnection.DisconnectAsync(Cancellation);
         Assert.True(result.LifetimeCancellationToken.IsCancellationRequested);
         var exception = await Assert.ThrowsAsync<AiProviderException>(() => client.ValidateExecutionAsync(result, Cancellation));
         Assert.Equal(AiFailure.ExecutionInvalidated, exception.Failure);
@@ -192,7 +192,7 @@ public sealed class ChatGptAnalysisTransportTests
         await app.Server.InferenceStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
-        Assert.True((await app.Services.GetRequiredService<ChatGptConnection>().GetStatusAsync(Cancellation)).Connected);
+        Assert.True((await app.OwnedConnection.GetStatusAsync(Cancellation)).Connected);
     }
 
     private static async Task ConnectAnalysisModelAsync(ChatGptTestApp app)

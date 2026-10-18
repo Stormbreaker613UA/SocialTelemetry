@@ -16,4 +16,6 @@ public sealed record AiTextResponse(string Text, string ProviderId, string Reque
     public Guid ExecutionId { get; init; }
     [System.Text.Json.Serialization.JsonIgnore]
     public CancellationToken LifetimeCancellationToken { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public AiExecutionBinding? Binding { get; init; }
 }
