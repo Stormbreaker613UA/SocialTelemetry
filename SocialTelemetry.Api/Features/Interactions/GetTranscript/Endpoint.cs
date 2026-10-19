@@ -1,15 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
-using SocialTelemetry.Application.Exceptions;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.Interactions.GetTranscript;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetTranscript;
 
-public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -19,28 +14,19 @@ public sealed class Endpoint(AppDbContext database, LocalProfileOperation operat
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var attachment = await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking()
-            .Where(attachment => attachment.Id == request.AttachmentId && attachment.InteractionId == request.InteractionId)
-            .Select(attachment => new { attachment.Type, attachment.Status })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (attachment is null) throw new NotFoundException();
-        if (attachment.Type != AttachmentType.Audio)
+        try
         {
-            AddError("Transcripts require an Audio attachment.");
-            await Send.ErrorsAsync(400, cancellationToken);
-            return;
-        }
-        if (attachment.Status != AttachmentStatus.Ready) throw new ConflictException();
-        var response = await database.AttachmentTranscripts.Where(transcript => transcript.Attachment.Interaction.UserProfileId == operation.RequireOwner()).AsNoTracking()
-            .Where(transcript => transcript.AttachmentId == request.AttachmentId &&
-                transcript.Attachment.InteractionId == request.InteractionId &&
-                transcript.Attachment.Type == AttachmentType.Audio && transcript.Attachment.Status == AttachmentStatus.Ready)
-            .Select(transcript => new Response(transcript.AttachmentId, transcript.GeneratedText, transcript.CorrectedText,
+            var transcript = await scenario.ExecuteAsync(request.InteractionId, request.AttachmentId, cancellationToken);
+            var response = new Response(transcript.AttachmentId, transcript.GeneratedText, transcript.CorrectedText,
                 transcript.CorrectedText ?? transcript.GeneratedText ?? string.Empty, transcript.ReviewStatus, transcript.ReviewedAt,
                 transcript.Version, transcript.SourceSha256, transcript.Provider, transcript.Model, transcript.TranscriptionVersion,
-                transcript.CreatedAt, transcript.UpdatedAt))
-            .SingleOrDefaultAsync(cancellationToken);
-        if (response is null) throw new NotFoundException();
-        await Send.OkAsync(response, cancellationToken);
+                transcript.CreatedAt, transcript.UpdatedAt);
+            await Send.OkAsync(response, cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
     }
 }

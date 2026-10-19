@@ -1,15 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
-using SocialTelemetry.Application.Contracts.Storage;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Infrastructure.Persistence;
-using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.Interactions.Delete;
 
 namespace SocialTelemetry.Api.Features.Interactions.Delete;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation, IAttachmentStorage attachmentStorage) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -19,35 +14,22 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var interaction = await dbContext.Interactions.Where(interaction => interaction.UserProfileId == operation.RequireOwner())
-            .Include(interaction => interaction.Attachments)
-            .SingleOrDefaultAsync(interaction => interaction.Id == request.Id, cancellationToken);
-
-        if (interaction is null)
+        try
+        {
+            var interaction = await scenario.ExecuteAsync(new Input
+            {
+                Id = request.Id
+            }, cancellationToken);
+            await Send.OkAsync(new Response(interaction.Id), cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        foreach (var attachment in interaction.Attachments)
-        {
-            attachment.Status = AttachmentStatus.Deleting;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        foreach (var attachment in interaction.Attachments)
-        {
-            if (attachment.StorageKey is not null)
-            {
-                await AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(
-                    dbContext, attachmentStorage, attachment.StorageKey, cancellationToken);
-            }
-        }
-
-        dbContext.Interactions.Remove(interaction);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await Send.OkAsync(new Response(interaction.Id), cancellationToken);
     }
 }

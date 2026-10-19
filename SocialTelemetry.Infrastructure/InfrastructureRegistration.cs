@@ -143,6 +143,31 @@ public static class InfrastructureRegistration
         services.AddScoped<SocialTelemetry.Application.Features.UserProfile.GetExternalConnections.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.UserProfile.Update.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.UserProfile.UpdateExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.IInteractionPersistence, InteractionPersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.IAttachmentPersistence, AttachmentPersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.ITranscriptPersistence, TranscriptPersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.Create.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.Delete.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.DeleteAttachment.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.DownloadAttachment.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.GetAttachment.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.GetById.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.GetForPerson.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.GetTranscript.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Interactions.Update.Scenario>();
+        services.AddScoped(services => new SocialTelemetry.Application.Features.Interactions.AddAttachment.Scenario(
+            services.GetRequiredService<SocialTelemetry.Application.Features.Interactions.IAttachmentPersistence>(),
+            services.GetRequiredService<LocalProfileOperation>(), services.GetRequiredService<IAttachmentStorage>(),
+            services.GetRequiredService<IOptions<UploadOptions>>().Value));
+        services.AddScoped(services => new SocialTelemetry.Application.Features.Interactions.PutTranscript.Scenario(
+            services.GetRequiredService<SocialTelemetry.Application.Features.Interactions.ITranscriptPersistence>(),
+            services.GetRequiredService<LocalProfileOperation>(), services.GetRequiredService<IAttachmentStorage>(),
+            services.GetRequiredService<IOptions<TranscriptOptions>>().Value, services.GetRequiredService<IOptions<UploadOptions>>().Value));
+        services.AddScoped(services => new SocialTelemetry.Application.Features.Interactions.TranscribeAttachment.Scenario(
+            services.GetRequiredService<SocialTelemetry.Application.Features.Interactions.ITranscriptPersistence>(),
+            services.GetRequiredService<LocalProfileOperation>(), services.GetRequiredService<IAttachmentStorage>(),
+            services.GetRequiredService<ISpeechToTextClient>(), services.GetRequiredService<IOptions<UploadOptions>>().Value,
+            services.GetRequiredService<IOptions<TranscriptOptions>>().Value));
 
         services.AddOptions<MediaBindingOptions>().BindConfiguration("MediaBinding").ValidateDataAnnotations()
             .Validate(options => options.LockRetryDelay <= options.LockTimeout, "MediaBinding retry delay cannot exceed its lock timeout.").ValidateOnStart();

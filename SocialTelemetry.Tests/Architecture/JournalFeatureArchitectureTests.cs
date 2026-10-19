@@ -40,6 +40,10 @@ public sealed class JournalFeatureArchitectureTests
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.People.Create.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.PersonFacts.Add.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.UserProfile.Update.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Interactions.PutTranscript.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Interactions.TranscribeAttachment.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute));
+        Assert.Equal(typeof(Attribute), typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute).BaseType);
         Assert.Contains(migratedTypes, type => type.IsNested && type.Name.Contains("HandleAsync", StringComparison.Ordinal));
         foreach (var type in migratedTypes)
             InspectType(type);
@@ -60,7 +64,9 @@ public sealed class JournalFeatureArchitectureTests
     private static object? ForbiddenReflectionCall(ConstructorInfo constructor) => constructor.Invoke([]);
 
     private static bool IsMigratedType(Type type) =>
-        type.Namespace is { } name && new[] { "People", "PersonFacts", "UserProfile", "ProfileConnections" }
+        // This existing shared HTTP marker is inspected too, not exempted from dependency checks.
+        type == typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute) ||
+        type.Namespace is { } name && new[] { "People", "PersonFacts", "UserProfile", "ProfileConnections", "Interactions" }
             .Any(feature => name == $"SocialTelemetry.Api.Features.{feature}" ||
                             name.StartsWith($"SocialTelemetry.Api.Features.{feature}.", StringComparison.Ordinal));
 

@@ -1,15 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
-using SocialTelemetry.Application.Contracts.Storage;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Infrastructure.Persistence;
-using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.Interactions.DownloadAttachment;
 
 namespace SocialTelemetry.Api.Features.Interactions.DownloadAttachment;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation, IAttachmentStorage attachmentStorage) : Endpoint<Request>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request>
 {
     public override void Configure()
     {
@@ -19,53 +14,22 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var attachment = await dbContext.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == operation.RequireOwner())
-            .AsNoTracking()
-            .Where(attachment =>
-                attachment.Id == request.AttachmentId &&
-                attachment.InteractionId == request.InteractionId)
-            .Select(attachment => new
-            {
-                attachment.Type,
-                attachment.Status,
-                attachment.StorageKey,
-                attachment.MimeType
-            })
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (attachment is null || attachment.Status != AttachmentStatus.Ready)
+        try
         {
-            await Send.NotFoundAsync(cancellationToken);
-            return;
+            var attachment = await scenario.ExecuteAsync(request.InteractionId, request.AttachmentId, cancellationToken);
+            await using var content = attachment.Content;
+            HttpContext.Response.Headers.XContentTypeOptions = "nosniff";
+            await Send.StreamAsync(content, fileName: attachment.FileName, fileLengthBytes: content.Length,
+                contentType: attachment.MimeType, cancellation: cancellationToken);
         }
-
-        if (attachment.Type == AttachmentType.Text)
+        catch (FeatureValidationException exception)
         {
-            AddError("Text attachments do not have file content.");
+            AddError(exception.Message);
             await Send.ErrorsAsync(400, cancellationToken);
-            return;
         }
-
-        if (attachment.StorageKey is null)
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        await using var content = await attachmentStorage.OpenReadAsync(attachment.StorageKey, cancellationToken);
-
-        if (content is null)
-        {
-            await Send.NotFoundAsync(cancellationToken);
-            return;
-        }
-
-        HttpContext.Response.Headers.XContentTypeOptions = "nosniff";
-        await Send.StreamAsync(
-            content,
-            fileName: attachment.StorageKey,
-            fileLengthBytes: content.Length,
-            contentType: attachment.MimeType ?? "application/octet-stream",
-            cancellation: cancellationToken);
     }
 }

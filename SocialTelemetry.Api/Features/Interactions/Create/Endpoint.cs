@@ -1,13 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Infrastructure.Persistence;
-using SocialTelemetry.Infrastructure.Profiles;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.Interactions.Create;
 
 namespace SocialTelemetry.Api.Features.Interactions.Create;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -17,63 +14,27 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var participantIds = request.ParticipantIds?.Distinct().ToList() ?? [];
-
-        if (request.UserProfileId == Guid.Empty ||
-            string.IsNullOrWhiteSpace(request.Title) ||
-            string.IsNullOrWhiteSpace(request.Description) ||
-            request.OccurredAt == default ||
-            participantIds.Count == 0)
+        try
         {
-            AddError("UserProfileId, Title, Description, OccurredAt, and at least one participant are required.");
-            await Send.ErrorsAsync(400, cancellationToken);
-            return;
-        }
-
-        var userProfileExists = await dbContext.UserProfiles.Where(profile => profile.Id == operation.RequireOwner())
-            .AsNoTracking()
-            .AnyAsync(userProfile => userProfile.Id == request.UserProfileId && userProfile.Id == operation.RequireOwner(), cancellationToken);
-
-        if (!userProfileExists)
-        {
-            await Send.NotFoundAsync(cancellationToken);
-            return;
-        }
-
-        var existingParticipantCount = await dbContext.People.Where(person => person.UserProfileId == operation.RequireOwner())
-            .AsNoTracking()
-            .CountAsync(
-                person => person.UserProfileId == request.UserProfileId && participantIds.Contains(person.Id),
-                cancellationToken);
-
-        if (existingParticipantCount != participantIds.Count)
-        {
-            await Send.NotFoundAsync(cancellationToken);
-            return;
-        }
-
-        var interaction = new Interaction
-        {
-            Id = Guid.NewGuid(),
-            UserProfileId = request.UserProfileId,
-            Title = request.Title.Trim(),
-            Description = request.Description.Trim(),
-            UserThoughts = request.UserThoughts,
-            OccurredAt = request.OccurredAt.ToUniversalTime(),
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-
-        interaction.Participants = participantIds
-            .Select(personId => new InteractionParticipant
+            var interaction = await scenario.ExecuteAsync(new Input
             {
-                InteractionId = interaction.Id,
-                PersonId = personId
-            })
-            .ToList();
-
-        dbContext.Interactions.Add(interaction);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await Send.ResponseAsync(new Response(interaction.Id), 201, cancellationToken);
+                UserProfileId = request.UserProfileId,
+                Title = request.Title,
+                Description = request.Description,
+                UserThoughts = request.UserThoughts,
+                OccurredAt = request.OccurredAt,
+                ParticipantIds = request.ParticipantIds
+            }, cancellationToken);
+            await Send.ResponseAsync(new Response(interaction.Id), 201, cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            await Send.NotFoundAsync(cancellationToken);
+        }
     }
 }

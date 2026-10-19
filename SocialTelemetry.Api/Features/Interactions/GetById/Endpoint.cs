@@ -1,12 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.Interactions.GetById;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetById;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -16,30 +14,21 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var interaction = await dbContext.Interactions.Where(interaction => interaction.UserProfileId == operation.RequireOwner())
-            .AsNoTracking()
-            .Where(interaction => interaction.Id == request.Id)
-            .Select(interaction => new Response(
-                interaction.Id,
-                interaction.UserProfileId,
-                interaction.Title,
-                interaction.Description,
-                interaction.UserThoughts,
-                interaction.OccurredAt,
-                interaction.CreatedAt,
-                interaction.Participants
-                    .Where(participant => participant.Person.UserProfileId == operation.RequireOwner())
-                    .OrderBy(participant => participant.Person.DisplayName)
-                    .Select(participant => new ParticipantResponse(participant.PersonId, participant.Person.DisplayName))
-                    .ToList()))
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (interaction is null)
+        try
+        {
+            var interaction = await scenario.ExecuteAsync(request.Id, cancellationToken);
+            await Send.OkAsync(new Response(interaction.Id, interaction.UserProfileId, interaction.Title, interaction.Description,
+                interaction.UserThoughts, interaction.OccurredAt, interaction.CreatedAt,
+                interaction.Participants.Select(participant => new ParticipantResponse(participant.Id, participant.DisplayName)).ToList()), cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        await Send.OkAsync(interaction, cancellationToken);
     }
 }
