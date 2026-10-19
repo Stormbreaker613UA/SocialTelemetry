@@ -4,9 +4,6 @@ using SocialTelemetry.Application.Contracts.AI;
 using SocialTelemetry.Application.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using SocialTelemetry.Infrastructure.AI;
-using SocialTelemetry.Infrastructure.Transcription;
-using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Common.Exceptions;
 

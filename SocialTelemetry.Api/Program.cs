@@ -1,14 +1,7 @@
 using SocialTelemetry.Infrastructure;
 using SocialTelemetry.Api.Common.Profiles;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Application.Options;
-using SocialTelemetry.Application.Contracts.Profiles;
-using SocialTelemetry.Application.Contracts.Storage;
-using SocialTelemetry.Application.Contracts.Transcription;
-using SocialTelemetry.Application.Contracts.AI;
 using FastEndpoints;
 using FastEndpoints.Swagger;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Events;
@@ -16,13 +9,8 @@ using Serilog.Filters;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Infrastructure.AI;
-using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Infrastructure.Storage;
-using SocialTelemetry.Infrastructure.Runtime;
-using SocialTelemetry.Infrastructure.Observability;
 using SocialTelemetry.Infrastructure.Transcription;
-using SocialTelemetry.Infrastructure.Identity;
-using SocialTelemetry.Infrastructure.Profiles;
 
 var launcherExit = NativeTranscriptionBootstrap.RunIfRequested(args);
 if (launcherExit is { } exitCode)
@@ -52,8 +40,6 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
-// Transitional mixed scenarios remain Api-owned until their functional migration package.
-builder.Services.AddScoped<AiContextBuilder>();
 builder.Services.AddSingleton(services =>
 {
     var callback = new Uri(services.GetRequiredService<IOptions<ChatGptOptions>>().Value.CallbackUri);

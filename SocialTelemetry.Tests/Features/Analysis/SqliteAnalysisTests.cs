@@ -1,4 +1,5 @@
-using SocialTelemetry.Api.Infrastructure.AI;
+using AnalysisContract = SocialTelemetry.Application.Features.Analysis.AnalyzeInteraction.AnalysisContract;
+using SocialTelemetry.Application.Features.Analysis;
 using SocialTelemetry.Application.Contracts.AI;
 using System.Data;
 using System.Data.Common;

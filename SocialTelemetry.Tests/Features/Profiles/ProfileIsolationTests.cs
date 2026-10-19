@@ -1,5 +1,5 @@
 using SocialTelemetry.Api.Common.Profiles;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Features.Analysis;
 using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Contracts.Storage;
 using SocialTelemetry.Application.Contracts.Transcription;

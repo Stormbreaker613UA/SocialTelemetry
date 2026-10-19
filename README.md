@@ -101,7 +101,7 @@ The core remains one ASP.NET Core modular monolith. The accepted structure separ
 - Provider-neutral AI, local attachment storage, and Swagger / OpenAPI.
 - xUnit v3, PostgreSQL Testcontainers, and real-file SQLite integration tests.
 
-The repository is being migrated from the existing Api/Tests structure to those boundaries; see the implementation checkpoint below for actual progress. The planned `SocialTelemetry.Desktop` project will host the window and local application lifecycle, without duplicating domain or AI logic.
+The existing backend is now organized into Domain, Application, Infrastructure and Api projects, with Vertical Slice application scenarios and EF Core confined to Infrastructure. Consolidated independent review and fresh post-migration smoke verification are pending; see the implementation checkpoint below. The planned `SocialTelemetry.Desktop` project will host the window and local application lifecycle, without duplicating domain or AI logic.
 
 ## AI Providers and Local AI
 
@@ -127,7 +127,7 @@ The same planned Razor UI is intended for WebView2 and browser use; the product 
 
 ## Current State
 
-The backend/domain and attachment foundation, ChatGPT connection, and AnalyzeInteraction pipeline are implemented. Live ChatGPT connection and synthetic text/image analysis have been verified, and required A1–A4 audit corrections are resolved. Audio attachment ingestion, editable/reviewable transcripts (7.2.1A), and local speech-to-text integration (7.2.1B) are implemented; using reviewed audio transcripts in AnalyzeInteraction (7.2.1C) is still pending. Real whisper.cpp/FFmpeg/model smoke testing has not yet been performed. The product UI and desktop packaging also remain ahead.
+The backend/domain and attachment foundation, ChatGPT connection, and AnalyzeInteraction pipeline are implemented. Live ChatGPT connection and synthetic text/image analysis have been verified, and required A1–A4 audit corrections are resolved. Audio attachment ingestion, editable/reviewable transcripts (7.2.1A), local speech-to-text integration (7.2.1B), and analysis of reviewed audio transcripts (7.2.1C) are implemented. Qualified historical FFmpeg/whisper.cpp/model smoke results are recorded in the implementation checkpoint. The backend layer migration is implemented and automatically tested; consolidated independent review and fresh post-migration smoke verification remain pending. The product UI, desktop packaging and full authentication remain planned.
 
 For the current implementation checkpoint, see [docs/CURRENT.md](docs/CURRENT.md). Product scope, architecture, and accepted roadmap decisions live in [docs/SocialTelemetry_Spec.md](docs/SocialTelemetry_Spec.md); implementation/agent rules live in [AGENTS.md](AGENTS.md).
 

@@ -1,4 +1,5 @@
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Contracts.Profiles;
+using SocialTelemetry.Application.Features.Analysis;
 using System.Data.Common;
 using System.Data;
 using System.Net;
@@ -282,6 +283,7 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
             interactionId = interaction.Id;
         }
         await using var scope = fixture.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(profile, Guid.NewGuid()), CancellationToken.None);
         var builder = scope.ServiceProvider.GetRequiredService<AiContextBuilder>();
         var original = await builder.BuildAsync(interactionId, null, [], Cancellation);
         var observer = new GuardCommandObserver();

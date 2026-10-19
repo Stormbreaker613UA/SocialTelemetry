@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using SocialTelemetry.Application.Contracts.AI;
 using SocialTelemetry.Domain.People;
@@ -34,6 +35,27 @@ public sealed class JournalFeatureArchitectureTests
                                                 BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
     [Fact]
+    public void Api_has_no_runtime_EF_reference_or_direct_EF_package_except_private_startup_tooling()
+    {
+        Assert.DoesNotContain(ApiAssembly.GetReferencedAssemblies(), identity =>
+            Assembly.Load(identity) == typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly ||
+            Assembly.Load(identity) == typeof(Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions).Assembly);
+        var project = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Architecture", "SocialTelemetry.Api.csproj"));
+        var packages = project.Descendants().Where(element => element.Name.LocalName == "PackageReference").ToArray();
+        Assert.Equal(new[] { "FastEndpoints", "FastEndpoints.Swagger", "Microsoft.AspNetCore.OpenApi",
+                "Microsoft.EntityFrameworkCore.Design", "Serilog.AspNetCore" },
+            packages.Select(element => element.Attribute("Include")?.Value).Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { "../SocialTelemetry.Application/SocialTelemetry.Application.csproj",
+                "../SocialTelemetry.Domain/SocialTelemetry.Domain.csproj", "../SocialTelemetry.Infrastructure/SocialTelemetry.Infrastructure.csproj" },
+            project.Descendants().Where(element => element.Name.LocalName == "ProjectReference")
+                .Select(element => element.Attribute("Include")?.Value.Replace('\\', '/')).Order(StringComparer.Ordinal));
+        var design = Assert.Single(packages, element => element.Attribute("Include")?.Value == "Microsoft.EntityFrameworkCore.Design");
+        Assert.Equal("all", design.Elements().Single(element => element.Name.LocalName == "PrivateAssets").Value);
+        Assert.Null(ApiAssembly.GetType("SocialTelemetry.Api.Infrastructure.AI.AiContextBuilder"));
+        Assert.Null(ApiAssembly.GetType("SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction.AnalysisContract"));
+    }
+
+    [Fact]
     public void Migrated_HTTP_features_cannot_reach_concrete_mechanisms_or_service_location()
     {
         var migratedTypes = ApiAssembly.GetTypes().Where(IsMigratedType).ToArray();
@@ -47,6 +69,10 @@ public sealed class JournalFeatureArchitectureTests
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.Callback.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.LocalAiConnectionMiddleware));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Profiles.LocalProfileMiddleware));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Analysis.AnalyzeInteraction.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Exceptions.GlobalExceptionHandler));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Exceptions.FailurePresentation));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Result<>));
         Assert.Equal(typeof(Attribute), typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute).BaseType);
         Assert.Contains(migratedTypes, type => type.IsNested && type.Name.Contains("HandleAsync", StringComparison.Ordinal));
         foreach (var type in migratedTypes)
@@ -57,6 +83,7 @@ public sealed class JournalFeatureArchitectureTests
     [InlineData(nameof(ForbiddenPersistenceCall))]
     [InlineData(nameof(ForbiddenServiceLocationCall))]
     [InlineData(nameof(ForbiddenReflectionCall))]
+    [InlineData(nameof(ForbiddenTypeLookup))]
     public void Guard_rejects_real_forbidden_member_calls(string methodName)
     {
         var method = typeof(JournalFeatureArchitectureTests).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -66,13 +93,19 @@ public sealed class JournalFeatureArchitectureTests
     private static Guid ForbiddenPersistenceCall(AppDbContext database) => database.ContextId.InstanceId;
     private static object? ForbiddenServiceLocationCall(IServiceProvider services, Type type) => services.GetService(type);
     private static object? ForbiddenReflectionCall(ConstructorInfo constructor) => constructor.Invoke([]);
+    private static MethodInfo? ForbiddenTypeLookup(Type type) => type.GetMethod("ToString");
+    private static string ExceptionTypeIdentity(Exception exception) => exception.GetType().Name;
 
-    private static bool IsMigratedType(Type type) =>
-        // This existing shared HTTP marker is inspected too, not exempted from dependency checks.
-        type.Namespace == "SocialTelemetry.Api.Common.Profiles" ||
-        type.Namespace is { } name && new[] { "People", "PersonFacts", "UserProfile", "ProfileConnections", "Interactions", "LocalProfiles", "AiConnection" }
-            .Any(feature => name == $"SocialTelemetry.Api.Features.{feature}" ||
-                            name.StartsWith($"SocialTelemetry.Api.Features.{feature}.", StringComparison.Ordinal));
+    [Fact]
+    public void Guard_accepts_exception_identity_metadata_without_reflection_lookup_or_invocation()
+    {
+        var method = typeof(JournalFeatureArchitectureTests).GetMethod(nameof(ExceptionTypeIdentity), BindingFlags.NonPublic | BindingFlags.Static)!;
+        InspectBody(method);
+    }
+
+    private static bool IsMigratedType(Type type) => type.Namespace is { } name &&
+        (name == "SocialTelemetry.Api.Features" || name.StartsWith("SocialTelemetry.Api.Features.", StringComparison.Ordinal) ||
+         name == "SocialTelemetry.Api.Common" || name.StartsWith("SocialTelemetry.Api.Common.", StringComparison.Ordinal));
 
     private static void InspectType(Type type)
     {
@@ -158,8 +191,12 @@ public sealed class JournalFeatureArchitectureTests
         }
     }
 
-    private static bool IsServiceLocationOrReflection(MemberInfo member) =>
-        member.DeclaringType == typeof(IServiceProvider) ||
+    private static bool IsServiceLocationOrReflection(MemberInfo member)
+    {
+        // Name describes an already obtained exception type for the existing privacy-safe log.
+        // It neither discovers a type/member nor constructs, invokes or resolves anything.
+        if (member.DeclaringType == typeof(MemberInfo) && member.Name == "get_Name") return false;
+        return member.DeclaringType == typeof(IServiceProvider) ||
         member.DeclaringType == typeof(Activator) ||
         // typeof/record equality inspect identity only; ldtoken's target is checked above.
         (member.DeclaringType == typeof(Type) &&
@@ -168,4 +205,5 @@ public sealed class JournalFeatureArchitectureTests
         member.DeclaringType?.Namespace == "Microsoft.Extensions.DependencyInjection" ||
         (member.Name is "Resolve" or "TryResolve" or "CreateScope" &&
          member.DeclaringType is { } type && TransportAssemblies.Contains(type.Assembly));
+    }
 }

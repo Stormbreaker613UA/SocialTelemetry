@@ -1,5 +1,5 @@
 using SocialTelemetry.Application.Features.ProfileAvatars;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Features.Analysis;
 using SocialTelemetry.Application.Options;
 using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
@@ -148,6 +148,7 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
         };
         database.Interactions.Add(interaction);
         await database.SaveChangesAsync(Cancellation);
+        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(person.UserProfileId, Guid.NewGuid()), CancellationToken.None);
         var builder = scope.ServiceProvider.GetRequiredService<AiContextBuilder>();
         var before = await builder.BuildAsync(interaction.Id, null, [], Cancellation);
         await UploadAsync(fixture.Client, route, Png);

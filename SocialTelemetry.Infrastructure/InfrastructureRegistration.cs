@@ -43,6 +43,18 @@ public static class InfrastructureRegistration
         services.AddScoped<SocialTelemetry.Application.Features.AiConnection.SelectModel.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Status.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Unassigned.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.Analysis.IAnalysisContextQuery, AnalysisContextQuery>();
+        services.AddScoped<SocialTelemetry.Application.Features.Analysis.IAnalysisPersistence, AnalysisExecutionPersistence>();
+        services.AddScoped(services => new SocialTelemetry.Application.Features.Analysis.AiContextBuilder(
+            services.GetRequiredService<SocialTelemetry.Application.Features.Analysis.IAnalysisContextQuery>(),
+            services.GetRequiredService<IAttachmentStorage>(), services.GetRequiredService<IOptions<AnalysisOptions>>().Value,
+            services.GetRequiredService<IOptions<TranscriptOptions>>().Value, services.GetRequiredService<IOptions<UploadOptions>>().Value,
+            services.GetRequiredService<LocalProfileOperation>()));
+        services.AddScoped(services => new SocialTelemetry.Application.Features.Analysis.AnalyzeInteraction.Scenario(
+            services.GetRequiredService<SocialTelemetry.Application.Features.Analysis.IAnalysisPersistence>(),
+            services.GetRequiredService<SocialTelemetry.Application.Features.Analysis.AiContextBuilder>(),
+            services.GetRequiredService<IAiClient>(), services.GetRequiredService<IOptions<AnalysisOptions>>().Value,
+            services.GetRequiredService<LocalProfileOperation>()));
         services.AddScoped<ProfileAiAccess>();
         services.AddSingleton<ProfileAiLifetimes>();
 

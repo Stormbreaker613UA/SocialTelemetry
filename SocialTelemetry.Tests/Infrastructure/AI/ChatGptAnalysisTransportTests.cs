@@ -1,3 +1,4 @@
+using AnalysisContract = SocialTelemetry.Application.Features.Analysis.AnalyzeInteraction.AnalysisContract;
 using SocialTelemetry.Application.Contracts.AI;
 using System.Net;
 using System.Text.Json;
