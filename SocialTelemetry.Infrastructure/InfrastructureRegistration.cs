@@ -26,7 +26,23 @@ public static class InfrastructureRegistration
         services.AddIdentityFoundation();
         services.AddScoped<LocalProfileOperation>();
         services.AddScoped<LocalProfileSelectionService>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.ILocalProfileManagement>(services => services.GetRequiredService<LocalProfileSelectionService>());
+        services.AddScoped<SocialTelemetry.Application.Features.ProfileAccess.ILocalProfileAccess, LocalProfileAccess>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.IProfileAiManagement, ProfileAiManagement>();
         services.AddSingleton<LocalProfileLifetimes>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Get.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Create.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Select.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.ProfileAccess.AuthorizeRoot.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Begin.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Callback.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Disconnect.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Models.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.SelectConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.SelectModel.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Status.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Unassigned.Scenario>();
         services.AddScoped<ProfileAiAccess>();
         services.AddSingleton<ProfileAiLifetimes>();
 

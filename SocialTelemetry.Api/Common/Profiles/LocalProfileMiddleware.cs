@@ -1,10 +1,8 @@
 using SocialTelemetry.Application.Contracts.Profiles;
-using SocialTelemetry.Application.Exceptions;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Infrastructure.AI;
-using SocialTelemetry.Infrastructure.Persistence;
-using SocialTelemetry.Infrastructure.Profiles;
+using SocialTelemetry.Application.Features.ProfileAccess;
+using SocialTelemetry.Api.Features.AiConnection;
+using ResolveProfile = SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario;
+using AuthorizeRoot = SocialTelemetry.Application.Features.ProfileAccess.AuthorizeRoot.Scenario;
 
 namespace SocialTelemetry.Api.Common.Profiles;
 
@@ -15,24 +13,25 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
 
     public static bool IsOwnedPath(PathString path) => path.StartsWithSegments("/user-profile") ||
         path.StartsWithSegments("/people") || path.StartsWithSegments("/interactions") ||
-        (path.StartsWithSegments("/ai-connection") && path != ChatGptOptions.CallbackPath);
+        (path.StartsWithSegments("/ai-connection") && path != AiConnectionRoutes.CallbackPath);
 
-    public async Task InvokeAsync(HttpContext context, LocalProfileSelectionService selector,
-        LocalProfileOperation operation, LocalProfileLifetimes lifetimes, AppDbContext database, IHostApplicationLifetime host)
+    public async Task InvokeAsync(HttpContext context, ResolveProfile resolveProfile,
+        AuthorizeRoot authorizeRoot, IHostApplicationLifetime host)
     {
         var owned = IsOwnedPath(context.Request.Path);
-        if (!owned && !context.Request.Path.StartsWithSegments("/local-profiles") && context.Request.Path != ChatGptOptions.CallbackPath)
+        if (!owned && !context.Request.Path.StartsWithSegments("/local-profiles") && context.Request.Path != AiConnectionRoutes.CallbackPath)
         { await next(context); return; }
         LocalProfileBinding? binding = null;
         CancellationToken lifetime = default;
         if (owned)
         {
-            binding = await selector.ResolveAsync(ReadAssertion(context, OwnerHeader), ReadAssertion(context, VersionHeader), context.RequestAborted);
-            lifetime = lifetimes.Capture(binding.SelectionVersion);
-            operation.Bind(binding, lifetime);
+            var resolved = await resolveProfile.ExecuteAsync(ReadAssertion(context, OwnerHeader), ReadAssertion(context, VersionHeader), context.RequestAborted);
+            binding = resolved.Binding;
+            lifetime = resolved.Lifetime;
         }
         var originalCancellation = context.RequestAborted;
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(originalCancellation, lifetime, host.ApplicationStopping);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            new[] { originalCancellation, lifetime, host.ApplicationStopping });
         context.RequestAborted = linked.Token;
         if (binding is not null)
         {
@@ -42,7 +41,7 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
         context.Response.Headers.CacheControl = "no-store";
         try
         {
-            if (binding is not null) await CheckRootAsync(context, database, binding.UserProfileId, linked.Token);
+            if (binding is not null) await CheckRootAsync(context, authorizeRoot, linked.Token);
             await next(context);
         }
         catch (OperationCanceledException) when (!originalCancellation.IsCancellationRequested &&
@@ -64,18 +63,16 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
         return parsed;
     }
 
-    private static async Task CheckRootAsync(HttpContext context, AppDbContext database, Guid owner, CancellationToken cancellationToken)
+    private static async Task CheckRootAsync(HttpContext context, AuthorizeRoot authorizeRoot, CancellationToken cancellationToken)
     {
-        // Existing slices retain their child-id/parent-id and source checks. Authorize the
-        // ownership root first, including media and child Update/Delete routes.
+        // HTTP decodes only the route. Application authorizes the immutable owner/root pair;
+        // each slice retains its existing child/parent/source checks.
         var segments = context.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
         if (segments.Length < 2 || !Guid.TryParse(segments[1], out var id)) return;
-        var owned = segments[0].ToLowerInvariant() switch
-        {
-            "people" => await database.People.AsNoTracking().AnyAsync(person => person.Id == id && person.UserProfileId == owner, cancellationToken),
-            "interactions" => await database.Interactions.AsNoTracking().AnyAsync(interaction => interaction.Id == id && interaction.UserProfileId == owner, cancellationToken),
-            _ => true
-        };
-        if (!owned) throw new NotFoundException();
+        var segment = segments[0].ToLowerInvariant();
+        OwnershipRoot? root = null;
+        if (segment == "people") root = OwnershipRoot.Person;
+        else if (segment == "interactions") root = OwnershipRoot.Interaction;
+        if (root is { } ownedRoot) await authorizeRoot.ExecuteAsync(ownedRoot, id, cancellationToken);
     }
 }

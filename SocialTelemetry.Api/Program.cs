@@ -54,6 +54,13 @@ builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
 // Transitional mixed scenarios remain Api-owned until their functional migration package.
 builder.Services.AddScoped<AiContextBuilder>();
+builder.Services.AddSingleton(services =>
+{
+    var callback = new Uri(services.GetRequiredService<IOptions<ChatGptOptions>>().Value.CallbackUri);
+    if (callback.AbsolutePath != AiConnectionRoutes.CallbackPath)
+        throw new InvalidOperationException("The configured provider callback must match the HTTP callback route.");
+    return new LocalAiTransport(callback);
+});
 
 var app = builder.Build();
 

@@ -1,11 +1,9 @@
 using SocialTelemetry.Application.Contracts.AI;
 using System.Net;
-using Microsoft.Extensions.Options;
-using SocialTelemetry.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Features.AiConnection;
 
-public sealed class LocalAiConnectionMiddleware(RequestDelegate next, IOptions<ChatGptOptions> options)
+public sealed class LocalAiConnectionMiddleware(RequestDelegate next, LocalAiTransport transport)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -18,9 +16,9 @@ public sealed class LocalAiConnectionMiddleware(RequestDelegate next, IOptions<C
         if (remoteAddress is null || !IPAddress.IsLoopback(remoteAddress) || !localHost)
             throw new AiProviderException(AiFailure.LocalRequestRequired);
 
-        if (context.Request.Path == ChatGptOptions.CallbackPath)
+        if (context.Request.Path == AiConnectionRoutes.CallbackPath)
         {
-            var callback = new Uri(options.Value.CallbackUri);
+            var callback = transport.CallbackUri;
             if (context.Request.Scheme != callback.Scheme || context.Request.Host.Value != callback.Authority)
                 throw new AiProviderException(AiFailure.InvalidCallback);
         }

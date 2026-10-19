@@ -1,9 +1,9 @@
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.AI;
+using Scenario = SocialTelemetry.Application.Features.AiConnection.Status.Scenario;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Status;
 
-public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutRequest<ChatGptConnectionStatus>
+public sealed class Endpoint(Scenario scenario) : EndpointWithoutRequest<ConnectionResponse>
 {
     public override void Configure()
     {
@@ -12,5 +12,5 @@ public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutReques
     }
 
     public override async Task HandleAsync(CancellationToken cancellationToken) =>
-        await Send.OkAsync(await connection.StatusAsync(cancellationToken), cancellationToken);
+        await Send.OkAsync(ConnectionResponse.From(await scenario.ExecuteAsync(cancellationToken)), cancellationToken);
 }

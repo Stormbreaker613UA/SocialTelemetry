@@ -43,6 +43,10 @@ public sealed class JournalFeatureArchitectureTests
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Interactions.PutTranscript.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Interactions.TranscribeAttachment.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.LocalProfiles.Get.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.Callback.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.LocalAiConnectionMiddleware));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Profiles.LocalProfileMiddleware));
         Assert.Equal(typeof(Attribute), typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute).BaseType);
         Assert.Contains(migratedTypes, type => type.IsNested && type.Name.Contains("HandleAsync", StringComparison.Ordinal));
         foreach (var type in migratedTypes)
@@ -65,8 +69,8 @@ public sealed class JournalFeatureArchitectureTests
 
     private static bool IsMigratedType(Type type) =>
         // This existing shared HTTP marker is inspected too, not exempted from dependency checks.
-        type == typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute) ||
-        type.Namespace is { } name && new[] { "People", "PersonFacts", "UserProfile", "ProfileConnections", "Interactions" }
+        type.Namespace == "SocialTelemetry.Api.Common.Profiles" ||
+        type.Namespace is { } name && new[] { "People", "PersonFacts", "UserProfile", "ProfileConnections", "Interactions", "LocalProfiles", "AiConnection" }
             .Any(feature => name == $"SocialTelemetry.Api.Features.{feature}" ||
                             name.StartsWith($"SocialTelemetry.Api.Features.{feature}.", StringComparison.Ordinal));
 
@@ -86,7 +90,11 @@ public sealed class JournalFeatureArchitectureTests
             if (method is MethodInfo methodInfo) AssertAllowedType(methodInfo.ReturnType);
             foreach (var parameter in method.GetParameters()) AssertAllowedType(parameter.ParameterType);
             foreach (var attribute in method.GetCustomAttributesData()) AssertAllowedType(attribute.AttributeType);
-            InspectBody(method);
+            try { InspectBody(method); }
+            catch (Xunit.Sdk.XunitException exception)
+            {
+                Assert.Fail($"Dependency in {method.DeclaringType}.{method.Name}: {exception.Message}");
+            }
         }
     }
 

@@ -1,9 +1,9 @@
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.AI;
+using Scenario = SocialTelemetry.Application.Features.AiConnection.Disconnect.Scenario;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Disconnect;
 
-public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutRequest<ChatGptDisconnectResult>
+public sealed class Endpoint(Scenario scenario) : EndpointWithoutRequest<DisconnectResponse>
 {
     public override void Configure()
     {
@@ -11,6 +11,9 @@ public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutReques
         AllowAnonymous();
     }
 
-    public override async Task HandleAsync(CancellationToken cancellationToken) =>
-        await Send.OkAsync(await connection.DisconnectAsync(cancellationToken), cancellationToken);
+    public override async Task HandleAsync(CancellationToken cancellationToken)
+    {
+        var result = await scenario.ExecuteAsync(cancellationToken);
+        await Send.OkAsync(new DisconnectResponse(result.RemoteRevocationConfirmed, result.Message), cancellationToken);
+    }
 }

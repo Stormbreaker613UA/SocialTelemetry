@@ -1,22 +1,22 @@
 using SocialTelemetry.Application.Contracts.AI;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.AI;
+using Scenario = SocialTelemetry.Application.Features.AiConnection.Callback.Scenario;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Callback;
 
-public sealed class Endpoint(ProfileAiAccess connection) : EndpointWithoutRequest<ChatGptConnectionStatus>
+public sealed class Endpoint(Scenario scenario) : EndpointWithoutRequest<ConnectionResponse>
 {
     public override void Configure()
     {
-        Get(ChatGptOptions.CallbackPath);
+        Get(AiConnectionRoutes.CallbackPath);
         AllowAnonymous();
     }
 
     public override async Task HandleAsync(CancellationToken cancellationToken)
     {
-        var status = await connection.CompleteAsync(ReadParameter("state"), ReadParameter("code"),
+        var status = await scenario.ExecuteAsync(ReadParameter("state"), ReadParameter("code"),
             ReadParameter("client_id"), ReadParameter("error"), cancellationToken);
-        await Send.OkAsync(status, cancellationToken);
+        await Send.OkAsync(ConnectionResponse.From(status), cancellationToken);
     }
 
     private string? ReadParameter(string name)

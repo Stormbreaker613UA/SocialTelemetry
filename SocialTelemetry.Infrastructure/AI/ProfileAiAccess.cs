@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Infrastructure.Profiles;
+using SocialTelemetry.Application.Features.AiConnection;
 
 namespace SocialTelemetry.Infrastructure.AI;
 
@@ -91,7 +92,7 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
         {
             selection.ProviderId = ProviderId;
             selection.ConnectionId = connectionId;
-            selection.ModelId = before?.ConnectionId == connectionId ? before.ModelId : model;
+            selection.ModelId = ConnectionSelectionPolicy.ModelForSelection(before?.ConnectionId, before?.ModelId, connectionId, model);
             selection.Enabled = true;
         }, cancellationToken);
     }
@@ -105,12 +106,12 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
 
     public async Task SelectModelAsync(string model, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(model) || model.Length > 200) throw new AiProviderException(AiFailure.ModelUnavailable);
+        SocialTelemetry.Application.Features.AiConnection.SelectModel.Scenario.ValidateInput(model);
         var before = await ReadAsync(cancellationToken);
         if (before is not { Enabled: true, ConnectionId: { } id }) throw new AiProviderException(AiFailure.NotConnected);
         var catalog = await connection.GetOwnedModelsAsync(operation.RequireOwner(), id, before.ModelId, cancellationToken);
-        if (!catalog.Models.Any(candidate => candidate.Id == model)) throw new AiProviderException(AiFailure.ModelUnavailable);
-        if (before.ModelId == model) return;
+        if (!SocialTelemetry.Application.Features.AiConnection.SelectModel.Scenario.ShouldChange(
+                model, before.ModelId, catalog.Models.Select(candidate => candidate.Id))) return;
         await ChangeAsync(before.Generation, selection => selection.ModelId = model, cancellationToken);
     }
 
@@ -121,7 +122,7 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
         {
             await connection.EnsureCanBeginAsync(cancellationToken);
             var before = await ReadAsync(cancellationToken);
-            var selectedId = newAccount ? null : connectionId ?? before?.ConnectionId;
+            var selectedId = ConnectionSelectionPolicy.ConnectionForBegin(connectionId, newAccount, before?.ConnectionId);
             if (selectedId is { } id)
             {
                 var status = await connection.GetOwnedStatusAsync(operation.RequireOwner(), id, cancellationToken);
@@ -147,7 +148,7 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
             throw new AiProviderException(AiFailure.InvalidCallback);
         await ChangeAsync(generation, selection =>
         {
-            if (selection.ConnectionId != id) selection.ModelId = null;
+            selection.ModelId = ConnectionSelectionPolicy.ModelAfterCallback(selection.ConnectionId, selection.ModelId, id);
             selection.ProviderId = ProviderId;
             selection.ConnectionId = id;
             selection.Enabled = true;
