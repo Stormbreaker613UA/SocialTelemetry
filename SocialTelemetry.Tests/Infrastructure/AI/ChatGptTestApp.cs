@@ -1,3 +1,5 @@
+using SocialTelemetry.Api.Common.Profiles;
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Contracts.AI;
 using System.Collections.Concurrent;
 using System.Net;
@@ -15,10 +17,10 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Serilog.Core;
 using Serilog.Events;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 
 namespace SocialTelemetry.Tests.Infrastructure.AI;

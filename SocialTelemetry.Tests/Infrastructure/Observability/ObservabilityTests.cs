@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Observability;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
@@ -12,8 +13,8 @@ using OpenTelemetry;
 using OpenTelemetry.Trace;
 using Serilog.Core;
 using Serilog.Events;
-using SocialTelemetry.Api.Infrastructure.Observability;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Observability;
+using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Tests.Infrastructure.Observability;
 
@@ -55,7 +56,7 @@ public sealed class ObservabilityTests
             services.ConfigureOpenTelemetryTracerProvider(builder => builder.AddProcessor(new SimpleActivityExportProcessor(traces)));
         });
         // TestServer does not emit the real ASP.NET Core server Activity; use a disposable loopback listener.
-        application.UseKestrel(0);
+        application.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
         using var client = application.CreateClient();
         Assert.False(application.Services.GetRequiredService<IOptions<ObservabilityOptions>>().Value.OtlpEnabled);
         using var response = await client.GetAsync($"/not-a-route?code={PrivateMarker}&state={PrivateMarker}", TestContext.Current.CancellationToken);

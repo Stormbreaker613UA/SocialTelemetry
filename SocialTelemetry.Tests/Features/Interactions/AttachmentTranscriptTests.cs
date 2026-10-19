@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Options;
 using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using System.Net.Http.Json;
@@ -8,8 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;
 using PutTranscript = SocialTelemetry.Api.Features.Interactions.PutTranscript;
 

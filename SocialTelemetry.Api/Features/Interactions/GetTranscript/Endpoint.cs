@@ -1,10 +1,11 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetTranscript;
 

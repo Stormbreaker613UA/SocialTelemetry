@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 using GetPerson = SocialTelemetry.Api.Features.People.GetById;
 using GetPeople = SocialTelemetry.Api.Features.People.GetAll;

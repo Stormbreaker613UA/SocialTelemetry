@@ -1,5 +1,5 @@
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Disconnect;
 

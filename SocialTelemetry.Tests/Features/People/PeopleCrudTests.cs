@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 using CreatePerson = SocialTelemetry.Api.Features.People.Create;
 using DomainUserProfile = SocialTelemetry.Domain.Users.UserProfile;
@@ -264,7 +265,7 @@ public class PeopleApiFixture : IAsyncLifetime
         return userProfile.Id;
     }
 
-    private SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileBinding? currentBinding;
+    private SocialTelemetry.Application.Contracts.Profiles.LocalProfileBinding? currentBinding;
 
     public void ConfigureProfileClient(HttpClient client)
     {
@@ -278,7 +279,7 @@ public class PeopleApiFixture : IAsyncLifetime
     public async Task SelectProfileAsync(Guid owner)
     {
         await using var scope = CreateAsyncScope();
-        var selector = scope.ServiceProvider.GetRequiredService<SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileSelectionService>();
+        var selector = scope.ServiceProvider.GetRequiredService<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelectionService>();
         var before = await selector.GetAsync(TestContext.Current.CancellationToken);
         var selected = await selector.SelectAsync(owner, before.Version, TestContext.Current.CancellationToken);
         currentBinding = new(owner, selected.Version);
@@ -290,8 +291,8 @@ public class PeopleApiFixture : IAsyncLifetime
         await using var scope = application!.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await dbContext.Set<SocialTelemetry.Api.Infrastructure.Profiles.LocalProfileSelection>().ExecuteDeleteAsync();
-        await dbContext.Set<SocialTelemetry.Api.Infrastructure.AI.ProfileAiSelection>().ExecuteDeleteAsync();
+        await dbContext.Set<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelection>().ExecuteDeleteAsync();
+        await dbContext.Set<SocialTelemetry.Infrastructure.AI.ProfileAiSelection>().ExecuteDeleteAsync();
         await dbContext.UserProfiles.ExecuteDeleteAsync();
         currentBinding = null;
         Client.DefaultRequestHeaders.Remove("X-SocialTelemetry-ProfileId");

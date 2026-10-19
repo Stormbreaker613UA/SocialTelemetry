@@ -5,8 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Infrastructure.Storage;

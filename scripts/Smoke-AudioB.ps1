@@ -203,7 +203,7 @@ try {
         }
         Assert-Smoke $ready 'PostgreSQL readiness timed out.'
     }
-    & dotnet ef database update --project $apiDirectory --no-build -- --provider $Provider *> (Join-Path $runRoot 'migrations.log')
+    & dotnet ef database update --project (Join-Path $repository 'SocialTelemetry.Infrastructure') --startup-project $apiDirectory --no-build -- --provider $Provider *> (Join-Path $runRoot 'migrations.log')
     Assert-Smoke ($LASTEXITCODE -eq 0) 'Provider migrations failed; inspect the run directory.'
     # Profile creation is not exposed by the current API. Seed only this isolated fixture.
     if ($Provider -eq 'Sqlite') {

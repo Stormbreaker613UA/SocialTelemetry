@@ -1,7 +1,8 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Features.Interactions.GetForPerson;
 

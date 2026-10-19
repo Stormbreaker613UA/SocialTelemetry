@@ -1,11 +1,12 @@
+using SocialTelemetry.Application.Contracts.Transcription;
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SocialTelemetry.Api.Infrastructure.Runtime;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Runtime;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Tests.Infrastructure.Transcription;
 
@@ -203,8 +204,8 @@ public sealed class WhisperCppTests : IDisposable
         Directory.CreateDirectory(root);
         var executable = FindDotnet();
         var command = new TranscriptionCommand(executable, root, ["--info"], Path.Combine(root, "unused.txt"), 1024);
-        Assert.Equal(0, await new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions())).RunAsync(command, Cancellation));
-        var limited = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { ProcessOutputCharacters = 1 }));
+        Assert.Equal(0, await new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()), NativeProcessFixture.Host).RunAsync(command, Cancellation));
+        var limited = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { ProcessOutputCharacters = 1 }), NativeProcessFixture.Host);
         Assert.Equal(SpeechToTextFailure.LimitExceeded,
             (await Assert.ThrowsAsync<SpeechToTextException>(() => limited.RunAsync(command, Cancellation))).Failure);
     }
@@ -213,7 +214,7 @@ public sealed class WhisperCppTests : IDisposable
     public async Task Native_runner_missing_executable_does_not_mask_safe_configuration_error()
     {
         Directory.CreateDirectory(root);
-        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()));
+        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()), NativeProcessFixture.Host);
         var error = await Assert.ThrowsAsync<SpeechToTextException>(() => runner.RunAsync(
             new(Path.Combine(root, "absent.exe"), root, [], Path.Combine(root, "output.txt"), 1024), Cancellation));
         Assert.Equal(SpeechToTextFailure.ConfigurationRequired, error.Failure);
@@ -228,7 +229,7 @@ public sealed class WhisperCppTests : IDisposable
         string[] arguments = OperatingSystem.IsWindows() ? ["-n", "30", "127.0.0.1"] : ["30"];
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
         cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
-        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()));
+        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()), NativeProcessFixture.Host);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(
             new(executable, root, arguments, Path.Combine(root, "unused.txt"), 1024), cancellation.Token));
     }
@@ -254,7 +255,7 @@ public sealed class WhisperCppTests : IDisposable
         Exception original = nativeError ? new System.ComponentModel.Win32Exception("private synthetic diagnostic")
             : new IOException("private synthetic diagnostic");
         var process = new FaultedTranscriptionProcess("stdout", original, teardown);
-        var actual = new TranscriptionProcessRunner(Options.Create(settings));
+        var actual = new TranscriptionProcessRunner(Options.Create(settings), NativeProcessFixture.Host);
         var injected = false;
         var forwarding = new FakeProcess { Execute = async (command, token) =>
         {

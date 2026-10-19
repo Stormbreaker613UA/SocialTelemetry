@@ -1,7 +1,8 @@
+using SocialTelemetry.Application.Contracts.Transcription;
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Tests.Infrastructure.Transcription;
 

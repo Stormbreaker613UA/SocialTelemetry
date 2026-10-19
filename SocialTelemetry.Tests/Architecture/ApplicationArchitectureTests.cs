@@ -6,10 +6,10 @@ using System.Reflection;
 using System.Xml.Linq;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Application.Contracts.AI.Models;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Tests.Architecture;
 

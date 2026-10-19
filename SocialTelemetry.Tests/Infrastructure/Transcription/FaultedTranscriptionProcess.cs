@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Tests.Infrastructure.Transcription;
 

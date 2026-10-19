@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Analysis;

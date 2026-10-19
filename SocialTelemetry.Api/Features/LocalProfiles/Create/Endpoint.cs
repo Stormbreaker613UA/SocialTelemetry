@@ -1,5 +1,5 @@
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Features.LocalProfiles.Create;
 

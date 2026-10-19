@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Serilog.Core;
 using Serilog.Events;
 using SocialTelemetry.Api.Common.Exceptions;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Tests.Common.Exceptions;
 

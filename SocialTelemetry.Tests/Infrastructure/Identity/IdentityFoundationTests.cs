@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Infrastructure.AI;
 using System.Data.Common;
 using System.Data;
 using System.Net;
@@ -16,9 +17,9 @@ using OpenIddict.Abstractions;
 using OpenIddict.EntityFrameworkCore.Models;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.Identity;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.Identity;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Infrastructure.Identity;
@@ -27,6 +28,38 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
     where TFixture : PeopleApiFixture
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Identity_and_Core_stores_share_the_scoped_context_and_rollback_together()
+    {
+        var profile = await fixture.CreateUserProfileAsync();
+        var account = Account(profile);
+        var clientId = "rollback-" + Guid.NewGuid().ToString("N");
+        await using (var scope = fixture.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Same(database, scope.ServiceProvider.GetRequiredService<AppDbContext>());
+            var store = scope.ServiceProvider.GetRequiredService<IUserStore<ApplicationUser>>();
+            var identityStore = Assert.IsAssignableFrom<Microsoft.AspNetCore.Identity.EntityFrameworkCore.UserOnlyStore<
+                ApplicationUser, AppDbContext, Guid, IdentityUserClaim<Guid>, IdentityUserLogin<Guid>, IdentityUserToken<Guid>>>(store);
+            Assert.Same(database, identityStore.Context);
+            await using var transaction = await database.Database.BeginTransactionAsync(Cancellation);
+            Assert.True((await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().CreateAsync(account)).Succeeded);
+            var applications = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+            await applications.CreateAsync(new OpenIddictApplicationDescriptor
+            {
+                ClientId = clientId, ClientType = OpenIddictConstants.ClientTypes.Public
+            }, Cancellation);
+            Assert.True(await database.Users.AnyAsync(user => user.Id == account.Id, Cancellation));
+            Assert.True(await database.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>().AnyAsync(entry => entry.ClientId == clientId, Cancellation));
+            await transaction.RollbackAsync(Cancellation);
+        }
+        await using var check = fixture.CreateAsyncScope();
+        var reloaded = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await reloaded.Users.AnyAsync(user => user.Id == account.Id, Cancellation));
+        Assert.False(await reloaded.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>().AnyAsync(entry => entry.ClientId == clientId, Cancellation));
+        Assert.True(await reloaded.UserProfiles.AnyAsync(user => user.Id == profile, Cancellation));
+    }
 
     [Fact]
     public async Task Real_user_store_keeps_distinct_optional_profile_links_without_email_or_password()

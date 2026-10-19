@@ -5,9 +5,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Runtime;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Runtime;
+using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Tests.Infrastructure.Configuration;
 
@@ -68,7 +68,7 @@ public sealed class PersistenceConfigurationTests
             var paths = application.Services.GetRequiredService<ApplicationPaths>();
             Assert.Equal(expected, paths.DatabaseFile(application.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value.SqliteFile));
             Assert.Equal(Path.Combine(root, "attachments"), paths.Attachments(new()));
-            Assert.False(application.Services.GetRequiredService<IOptions<SocialTelemetry.Api.Infrastructure.Observability.ObservabilityOptions>>().Value.OtlpEnabled);
+            Assert.False(application.Services.GetRequiredService<IOptions<SocialTelemetry.Infrastructure.Observability.ObservabilityOptions>>().Value.OtlpEnabled);
         }
         finally { DeleteTemporaryRoot(root); }
     }
@@ -109,11 +109,12 @@ public sealed class PersistenceConfigurationTests
     [InlineData("Sqlite", 121, false)]
     public void Timeout_validation_matches_runtime_and_design_time(string provider, int timeout, bool valid)
     {
-        var originalDirectory = Directory.GetCurrentDirectory();
+        // Runtime-only Linux fixtures carry real Api configuration, not a source checkout.
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "SocialTelemetry.slnx"))) repository = repository.Parent;
-        Assert.NotNull(repository);
-        Directory.SetCurrentDirectory(repository.FullName);
+        var contentRoot = Environment.GetEnvironmentVariable("ASPNETCORE_TEST_CONTENTROOT_SOCIALTELEMETRY_API")
+            ?? Path.Combine(repository?.FullName ?? throw new InvalidOperationException("Api configuration root is required."), "SocialTelemetry.Api");
+        Assert.True(File.Exists(Path.Combine(contentRoot, "appsettings.json")));
         var root = TemporaryRoot();
         var settings = new Dictionary<string, string?>
         {
@@ -129,7 +130,7 @@ public sealed class PersistenceConfigurationTests
             {
                 using var client = application.CreateClient();
                 using var context = new AppDbContextFactory().CreateDbContext(
-                    ["--provider", provider, "--Persistence:SqliteTimeoutSeconds", timeout.ToString(),
+                    ["--provider", provider, "--contentRoot", contentRoot, "--Persistence:SqliteTimeoutSeconds", timeout.ToString(),
                      "--ApplicationData:RootDirectory", root, "--ConnectionStrings:Default", settings["ConnectionStrings:Default"]!]);
                 Assert.Equal(provider == "Sqlite", context.Database.IsSqlite());
             }
@@ -137,11 +138,11 @@ public sealed class PersistenceConfigurationTests
             {
                 Assert.Contains("SqliteTimeoutSeconds", Assert.ThrowsAny<Exception>(() => application.CreateClient()).ToString());
                 Assert.Contains("SqliteTimeoutSeconds", Assert.Throws<InvalidOperationException>(() => new AppDbContextFactory().CreateDbContext(
-                    ["--provider", provider, "--Persistence:SqliteTimeoutSeconds", timeout.ToString(),
+                    ["--provider", provider, "--contentRoot", contentRoot, "--Persistence:SqliteTimeoutSeconds", timeout.ToString(),
                      "--ApplicationData:RootDirectory", root])).Message);
             }
         }
-        finally { Directory.SetCurrentDirectory(originalDirectory); DeleteTemporaryRoot(root); }
+        finally { DeleteTemporaryRoot(root); }
     }
 
     private static WebApplicationFactory<Program> CreateApp(Dictionary<string, string?> values, bool maintenance = true) =>

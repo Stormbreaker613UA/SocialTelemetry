@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Application.Contracts.AI.Models;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 using CreateInteraction = SocialTelemetry.Api.Features.Interactions.Create;
 using CreatePerson = SocialTelemetry.Api.Features.People.Create;

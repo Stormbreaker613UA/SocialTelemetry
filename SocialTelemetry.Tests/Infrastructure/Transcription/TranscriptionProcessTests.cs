@@ -1,9 +1,10 @@
+using SocialTelemetry.Application.Contracts.Transcription;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using Microsoft.Extensions.Options;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Tests.Infrastructure.Transcription;
 
@@ -19,7 +20,7 @@ public sealed class TranscriptionProcessTests
         Directory.CreateDirectory(directory);
         using var sentinel = NativeProcessFixture.Start("sentinel", directory);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
-        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { TimeoutSeconds = 1, FileCheckMilliseconds = 50 }));
+        var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { TimeoutSeconds = 1, FileCheckMilliseconds = 50 }), NativeProcessFixture.Host);
         var command = new TranscriptionCommand(NativeProcessFixture.Dotnet(), directory,
             NativeProcessFixture.Arguments("root", directory).Append("escape").ToArray(), Path.Combine(directory, "output.bin"), 1024);
         var operation = runner.RunAsync(command, cancellation.Token);
@@ -81,7 +82,7 @@ public sealed class TranscriptionProcessTests
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
         var settings = new WhisperCppOptions { TimeoutSeconds = 3, FileCheckMilliseconds = 50,
             ProcessOutputCharacters = trigger == "output" ? 1024 : 65536 };
-        var runner = new TranscriptionProcessRunner(Options.Create(settings));
+        var runner = new TranscriptionProcessRunner(Options.Create(settings), NativeProcessFixture.Host);
         var command = new TranscriptionCommand(NativeProcessFixture.Dotnet(), directory,
             NativeProcessFixture.Arguments("root", directory), Path.Combine(directory, "output.bin"), 1024);
         var operation = runner.RunAsync(command, cancellation.Token);
@@ -127,7 +128,7 @@ public sealed class TranscriptionProcessTests
         string[] arguments = ["", "two words", "quote\"value", @"trailing slash\", "$not-a-shell", "кириллица"];
         try
         {
-            var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { TimeoutSeconds = 3, FileCheckMilliseconds = 50 }));
+            var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions { TimeoutSeconds = 3, FileCheckMilliseconds = 50 }), NativeProcessFixture.Host);
             var command = new TranscriptionCommand(NativeProcessFixture.Dotnet(), directory,
                 NativeProcessFixture.Arguments("arguments", directory).Concat(arguments).ToArray(), Path.Combine(directory, "unused.bin"), 1024);
             Assert.Equal(7, await runner.RunAsync(command, Cancellation).WaitAsync(TimeSpan.FromSeconds(10), Cancellation));
@@ -144,7 +145,7 @@ public sealed class TranscriptionProcessTests
         Directory.CreateDirectory(directory);
         try
         {
-            var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()));
+            var runner = new TranscriptionProcessRunner(Options.Create(new WhisperCppOptions()), NativeProcessFixture.Host);
             var command = new TranscriptionCommand(Path.Combine(directory, "missing.exe"), directory, [], Path.Combine(directory, "unused.bin"), 1024);
             for (var attempt = 0; attempt < 3; attempt++)
                 Assert.Equal(SpeechToTextFailure.ConfigurationRequired,

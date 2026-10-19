@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Observability;
 using SocialTelemetry.Application.Exceptions;
 using System.Collections.Concurrent;
 using System.Data;
@@ -11,8 +12,8 @@ using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.Observability;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Observability;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Infrastructure.Persistence;

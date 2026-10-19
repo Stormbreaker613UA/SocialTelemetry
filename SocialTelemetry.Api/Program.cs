@@ -1,3 +1,9 @@
+using SocialTelemetry.Infrastructure;
+using SocialTelemetry.Api.Common.Profiles;
+using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Options;
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Contracts.Storage;
 using SocialTelemetry.Application.Contracts.Transcription;
 using SocialTelemetry.Application.Contracts.AI;
@@ -10,14 +16,21 @@ using Serilog.Events;
 using Serilog.Filters;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Api.Features.AiConnection;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Runtime;
-using SocialTelemetry.Api.Infrastructure.Observability;
-using SocialTelemetry.Api.Infrastructure.Transcription;
-using SocialTelemetry.Api.Infrastructure.Identity;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Runtime;
+using SocialTelemetry.Infrastructure.Observability;
+using SocialTelemetry.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Identity;
+using SocialTelemetry.Infrastructure.Profiles;
+
+var launcherExit = NativeTranscriptionBootstrap.RunIfRequested(args);
+if (launcherExit is { } exitCode)
+{
+    Environment.ExitCode = exitCode;
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,104 +48,13 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {TraceId} {SpanId}{NewLine}{Exception}");
 }, preserveStaticLogger: true);
 
-builder.Services.AddSocialTelemetryDiagnostics(builder.Configuration, builder.Environment);
-builder.Services.AddPersistence(builder.Configuration);
-builder.Services.AddIdentityFoundation();
-builder.Services.AddScoped<LocalProfileOperation>();
-builder.Services.AddScoped<LocalProfileSelectionService>();
-builder.Services.AddSingleton<LocalProfileLifetimes>();
-builder.Services.AddScoped<ProfileAiAccess>();
-builder.Services.AddSingleton<ProfileAiLifetimes>();
+builder.Services.AddSocialTelemetryInfrastructure(builder.Configuration, builder.Environment, typeof(Program).Assembly);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
-builder.Services.AddOptions<ApplicationDataOptions>()
-    .BindConfiguration("ApplicationData")
-    .Validate(options => options.RootDirectory is null ||
-        (Path.IsPathFullyQualified(options.RootDirectory) &&
-         ApplicationPaths.IsValidDirectory(options.RootDirectory, builder.Environment.ContentRootPath)),
-        "ApplicationData requires a valid absolute root directory when configured.")
-    .ValidateOnStart();
-builder.Services.AddSingleton<ApplicationPaths>();
-builder.Services.AddOptions<ChatGptOptions>()
-    .BindConfiguration("ChatGpt")
-    .ValidateDataAnnotations()
-    .Validate(options => options.HasConsistentTiming(), "ChatGpt lock retry delay cannot exceed its timeout.")
-    .Validate(options => options.IsValid(), "ChatGpt requires an HTTP 127.0.0.1 callback with the fixed callback path and an absolute local data directory.")
-    .ValidateOnStart();
-builder.Services.AddOptions<UploadOptions>()
-    .BindConfiguration("Uploads").ValidateDataAnnotations().ValidateOnStart();
-builder.Services.AddOptions<TranscriptOptions>()
-    .BindConfiguration("Transcripts").ValidateDataAnnotations().ValidateOnStart();
-builder.Services.AddOptions<WhisperCppOptions>().BindConfiguration("WhisperCpp").ValidateDataAnnotations()
-    .Validate(options => options.HasConsistentLimits(), "WhisperCpp decoded size must accommodate its duration limit.").ValidateOnStart();
-builder.Services.AddSingleton<ITranscriptionProcessRunner, TranscriptionProcessRunner>();
-builder.Services.AddSingleton<ISpeechToTextClient, WhisperCppSpeechToTextClient>();
-builder.Services.AddOptions<AnalysisOptions>()
-    .BindConfiguration("Analysis").ValidateDataAnnotations()
-    .Validate(options => options.HasConsistentLimits(), "Analysis input limits must fit context, image count must fit evidence count, and total image bytes must cover an individual image.")
-    .ValidateOnStart();
-builder.Services.AddOptions<StorageMaintenanceOptions>()
-    .BindConfiguration("StorageMaintenance").ValidateDataAnnotations().ValidateOnStart();
-builder.Services.AddOptions<AttachmentStorageOptions>()
-    .BindConfiguration("AttachmentStorage")
-    .Validate<ApplicationPaths>((options, paths) => ApplicationPaths.IsValidDirectory(options.LocalDirectory, paths.RootDirectory),
-        "AttachmentStorage requires a valid directory without symbolic links.")
-    .ValidateOnStart();
-builder.Services.AddOptions<ProfileStorageOptions>()
-    .BindConfiguration("ProfileStorage")
-    .Validate<IOptions<AttachmentStorageOptions>, ApplicationPaths>((options, attachments, paths) =>
-    {
-        var attachmentPath = paths.Attachments(attachments.Value);
-        var directory = options.AvatarDirectory ?? Path.Combine(attachmentPath, "avatars");
-        if (!ApplicationPaths.IsValidDirectory(directory, paths.RootDirectory)) return false;
-        var avatarPath = paths.Avatars(options, attachments.Value);
-        return ApplicationPaths.AreStorageAreasSeparate(attachmentPath, avatarPath);
-    }, "ProfileStorage requires a valid avatar directory separate from attachment files and staging.")
-    .ValidateOnStart();
-builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<ChatGptCredentialStore>();
-builder.Services.AddSingleton<ChatGptConnection>();
-builder.Services.AddSingleton<ISystemBrowser, SystemBrowser>();
-builder.Services.AddHttpClient<ChatGptHttpClient>((services, client) =>
-    {
-        var options = services.GetRequiredService<IOptions<ChatGptOptions>>().Value;
-        client.Timeout = options.HttpTimeout;
-        client.MaxResponseContentBufferSize = options.HttpResponseBufferBytes;
-    })
-    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        PooledConnectionLifetime = services.GetRequiredService<IOptions<ChatGptOptions>>().Value.PooledConnectionLifetime
-    })
-    .RemoveAllLoggers();
-builder.Services.AddScoped<IAiClient, ChatGptPlanAiClient>();
-builder.Services.AddKeyedSingleton<IFileStorage>("attachments", (services, _) =>
-{
-    var paths = services.GetRequiredService<ApplicationPaths>();
-    var options = services.GetRequiredService<IOptions<AttachmentStorageOptions>>().Value;
-    return new LocalFileStorage(
-        paths.Attachments(options),
-        services.GetRequiredService<ILogger<LocalFileStorage>>());
-});
-builder.Services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
-builder.Services.AddKeyedSingleton<IFileStorage>("avatars", (services, _) =>
-{
-    var paths = services.GetRequiredService<ApplicationPaths>();
-    var attachments = services.GetRequiredService<IOptions<AttachmentStorageOptions>>().Value;
-    var profiles = services.GetRequiredService<IOptions<ProfileStorageOptions>>().Value;
-    return new LocalFileStorage(paths.Avatars(profiles, attachments),
-        services.GetRequiredService<ILogger<LocalFileStorage>>());
-});
-builder.Services.AddScoped<ProfileAvatarCleanup>();
+// Transitional mixed scenarios remain Api-owned until their functional migration package.
 builder.Services.AddScoped<ProfileAvatarService>();
-builder.Services.AddOptions<MediaBindingOptions>().BindConfiguration("MediaBinding").ValidateDataAnnotations()
-    .Validate(options => options.LockRetryDelay <= options.LockTimeout, "MediaBinding retry delay cannot exceed its lock timeout.").ValidateOnStart();
-builder.Services.AddHostedService<MediaDirectoryBinding>();
-builder.Services.AddHostedService<ProfileAvatarReconciliationService>();
-builder.Services.AddHostedService<AttachmentReconciliationService>();
 builder.Services.AddScoped<AiContextBuilder>();
 
 var app = builder.Build();

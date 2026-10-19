@@ -54,7 +54,7 @@ try {
         $port = (& docker inspect $databaseId | ConvertFrom-Json)[0].NetworkSettings.Ports.'5432/tcp'[0].HostPort
         [Environment]::SetEnvironmentVariable('ConnectionStrings__Default', "Host=127.0.0.1;Port=$port;Database=smoke;Username=smoke;Password=disposable-smoke", 'Process')
         [Environment]::SetEnvironmentVariable('ASPNETCORE_ENVIRONMENT', 'Production', 'Process')
-        & dotnet ef database update --project (Join-Path $repository 'SocialTelemetry.Api') --no-build -- --provider PostgreSql *> (Join-Path $evidence 'migrations.log')
+        & dotnet ef database update --project (Join-Path $repository 'SocialTelemetry.Infrastructure') --startup-project (Join-Path $repository 'SocialTelemetry.Api') --no-build -- --provider PostgreSql *> (Join-Path $evidence 'migrations.log')
         Assert-LinuxSmoke ($LASTEXITCODE -eq 0) 'PostgreSQL migration failed.'
         "INSERT INTO `"UserProfiles`" (`"Id`", `"DisplayName`") VALUES ('$profileId', 'Synthetic Linux smoke');" | & docker exec -i $databaseId psql -U smoke -d smoke -v ON_ERROR_STOP=1 *> (Join-Path $evidence 'seed.log')
         Assert-LinuxSmoke ($LASTEXITCODE -eq 0) 'PostgreSQL fixture seed failed.'

@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
@@ -8,9 +9,9 @@ using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Users;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
-using SocialTelemetry.Api.Infrastructure.Identity;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Identity;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Infrastructure.Profiles;

@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.People;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 using CreateInteraction = SocialTelemetry.Api.Features.Interactions.Create;
 using GetInteraction = SocialTelemetry.Api.Features.Interactions.GetById;

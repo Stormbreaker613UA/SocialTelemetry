@@ -1,3 +1,7 @@
+using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Options;
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
@@ -7,10 +11,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Profiles;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Profiles;

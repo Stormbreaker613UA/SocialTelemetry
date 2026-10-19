@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Options;
 using System.Reflection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -5,9 +6,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Runtime;
+using SocialTelemetry.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Runtime;
 
 namespace SocialTelemetry.Tests.Infrastructure.Configuration;
 

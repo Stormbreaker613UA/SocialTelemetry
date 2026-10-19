@@ -2,5 +2,6 @@
   <Project Path="SocialTelemetry.Api/SocialTelemetry.Api.csproj" />
   <Project Path="SocialTelemetry.Application/SocialTelemetry.Application.csproj" />
   <Project Path="SocialTelemetry.Domain/SocialTelemetry.Domain.csproj" />
+  <Project Path="SocialTelemetry.Infrastructure/SocialTelemetry.Infrastructure.csproj" />
   <Project Path="SocialTelemetry.Tests/SocialTelemetry.Tests.csproj" />
 </Solution>

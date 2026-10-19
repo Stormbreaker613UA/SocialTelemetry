@@ -24,9 +24,12 @@
     <ProjectReference Include="..\SocialTelemetry.Api\SocialTelemetry.Api.csproj" />
     <ProjectReference Include="..\SocialTelemetry.Application\SocialTelemetry.Application.csproj" />
     <ProjectReference Include="..\SocialTelemetry.Domain\SocialTelemetry.Domain.csproj" />
+    <ProjectReference Include="..\SocialTelemetry.Infrastructure\SocialTelemetry.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\SocialTelemetry.Infrastructure\SocialTelemetry.Infrastructure.csproj"
+          Link="Architecture\SocialTelemetry.Infrastructure.csproj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\SocialTelemetry.Application\SocialTelemetry.Application.csproj"
           Link="Architecture\SocialTelemetry.Application.csproj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\SocialTelemetry.Domain\SocialTelemetry.Domain.csproj"

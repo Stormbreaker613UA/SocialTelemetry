@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Tests.Infrastructure.Storage;
 

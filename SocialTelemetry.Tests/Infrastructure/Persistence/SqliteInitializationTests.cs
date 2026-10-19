@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Tests.Infrastructure.Persistence;
 

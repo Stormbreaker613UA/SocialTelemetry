@@ -1,3 +1,7 @@
+using SocialTelemetry.Application.Observability;
+using SocialTelemetry.Application.Options;
+using SocialTelemetry.Application.Contracts.Profiles;
+using SocialTelemetry.Application.Contracts.AI;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Contracts.Storage;
 using System.Security.Cryptography;
@@ -8,10 +12,10 @@ using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Application.Contracts.AI.Models;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Observability;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Observability;
+using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.AI;
 

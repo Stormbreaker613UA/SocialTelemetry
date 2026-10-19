@@ -1,9 +1,10 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Api.Features.ProfileConnections;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.People.AddExternalConnection;
 

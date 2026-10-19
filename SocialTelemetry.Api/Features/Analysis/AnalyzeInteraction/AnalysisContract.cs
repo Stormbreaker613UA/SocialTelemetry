@@ -1,7 +1,8 @@
+using SocialTelemetry.Application.Contracts.AI;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Application.Contracts.AI.Models;
 
 namespace SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;

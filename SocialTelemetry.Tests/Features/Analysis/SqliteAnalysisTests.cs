@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Application.Contracts.AI;
 using System.Data;
 using System.Data.Common;
@@ -15,9 +16,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Application.Contracts.AI.Models;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Analysis;

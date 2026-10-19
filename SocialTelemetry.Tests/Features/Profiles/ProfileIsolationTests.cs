@@ -1,3 +1,6 @@
+using SocialTelemetry.Api.Common.Profiles;
+using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Contracts.Storage;
 using SocialTelemetry.Application.Contracts.Transcription;
 using SocialTelemetry.Application.Contracts.AI;
@@ -16,13 +19,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Application.Contracts.AI.Models;
-using SocialTelemetry.Api.Infrastructure.Identity;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Identity;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Transcription;
 using SocialTelemetry.Tests.Features.People;
 using SocialTelemetry.Tests.Infrastructure.AI;
 

@@ -1,11 +1,13 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Contracts.Storage;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Infrastructure.Storage;
 

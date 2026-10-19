@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Users;
 using SocialTelemetry.Api.Features.ProfileConnections;
-using SocialTelemetry.Api.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Features.Profiles;

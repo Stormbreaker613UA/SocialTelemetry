@@ -1,10 +1,11 @@
+using SocialTelemetry.Application.Options;
 using SocialTelemetry.Application.Contracts.Storage;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.DependencyInjection;
 using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Infrastructure.Configuration;

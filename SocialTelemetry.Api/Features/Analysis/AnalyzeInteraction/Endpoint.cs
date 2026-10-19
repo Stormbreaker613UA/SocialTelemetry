@@ -1,3 +1,6 @@
+using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Application.Observability;
+using SocialTelemetry.Application.Options;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Contracts.AI;
 using System.Data;
@@ -9,10 +12,10 @@ using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Api.Features.AiConnection;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Application.Contracts.AI.Models;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Observability;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Observability;
 using StoredSuggestion = SocialTelemetry.Domain.People.SuggestedProfileUpdate;
 
 namespace SocialTelemetry.Api.Features.Analysis.AnalyzeInteraction;

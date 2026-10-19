@@ -1,5 +1,6 @@
+using SocialTelemetry.Application.Contracts.AI;
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.AI;
 
 namespace SocialTelemetry.Api.Features.AiConnection.Callback;
 

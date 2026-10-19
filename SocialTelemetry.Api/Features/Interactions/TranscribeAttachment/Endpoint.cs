@@ -1,17 +1,19 @@
+using SocialTelemetry.Application.Options;
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Contracts.Storage;
 using SocialTelemetry.Application.Contracts.Transcription;
 using System.Security.Cryptography;
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Api.Features.AiConnection;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
-using SocialTelemetry.Api.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Api.Features.Interactions.TranscribeAttachment;
 

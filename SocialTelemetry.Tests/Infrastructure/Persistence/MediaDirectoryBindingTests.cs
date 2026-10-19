@@ -10,8 +10,8 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.Users;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
 using Testcontainers.PostgreSql;
 
 namespace SocialTelemetry.Tests.Infrastructure.Persistence;

@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using SocialTelemetry.Infrastructure.Transcription;
 
 namespace SocialTelemetry.Tests.Infrastructure.Transcription;
 
 // Synthetic executable entry in this test assembly. It exits before the xUnit/MTP entry point.
 internal static class NativeProcessFixture
 {
+    internal static NativeTranscriptionHost Host => NativeTranscriptionHost.FromHostAssembly(typeof(Program).Assembly);
 #pragma warning disable CA2255
     [ModuleInitializer]
     internal static void RunIfRequested()

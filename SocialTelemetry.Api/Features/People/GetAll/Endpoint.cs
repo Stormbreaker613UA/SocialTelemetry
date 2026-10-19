@@ -1,8 +1,9 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Exceptions;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
 using SocialTelemetry.Api.Common.Exceptions;
 
 namespace SocialTelemetry.Api.Features.People.GetAll;

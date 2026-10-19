@@ -1,7 +1,7 @@
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Features.LocalProfiles.Get;
 

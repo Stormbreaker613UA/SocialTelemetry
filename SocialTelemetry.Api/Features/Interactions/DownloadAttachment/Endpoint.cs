@@ -1,10 +1,11 @@
+using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Contracts.Storage;
 using FastEndpoints;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.Profiles;
 using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Domain.Interactions;
-using SocialTelemetry.Api.Infrastructure.Persistence;
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.Interactions.DownloadAttachment;
 

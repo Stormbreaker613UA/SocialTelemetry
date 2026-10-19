@@ -1,9 +1,12 @@
+using SocialTelemetry.Application.Contracts.Profiles;
+using SocialTelemetry.Application.Contracts.Transcription;
+using SocialTelemetry.Application.Contracts.AI;
 using SocialTelemetry.Application.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using SocialTelemetry.Api.Infrastructure.AI;
-using SocialTelemetry.Api.Infrastructure.Transcription;
-using SocialTelemetry.Api.Infrastructure.Profiles;
+using SocialTelemetry.Infrastructure.AI;
+using SocialTelemetry.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Profiles;
 
 namespace SocialTelemetry.Api.Common.Exceptions;
 
@@ -18,14 +21,14 @@ public sealed class GlobalExceptionHandler(
     {
         var (statusCode, title, detail) = exception switch
         {
-            LocalProfileAccessException profile => (profile.StatusCode, "Local profile access failed.", profile.Message),
-            SpeechToTextException transcription => (transcription.StatusCode, "Transcription failed.", transcription.Message),
-            AiProviderException providerException => (providerException.StatusCode, "AI connection or request failed.", providerException.Message),
+            LocalProfileAccessException profile => (FailurePresentation.StatusCode(profile.Failure), "Local profile access failed.", FailurePresentation.Detail(profile.Failure)),
+            SpeechToTextException transcription => (FailurePresentation.StatusCode(transcription.Failure), "Transcription failed.", FailurePresentation.Detail(transcription.Failure)),
+            AiProviderException providerException => (FailurePresentation.StatusCode(providerException.Failure), "AI connection or request failed.", FailurePresentation.Detail(providerException.Failure)),
             NotFoundException => (StatusCodes.Status404NotFound, "Resource not found.", "The requested resource was not found."),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict.", "The request conflicts with the current state of the resource."),
             BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge } =>
                 (StatusCodes.Status413PayloadTooLarge, "Request too large.", "The request exceeds the allowed size."),
-            BadHttpRequestException => (StatusCodes.Status400BadRequest, "Invalid request.", "The request could not be processed."),
+            BadHttpRequestException or InvalidInputException => (StatusCodes.Status400BadRequest, "Invalid request.", "The request could not be processed."),
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.", "An unexpected error occurred while processing the request.")
         };
 
