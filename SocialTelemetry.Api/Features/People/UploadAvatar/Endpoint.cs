@@ -1,8 +1,7 @@
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Application.Features.ProfileAvatars;
 using SocialTelemetry.Application.Options;
 using Microsoft.Extensions.Options;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.People.UploadAvatar;
 

@@ -111,6 +111,38 @@ public static class InfrastructureRegistration
                 services.GetRequiredService<ILogger<LocalFileStorage>>());
         });
         services.AddScoped<ProfileAvatarCleanup>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.IPeoplePersistence, PeoplePersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonFacts.IPersonFactsPersistence, PersonFactsPersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.IUserProfilePersistence, UserProfilePersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.ProfileConnections.IProfileConnectionsPersistence, ProfileConnectionsPersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.ProfileAvatars.IProfileAvatarPersistence, ProfileAvatarPersistence>();
+        services.AddScoped(services => new SocialTelemetry.Application.Features.ProfileAvatars.ProfileAvatarService(
+            services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAvatars.IProfileAvatarPersistence>(),
+            services.GetRequiredService<LocalProfileOperation>(),
+            services.GetRequiredService<IOptions<UploadOptions>>().Value));
+        services.AddScoped<SocialTelemetry.Application.Features.People.AddExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.Archive.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.Create.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.Delete.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.DeleteExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.GetAll.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.GetById.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.GetExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.GetExternalConnections.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.Unarchive.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.Update.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.UpdateExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonFacts.Add.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonFacts.Delete.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonFacts.GetForPerson.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonFacts.Update.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.AddExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.DeleteExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.Get.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.GetExternalConnection.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.GetExternalConnections.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.Update.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.UserProfile.UpdateExternalConnection.Scenario>();
 
         services.AddOptions<MediaBindingOptions>().BindConfiguration("MediaBinding").ValidateDataAnnotations()
             .Validate(options => options.LockRetryDelay <= options.LockTimeout, "MediaBinding retry delay cannot exceed its lock timeout.").ValidateOnStart();

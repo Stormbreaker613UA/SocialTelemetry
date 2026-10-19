@@ -1,12 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.PersonFacts.Update;
 
 namespace SocialTelemetry.Api.Features.PersonFacts.Update;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -16,29 +14,25 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Value))
+        try
         {
-            AddError("Value is required.");
-            await Send.ErrorsAsync(400, cancellationToken);
-            return;
+            var fact = await scenario.ExecuteAsync(new Input
+            {
+                PersonId = request.PersonId,
+                Id = request.Id,
+                Value = request.Value,
+                Source = request.Source
+            }, cancellationToken);
+            await Send.OkAsync(new Response(fact.Id, fact.PersonId, fact.Value, fact.Source, fact.CreatedAt), cancellationToken);
         }
-
-        var fact = await dbContext.PersonFacts.Where(fact => fact.Person.UserProfileId == operation.RequireOwner())
-            .SingleOrDefaultAsync(
-                fact => fact.Id == request.Id && fact.PersonId == request.PersonId,
-                cancellationToken);
-
-        if (fact is null)
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        fact.Value = request.Value.Trim();
-        fact.Source = request.Source;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await Send.OkAsync(new Response(fact.Id, fact.PersonId, fact.Value, fact.Source, fact.CreatedAt), cancellationToken);
     }
 }

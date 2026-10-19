@@ -1,6 +1,5 @@
 using SocialTelemetry.Infrastructure;
 using SocialTelemetry.Api.Common.Profiles;
-using SocialTelemetry.Api.Infrastructure.Storage;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Application.Options;
 using SocialTelemetry.Application.Contracts.Profiles;
@@ -54,7 +53,6 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();
 builder.Services.SwaggerDocument();
 // Transitional mixed scenarios remain Api-owned until their functional migration package.
-builder.Services.AddScoped<ProfileAvatarService>();
 builder.Services.AddScoped<AiContextBuilder>();
 
 var app = builder.Build();

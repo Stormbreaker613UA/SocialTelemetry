@@ -1,14 +1,11 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.Users;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.UserProfile.GetExternalConnections;
 using SocialTelemetry.Api.Features.ProfileConnections;
-using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.UserProfile.GetExternalConnections;
 
-public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : EndpointWithoutRequest<IReadOnlyList<ExternalConnectionResponse>>
+public sealed class Endpoint(Scenario scenario) : EndpointWithoutRequest<IReadOnlyList<ExternalConnectionResponse>>
 {
     public override void Configure()
     {
@@ -18,21 +15,22 @@ public sealed class Endpoint(AppDbContext database, LocalProfileOperation operat
 
     public override async Task HandleAsync(CancellationToken cancellationToken)
     {
-        var ownerId = await database.UserProfiles.Where(profile => profile.Id == operation.RequireOwner()).AsNoTracking()
-            .Select(profile => (Guid?)profile.Id).FirstOrDefaultAsync(cancellationToken);
-        if (ownerId is null)
+        try
+        {
+            var connections = await scenario.ExecuteAsync(cancellationToken);
+            var response = connections.Select(connection => new ExternalConnectionResponse(connection.Id, connection.UserProfileId,
+                connection.Platform, connection.ExternalUserId, connection.Handle, connection.DisplayName,
+                connection.ProfileUrl, connection.CreatedAt, connection.UpdatedAt)).ToList();
+            await Send.OkAsync(response, cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        var connections = await database.UserProfileExternalConnections.Where(connection => connection.UserProfileId == operation.RequireOwner()).AsNoTracking()
-            .Where(connection => connection.UserProfileId == ownerId)
-            .OrderBy(connection => connection.Platform).ThenBy(connection => connection.Id)
-            .Select(connection => new ExternalConnectionResponse(connection.Id, connection.UserProfileId,
-                connection.Platform, connection.ExternalUserId, connection.Handle, connection.DisplayName,
-                connection.ProfileUrl, connection.CreatedAt, connection.UpdatedAt))
-            .ToListAsync(cancellationToken);
-        await Send.OkAsync(connections, cancellationToken);
     }
 }

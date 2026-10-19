@@ -1,12 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.People.GetById;
 
 namespace SocialTelemetry.Api.Features.People.GetById;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -16,30 +14,16 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var person = await dbContext.People.Where(person => person.UserProfileId == operation.RequireOwner())
-            .AsNoTracking()
-            .Where(person => person.Id == request.Id)
-            .Select(person => new Response(
-                person.Id,
-                person.UserProfileId,
-                person.DisplayName,
-                person.Age,
-                person.Gender,
-                person.Description,
-                person.RelationshipContext,
-                person.HowWeMet,
-                person.Notes,
-                person.CreatedAt,
-                person.UpdatedAt,
-                person.ArchivedAt))
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (person is null)
+        try
+        {
+            var person = await scenario.ExecuteAsync(request.Id, cancellationToken);
+            await Send.OkAsync(new Response(person.Id, person.UserProfileId, person.DisplayName, person.Age,
+                person.Gender, person.Description, person.RelationshipContext, person.HowWeMet,
+                person.Notes, person.CreatedAt, person.UpdatedAt, person.ArchivedAt), cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        await Send.OkAsync(person, cancellationToken);
     }
 }

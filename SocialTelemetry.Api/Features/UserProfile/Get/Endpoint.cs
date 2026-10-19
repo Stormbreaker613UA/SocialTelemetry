@@ -1,12 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.UserProfile.Get;
 
 namespace SocialTelemetry.Api.Features.UserProfile.Get;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : EndpointWithoutRequest<Response>
+public sealed class Endpoint(Scenario scenario) : EndpointWithoutRequest<Response>
 {
     public override void Configure()
     {
@@ -16,25 +14,16 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(CancellationToken cancellationToken)
     {
-        var userProfile = await dbContext.UserProfiles.Where(profile => profile.Id == operation.RequireOwner())
-            .AsNoTracking()
-            .Select(userProfile => new Response(
-                userProfile.Id,
-                userProfile.DisplayName,
-                userProfile.AboutMe,
-                userProfile.CommunicationStyle,
-                userProfile.Goals,
-                userProfile.Preferences,
-                userProfile.Boundaries,
-                userProfile.AiInstructions))
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (userProfile is null)
+        try
+        {
+            var userProfile = await scenario.ExecuteAsync(cancellationToken);
+            await Send.OkAsync(new Response(userProfile.Id, userProfile.DisplayName, userProfile.AboutMe,
+                userProfile.CommunicationStyle, userProfile.Goals, userProfile.Preferences,
+                userProfile.Boundaries, userProfile.AiInstructions), cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        await Send.OkAsync(userProfile, cancellationToken);
     }
 }

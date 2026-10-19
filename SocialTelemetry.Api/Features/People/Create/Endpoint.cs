@@ -1,13 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.People;
-using SocialTelemetry.Infrastructure.Persistence;
-using SocialTelemetry.Infrastructure.Profiles;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.People.Create;
 
 namespace SocialTelemetry.Api.Features.People.Create;
 
-public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation operation) : Endpoint<Request, Response>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 {
     public override void Configure()
     {
@@ -17,49 +14,29 @@ public sealed class Endpoint(AppDbContext dbContext, LocalProfileOperation opera
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        if (request.UserProfileId == Guid.Empty || string.IsNullOrWhiteSpace(request.DisplayName))
+        try
         {
-            AddError("UserProfileId and DisplayName are required.");
-            await Send.ErrorsAsync(400, cancellationToken);
-            return;
+            var person = await scenario.ExecuteAsync(new Input
+            {
+                UserProfileId = request.UserProfileId,
+                DisplayName = request.DisplayName,
+                Age = request.Age,
+                Gender = request.Gender,
+                Description = request.Description,
+                RelationshipContext = request.RelationshipContext,
+                HowWeMet = request.HowWeMet,
+                Notes = request.Notes
+            }, cancellationToken);
+            await Send.ResponseAsync(new Response(person.Id), 201, cancellationToken);
         }
-
-        if (request.DisplayName.Trim().Length > 200 || !Enum.IsDefined(request.RelationshipContext))
+        catch (FeatureValidationException exception)
         {
-            AddError("DisplayName cannot exceed 200 characters and RelationshipContext must be supported.");
+            AddError(exception.Message);
             await Send.ErrorsAsync(400, cancellationToken);
-            return;
         }
-
-        var userProfileExists = await dbContext.UserProfiles.Where(profile => profile.Id == operation.RequireOwner())
-            .AsNoTracking()
-            .AnyAsync(userProfile => userProfile.Id == request.UserProfileId && userProfile.Id == operation.RequireOwner(), cancellationToken);
-
-        if (!userProfileExists)
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        var now = DateTimeOffset.UtcNow;
-        var person = new Person
-        {
-            Id = Guid.NewGuid(),
-            UserProfileId = request.UserProfileId,
-            DisplayName = request.DisplayName.Trim(),
-            Age = request.Age,
-            Gender = request.Gender,
-            Description = request.Description,
-            RelationshipContext = request.RelationshipContext,
-            HowWeMet = request.HowWeMet,
-            Notes = request.Notes,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-
-        dbContext.People.Add(person);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await Send.ResponseAsync(new Response(person.Id), 201, cancellationToken);
     }
 }

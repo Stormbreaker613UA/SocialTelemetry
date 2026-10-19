@@ -1,12 +1,10 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.People.Archive;
 
 namespace SocialTelemetry.Api.Features.People.Archive;
 
-public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : Endpoint<Request>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request>
 {
     public override void Configure()
     {
@@ -16,14 +14,19 @@ public sealed class Endpoint(AppDbContext database, LocalProfileOperation operat
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var person = await database.People.Where(person => person.UserProfileId == operation.RequireOwner()).SingleOrDefaultAsync(person => person.Id == request.Id, cancellationToken);
-        if (person is null)
+        try
+        {
+            await scenario.ExecuteAsync(new Input(request.Id), cancellationToken);
+            await Send.NoContentAsync(cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-        person.ArchivedAt ??= DateTimeOffset.UtcNow;
-        await database.SaveChangesAsync(cancellationToken);
-        await Send.NoContentAsync(cancellationToken);
     }
 }

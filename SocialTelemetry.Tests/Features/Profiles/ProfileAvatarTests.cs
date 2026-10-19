@@ -1,4 +1,4 @@
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Application.Features.ProfileAvatars;
 using SocialTelemetry.Api.Infrastructure.AI;
 using SocialTelemetry.Application.Options;
 using SocialTelemetry.Application.Contracts.Profiles;

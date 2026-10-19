@@ -1,14 +1,11 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.People;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.People.UpdateExternalConnection;
 using SocialTelemetry.Api.Features.ProfileConnections;
-using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.People.UpdateExternalConnection;
 
-public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : Endpoint<Request, ExternalConnectionResponse>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request, ExternalConnectionResponse>
 {
     public override void Configure()
     {
@@ -18,34 +15,31 @@ public sealed class Endpoint(AppDbContext database, LocalProfileOperation operat
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var ownerId = request.PersonId;
-        if (!await database.People.Where(person => person.UserProfileId == operation.RequireOwner()).AsNoTracking().AnyAsync(person => person.Id == ownerId, cancellationToken))
+        try
         {
-            await Send.NotFoundAsync(cancellationToken);
-            return;
+            var connection = await scenario.ExecuteAsync(new Input
+            {
+                PersonId = request.PersonId,
+                ConnectionId = request.ConnectionId,
+                Platform = request.Platform,
+                ExternalUserId = request.ExternalUserId,
+                Handle = request.Handle,
+                DisplayName = request.DisplayName,
+                ProfileUrl = request.ProfileUrl
+            }, cancellationToken);
+            var response = new ExternalConnectionResponse(connection.Id, connection.PersonId,
+                connection.Platform, connection.ExternalUserId, connection.Handle, connection.DisplayName,
+                connection.ProfileUrl, connection.CreatedAt, connection.UpdatedAt);
+            await Send.OkAsync(response, cancellationToken);
         }
-        if (!request.TryNormalize(out var input))
+        catch (FeatureValidationException exception)
         {
-            AddError("Invalid external connection fields or profile URL.");
+            AddError(exception.Message);
             await Send.ErrorsAsync(400, cancellationToken);
-            return;
         }
-        var connection = await database.PersonExternalConnections.SingleOrDefaultAsync(connection =>
-            connection.Id == request.ConnectionId && connection.PersonId == ownerId, cancellationToken);
-        if (connection is null)
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-        connection.Platform = input.Platform;
-        connection.ExternalUserId = input.ExternalUserId;
-        connection.Handle = input.Handle;
-        connection.DisplayName = input.DisplayName;
-        connection.ProfileUrl = input.ProfileUrl;
-        connection.UpdatedAt = DateTimeOffset.UtcNow;
-        await ExternalConnectionPersistence.SaveAsync(database, cancellationToken);
-        await Send.OkAsync(new ExternalConnectionResponse(connection.Id, connection.PersonId,
-            connection.Platform, connection.ExternalUserId, connection.Handle, connection.DisplayName,
-            connection.ProfileUrl, connection.CreatedAt, connection.UpdatedAt), cancellationToken);
     }
 }

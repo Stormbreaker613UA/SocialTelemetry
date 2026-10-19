@@ -1,14 +1,11 @@
-using SocialTelemetry.Application.Contracts.Profiles;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Profiles;
-using Microsoft.EntityFrameworkCore;
-using SocialTelemetry.Domain.People;
+using SocialTelemetry.Application.Exceptions;
+using SocialTelemetry.Application.Features.People.DeleteExternalConnection;
 using SocialTelemetry.Api.Features.ProfileConnections;
-using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Api.Features.People.DeleteExternalConnection;
 
-public sealed class Endpoint(AppDbContext database, LocalProfileOperation operation) : Endpoint<Request>
+public sealed class Endpoint(Scenario scenario) : Endpoint<Request>
 {
     public override void Configure()
     {
@@ -18,22 +15,23 @@ public sealed class Endpoint(AppDbContext database, LocalProfileOperation operat
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var ownerId = request.PersonId;
-        if (!await database.People.Where(person => person.UserProfileId == operation.RequireOwner()).AsNoTracking().AnyAsync(person => person.Id == ownerId, cancellationToken))
+        try
+        {
+            await scenario.ExecuteAsync(new Input
+            {
+                PersonId = request.PersonId,
+                ConnectionId = request.ConnectionId
+            }, cancellationToken);
+            await Send.NoContentAsync(cancellationToken);
+        }
+        catch (FeatureValidationException exception)
+        {
+            AddError(exception.Message);
+            await Send.ErrorsAsync(400, cancellationToken);
+        }
+        catch (NotFoundException)
         {
             await Send.NotFoundAsync(cancellationToken);
-            return;
         }
-
-        var connection = await database.PersonExternalConnections.SingleOrDefaultAsync(connection =>
-            connection.Id == request.ConnectionId && connection.PersonId == ownerId, cancellationToken);
-        if (connection is null)
-        {
-            await Send.NotFoundAsync(cancellationToken);
-            return;
-        }
-        database.PersonExternalConnections.Remove(connection);
-        await database.SaveChangesAsync(cancellationToken);
-        await Send.NoContentAsync(cancellationToken);
     }
 }

@@ -1,6 +1,5 @@
-using SocialTelemetry.Api.Infrastructure.Storage;
+using SocialTelemetry.Application.Features.ProfileAvatars;
 using FastEndpoints;
-using SocialTelemetry.Infrastructure.Storage;
 
 namespace SocialTelemetry.Api.Features.People.DeleteAvatar;
 
