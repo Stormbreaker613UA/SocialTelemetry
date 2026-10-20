@@ -15,4 +15,3 @@ public sealed class UserProfilePersistence(AppDbContext database) : IUserProfile
     public async Task SaveProfileAsync(JournalProfile profile, CancellationToken cancellationToken) =>
         await database.SaveChangesAsync(cancellationToken);
 }
-

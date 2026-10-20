@@ -1358,19 +1358,19 @@ Domain timestamps remain `DateTimeOffset`: PostgreSQL stores UTC timestamps, SQL
 
 **Concurrency.** PostgreSQL's per-UserProfile guard rows let unrelated profiles write independently. SQLite retains the same logical profile guards but has one writer per database file. Short default write transactions reserve that writer before final context reads; read-only Serializable context snapshots use deferred transactions and WAL so writers can proceed. Source writes during AI inference remain possible, final fingerprint revalidation rejects stale output, and the execution lease still spans the final save/commit. Busy/stale-snapshot/FK failures during final analysis persistence become a safe conflict. SQLite's write serialization never spans provider/network inference. There is no application-wide mutex, distributed lock, or whole-operation retry that could repeat AI calls.
 
-**Migration workflow (repository root).** Existing PostgreSQL migrations and `AppDbContextModelSnapshot` remain in `Infrastructure/Persistence/Migrations`, unchanged. SQLite has its own current-schema baseline and uniquely named `SqliteAppDbContextModelSnapshot` under `Migrations/Sqlite`. A small `IMigrationsAssembly` selector exposes only the active provider's standard EF artifacts. EF performs generation, history tracking, and execution. Keep snapshot class names distinct so EF tooling cannot overwrite the other provider's snapshot.
+**Migration workflow (repository root).** Existing PostgreSQL migrations and `AppDbContextModelSnapshot` remain in `SocialTelemetry.Infrastructure/Persistence/Migrations`, unchanged. SQLite has its own current-schema baseline and uniquely named `SqliteAppDbContextModelSnapshot` under `SocialTelemetry.Infrastructure/Persistence/Migrations/Sqlite`. A small `IMigrationsAssembly` selector exposes only the active provider's standard EF artifacts. EF performs generation, history tracking, and execution. Keep snapshot class names distinct so EF tooling cannot overwrite the other provider's snapshot.
 
 For each persisted model change, generate and inspect both provider sets using the explicit provider and namespace:
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
-dotnet ef migrations add <ChangeName> --project SocialTelemetry.Api --context AppDbContext --output-dir Infrastructure/Persistence/Migrations --namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations -- --provider PostgreSql
-dotnet ef migrations add <ChangeName> --project SocialTelemetry.Api --context AppDbContext --output-dir Infrastructure/Persistence/Migrations/Sqlite --namespace SocialTelemetry.Api.Infrastructure.Persistence.Migrations.Sqlite -- --provider Sqlite
+dotnet ef migrations add <ChangeName> --project SocialTelemetry.Infrastructure --startup-project SocialTelemetry.Api --context AppDbContext --output-dir Persistence/Migrations --namespace SocialTelemetry.Infrastructure.Persistence.Migrations -- --provider PostgreSql
+dotnet ef migrations add <ChangeName> --project SocialTelemetry.Infrastructure --startup-project SocialTelemetry.Api --context AppDbContext --output-dir Persistence/Migrations/Sqlite --namespace SocialTelemetry.Infrastructure.Persistence.Migrations.Sqlite -- --provider Sqlite
 
-dotnet ef database update --project SocialTelemetry.Api --context AppDbContext -- --provider PostgreSql
-dotnet ef database update --project SocialTelemetry.Api --context AppDbContext -- --provider Sqlite
-dotnet ef migrations has-pending-model-changes --project SocialTelemetry.Api -- --provider PostgreSql
-dotnet ef migrations has-pending-model-changes --project SocialTelemetry.Api -- --provider Sqlite
+dotnet ef database update --project SocialTelemetry.Infrastructure --startup-project SocialTelemetry.Api --context AppDbContext -- --provider PostgreSql
+dotnet ef database update --project SocialTelemetry.Infrastructure --startup-project SocialTelemetry.Api --context AppDbContext -- --provider Sqlite
+dotnet ef migrations has-pending-model-changes --project SocialTelemetry.Infrastructure --startup-project SocialTelemetry.Api -- --provider PostgreSql
+dotnet ef migrations has-pending-model-changes --project SocialTelemetry.Infrastructure --startup-project SocialTelemetry.Api -- --provider Sqlite
 ```
 
 Design-time operations require `--provider`; omission never guesses a database. Standard configuration/environment overrides select the connection/data root. Do not run PostgreSQL migrations on SQLite or rewrite applied history. Add meaningful integration coverage for both providers when adding persisted features; provider-specific SQL/error/transaction behavior remains in persistence infrastructure.

@@ -7,4 +7,3 @@ public interface IUserProfilePersistence
     Task<JournalProfile?> FindProfileAsync(Guid ownerId, bool readOnly, CancellationToken cancellationToken);
     Task SaveProfileAsync(JournalProfile profile, CancellationToken cancellationToken);
 }
-

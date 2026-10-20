@@ -32,4 +32,3 @@ public sealed class PersonFactsPersistence(AppDbContext database) : IPersonFacts
         await database.SaveChangesAsync(cancellationToken);
     }
 }
-

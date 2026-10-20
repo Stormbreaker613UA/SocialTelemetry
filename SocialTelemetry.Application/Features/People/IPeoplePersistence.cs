@@ -11,4 +11,3 @@ public interface IPeoplePersistence
     Task SavePersonAsync(Person person, CancellationToken cancellationToken);
     Task DeletePersonAsync(Person person, CancellationToken cancellationToken);
 }
-

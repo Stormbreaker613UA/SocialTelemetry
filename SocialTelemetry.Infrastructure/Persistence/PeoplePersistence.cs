@@ -35,4 +35,3 @@ public sealed class PeoplePersistence(AppDbContext database) : IPeoplePersistenc
         await database.SaveChangesAsync(cancellationToken);
     }
 }
-

@@ -127,8 +127,173 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         Assert.False(await database.SuggestedProfileUpdates.AnyAsync(suggestion => suggestion.InteractionAnalysis.InteractionId == data.InteractionId, Cancellation));
     }
 
-    private static AppAnalysis.Scenario CreateScenario(IServiceProvider services, IAiClient provider) => new(
-        services.GetRequiredService<IAnalysisPersistence>(), services.GetRequiredService<AiContextBuilder>(), provider,
+    [Theory]
+    [InlineData("snapshot")]
+    [InlineData("model")]
+    [InlineData("inference")]
+    public async Task Direct_profile_switch_cancels_original_operation_even_when_awaited_work_ignores_cancellation(string phase)
+    {
+        var data = await SeedAsync();
+        var other = await fixture.CreateUserProfileAsync(select: false);
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer)));
+        await using var scope = application.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        await BindAsync(services, data.Owner);
+        var database = services.GetRequiredService<AppDbContext>();
+        observer.Target = database;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task PauseAsync()
+        {
+            entered.TrySetResult();
+            // Deliberately ignore the operation token, like a provider/context reader might.
+            await resume.Task.WaitAsync(deadline.Token);
+        }
+        var persistence = new BoundaryPersistence(services.GetRequiredService<IAnalysisPersistence>())
+        {
+            AfterSnapshot = phase == "snapshot" ? PauseAsync : null
+        };
+        var provider = new ProbeProvider(database, observer)
+        {
+            DuringModel = phase == "model" ? PauseAsync : null,
+            DuringInference = phase == "inference" ? PauseAsync : null
+        };
+        var execution = CreateScenario(services, provider, persistence).ExecuteAsync(new(data.InteractionId, null, []), Cancellation);
+        try
+        {
+            await entered.Task.WaitAsync(deadline.Token);
+            Assert.Null(database.Database.CurrentTransaction);
+            await SwitchAsync(application.Services, other);
+            Assert.False(Cancellation.IsCancellationRequested);
+            Assert.True(services.GetRequiredService<LocalProfileOperation>().Lifetime.IsCancellationRequested);
+            Assert.True(persistence.SnapshotToken.IsCancellationRequested);
+            if (phase == "model") Assert.True(provider.ModelCancellation.IsCancellationRequested);
+            if (phase == "inference") Assert.True(provider.InferenceCancellation.IsCancellationRequested);
+            resume.TrySetResult();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
+        }
+        finally { resume.TrySetResult(); }
+        Assert.Equal(phase == "inference" ? 1 : 0, provider.Calls);
+        Assert.Equal(0, provider.Leases);
+        Assert.Null(database.Database.CurrentTransaction);
+        await AssertHistoricalOnlyAsync(data);
+    }
+
+    [Fact]
+    public async Task Direct_commit_winner_returns_success_and_keeps_original_owner_after_later_profile_switch()
+    {
+        var data = await SeedAsync();
+        var other = await fixture.CreateUserProfileAsync(select: false);
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer)));
+        await using var scope = application.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        await BindAsync(services, data.Owner);
+        var database = services.GetRequiredService<AppDbContext>();
+        observer.Target = database;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var committed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var persistence = new BoundaryPersistence(services.GetRequiredService<IAnalysisPersistence>())
+        {
+            AfterCommit = async () =>
+            {
+                committed.TrySetResult();
+                await resume.Task.WaitAsync(deadline.Token);
+            }
+        };
+        var provider = new ProbeProvider(database, observer);
+        var execution = CreateScenario(services, provider, persistence).ExecuteAsync(new(data.InteractionId, null, []), Cancellation);
+        try
+        {
+            await committed.Task.WaitAsync(deadline.Token);
+            Assert.True(observer.FinalCommitted);
+            Assert.Equal(1, provider.DisposedLeases);
+            Assert.Null(database.Database.CurrentTransaction);
+            await SwitchAsync(application.Services, other);
+            Assert.True(services.GetRequiredService<LocalProfileOperation>().Lifetime.IsCancellationRequested);
+            resume.TrySetResult();
+            var result = await execution;
+            await using var verification = fixture.CreateAsyncScope();
+            var stored = verification.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal(data.Owner, await stored.InteractionAnalyses.Where(analysis => analysis.Id == result.Id)
+                .Select(analysis => analysis.Interaction.UserProfileId).SingleAsync(Cancellation));
+            Assert.Equal(2, await stored.SuggestedProfileUpdates.CountAsync(suggestion => suggestion.InteractionAnalysisId == result.Id && suggestion.Status == SuggestionStatus.Pending, Cancellation));
+            Assert.Equal(2, await stored.InteractionAnalyses.CountAsync(analysis => analysis.InteractionId == data.InteractionId, Cancellation));
+            Assert.False(await stored.PersonFacts.AnyAsync(fact => fact.PersonId == data.PersonId, Cancellation));
+        }
+        finally { resume.TrySetResult(); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Direct_caller_cancellation_and_execution_invalidation_keep_distinct_failure_mapping(bool invalidateExecution)
+    {
+        var data = await SeedAsync();
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer)));
+        await using var scope = application.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        await BindAsync(services, data.Owner);
+        var database = services.GetRequiredService<AppDbContext>();
+        observer.Target = database;
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        using var executionLifetime = new CancellationTokenSource();
+        var provider = new ProbeProvider(database, observer)
+        {
+            LifetimeToken = executionLifetime.Token,
+            DuringInference = () =>
+            {
+                if (invalidateExecution) executionLifetime.Cancel();
+                else caller.Cancel();
+                return Task.CompletedTask;
+            }
+        };
+        var execution = CreateScenario(services, provider).ExecuteAsync(new(data.InteractionId, null, []), caller.Token);
+        if (invalidateExecution)
+        {
+            var rejected = await Assert.ThrowsAsync<AiProviderException>(() => execution);
+            Assert.Equal(AiFailure.ExecutionInvalidated, rejected.Failure);
+            Assert.False(provider.InferenceCancellation.IsCancellationRequested);
+        }
+        else
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
+            Assert.True(provider.InferenceCancellation.IsCancellationRequested);
+        }
+        Assert.False(services.GetRequiredService<LocalProfileOperation>().Lifetime.IsCancellationRequested);
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(0, provider.Leases);
+        Assert.Null(database.Database.CurrentTransaction);
+        await AssertHistoricalOnlyAsync(data);
+    }
+
+    private async Task AssertHistoricalOnlyAsync(Seed data)
+    {
+        await using var verification = fixture.CreateAsyncScope();
+        var stored = verification.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(1, await stored.InteractionAnalyses.CountAsync(analysis => analysis.InteractionId == data.InteractionId, Cancellation));
+        Assert.Equal("Historical summary", await stored.InteractionAnalyses.Where(analysis => analysis.Id == data.HistoricalId).Select(analysis => analysis.Summary).SingleAsync(Cancellation));
+        Assert.False(await stored.SuggestedProfileUpdates.AnyAsync(suggestion => suggestion.InteractionAnalysis.InteractionId == data.InteractionId, Cancellation));
+        Assert.False(await stored.PersonFacts.AnyAsync(fact => fact.PersonId == data.PersonId, Cancellation));
+        Assert.Equal("Original notes", await stored.People.Where(person => person.Id == data.PersonId).Select(person => person.Notes).SingleAsync(Cancellation));
+    }
+
+    private static async Task SwitchAsync(IServiceProvider services, Guid owner)
+    {
+        await using var switching = services.CreateAsyncScope();
+        var selector = switching.ServiceProvider.GetRequiredService<LocalProfileSelectionService>();
+        var before = await selector.GetAsync(Cancellation);
+        await selector.SelectAsync(owner, before.Version, Cancellation);
+    }
+
+    private static AppAnalysis.Scenario CreateScenario(IServiceProvider services, IAiClient provider, IAnalysisPersistence? persistence = null) => new(
+        persistence ?? services.GetRequiredService<IAnalysisPersistence>(), services.GetRequiredService<AiContextBuilder>(), provider,
         services.GetRequiredService<IOptions<AnalysisOptions>>().Value, services.GetRequiredService<LocalProfileOperation>());
 
     private static async Task BindAsync(IServiceProvider services, Guid owner)
@@ -158,6 +323,29 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
 
     private sealed record Seed(Guid Owner, Guid PersonId, Guid InteractionId, Guid HistoricalId);
     private sealed class SyntheticCommitFailure : Exception;
+
+    private sealed class BoundaryPersistence(IAnalysisPersistence inner) : IAnalysisPersistence
+    {
+        public Func<Task>? AfterSnapshot { get; init; }
+        public Func<Task>? AfterCommit { get; init; }
+        public CancellationToken SnapshotToken { get; private set; }
+
+        public async Task<BuiltAnalysisContext> SnapshotAsync(Func<CancellationToken, Task<BuiltAnalysisContext>> build, CancellationToken cancellationToken)
+        {
+            SnapshotToken = cancellationToken;
+            var result = await inner.SnapshotAsync(build, cancellationToken);
+            if (AfterSnapshot is not null) await AfterSnapshot();
+            return result;
+        }
+
+        public async Task<InteractionAnalysis> CommitAsync(Guid owner, Func<CancellationToken, Task> verifyContext,
+            Func<CancellationToken, Task<IAiExecutionLease>> acquireExecutionLease, Func<AnalysisMutation> create, CancellationToken cancellationToken)
+        {
+            var result = await inner.CommitAsync(owner, verifyContext, acquireExecutionLease, create, cancellationToken);
+            if (AfterCommit is not null) await AfterCommit();
+            return result;
+        }
+    }
 
     private sealed class CommitObserver : DbTransactionInterceptor
     {
@@ -198,17 +386,26 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         public bool DisposedAfterCommit { get; private set; }
         public bool ValidatedAfterSqlSave { get; private set; }
         public bool FailLease { get; init; }
+        public Func<Task>? DuringModel { get; init; }
         public Func<Task>? DuringInference { get; init; }
+        public CancellationToken ModelCancellation { get; private set; }
+        public CancellationToken InferenceCancellation { get; private set; }
+        public CancellationToken LifetimeToken { get; init; }
         private Guid interactionId;
 
-        public Task<AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new AiSelectedModel("synthetic-provider", "synthetic-model", [AiCapability.Text, AiCapability.StructuredOutput]));
+        public async Task<AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken)
+        {
+            ModelCancellation = cancellationToken;
+            if (DuringModel is not null) await DuringModel();
+            return new AiSelectedModel("synthetic-provider", "synthetic-model", [AiCapability.Text, AiCapability.StructuredOutput]);
+        }
 
         public async Task<AiTextResponse> GenerateTextAsync(AiTextRequest request, CancellationToken cancellationToken)
         {
             Assert.True(observer.SnapshotCommitted);
             Assert.Null(database.Database.CurrentTransaction);
             Assert.False(observer.LeaseActive);
+            InferenceCancellation = cancellationToken;
             Calls++;
             var context = JsonSerializer.Deserialize<InteractionAnalysisContext>(request.Input, AiContextBuilder.JsonOptions)
                 ?? throw new InvalidOperationException();
@@ -219,7 +416,10 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
             {
                 SuggestedProfileUpdates = [new ProposedUpdate(person, "Notes", "Proposed notes"), new ProposedUpdate(person, "Description", "Proposed description")]
             };
-            return new(JsonSerializer.Serialize(result, AiContextBuilder.JsonOptions), "synthetic-provider", "synthetic-model", null);
+            return new(JsonSerializer.Serialize(result, AiContextBuilder.JsonOptions), "synthetic-provider", "synthetic-model", null)
+            {
+                LifetimeCancellationToken = LifetimeToken
+            };
         }
 
         public Task ValidateExecutionAsync(AiTextResponse result, CancellationToken cancellationToken)

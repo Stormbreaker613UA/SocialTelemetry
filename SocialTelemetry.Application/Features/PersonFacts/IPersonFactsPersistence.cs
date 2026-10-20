@@ -11,4 +11,3 @@ public interface IPersonFactsPersistence
     Task SaveFactAsync(PersonFact fact, CancellationToken cancellationToken);
     Task DeleteFactAsync(PersonFact fact, CancellationToken cancellationToken);
 }
-

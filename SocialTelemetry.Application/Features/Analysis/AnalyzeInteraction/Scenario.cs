@@ -17,10 +17,15 @@ public sealed class Scenario(IAnalysisPersistence persistence, AiContextBuilder 
     public async Task<Result> ExecuteAsync(Input input, CancellationToken cancellationToken)
     {
         var owner = operation.RequireOwner();
+        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, operation.Lifetime);
+        cancellationToken = operationCancellation.Token;
+        cancellationToken.ThrowIfCancellationRequested();
         // The specific port commits/disposes its Serializable snapshot before inference.
         var built = await persistence.SnapshotAsync(
             token => contextBuilder.BuildAsync(input.InteractionId, input.UserQuestion, input.AttachmentIds, token), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         var selected = await aiClient.GetSelectedModelAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!selected.Supports(AiCapability.Text) || !selected.Supports(AiCapability.StructuredOutput) ||
             (built.Images.Count > 0 && !selected.Supports(AiCapability.Vision)))
             throw new AiProviderException(AiFailure.CapabilityMissing);
