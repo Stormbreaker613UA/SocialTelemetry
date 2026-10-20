@@ -18,7 +18,13 @@ foreach ($file in @($tools.Ffmpeg, $tools.Whisper, $tools.Model)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw 'Configured STT file is missing.' }
 }
 $runId = [Guid]::NewGuid().ToString('N')
-$runRoot = Join-Path $ToolsDirectory "smoke\$Provider-$runId"
+$artifactRoot = Join-Path $repository '.local-stt'
+$smokeParent = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'smoke'))
+$runRoot = [IO.Path]::GetFullPath((Join-Path $smokeParent "$Provider-$runId"))
+for ($ancestor=[IO.DirectoryInfo]::new($smokeParent); $ancestor; $ancestor=$ancestor.Parent) {
+    if ($ancestor.Exists -and ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Smoke root cannot traverse a linked directory.' }
+}
+if ([IO.Path]::GetDirectoryName($runRoot) -ne $smokeParent -or (Test-Path -LiteralPath $runRoot)) { throw 'Unexpected or reused smoke root.' }
 New-Item -ItemType Directory -Path $runRoot | Out-Null
 $fixture = Join-Path $runRoot 'fixture'
 New-Item -ItemType Directory -Path $fixture | Out-Null
@@ -26,7 +32,17 @@ $reference = 'On Saturday, Alex and I watched a film. We agreed to meet again ne
 $apiDirectory = Join-Path $repository 'SocialTelemetry.Api'
 $apiDll = Join-Path $apiDirectory 'bin\Debug\net10.0\SocialTelemetry.Api.dll'
 if (-not (Test-Path -LiteralPath $apiDll)) { throw 'Build SocialTelemetry.slnx before running the smoke.' }
-$profileId = [Guid]::NewGuid().ToString()
+$sourceRevision = (& git -C $repository rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Cannot establish source revision.' }
+$binaryHashes = [ordered]@{}
+foreach ($assembly in @('Api','Application','Domain','Infrastructure')) {
+    $binary = Join-Path (Split-Path -Parent $apiDll) "SocialTelemetry.$assembly.dll"
+    if (-not (Test-Path -LiteralPath $binary -PathType Leaf) -or
+        [Diagnostics.FileVersionInfo]::GetVersionInfo($binary).ProductVersion -notlike "*$sourceRevision*") { throw 'Fresh current-revision binaries are required; do not reuse pre-migration output.' }
+    $binaryHashes[$assembly] = (Get-FileHash -LiteralPath $binary).Hash
+}
+$profileId = $null
+$profileVersion = $null
 $containerId = $null
 $appProcess = $null
 $interactionId = $null
@@ -56,6 +72,10 @@ function Invoke-SmokeApi([string]$Method, [string]$Path, $Body = $null, $Content
         if ($null -ne $Body) {
             $request.Content = [Net.Http.StringContent]::new(($Body | ConvertTo-Json -Depth 8 -Compress), [Text.Encoding]::UTF8, 'application/json')
         } elseif ($null -ne $Content) { $request.Content = $Content }
+        if ($script:profileId -and $Path -notlike '/local-profiles*') {
+            $request.Headers.Add('X-SocialTelemetry-ProfileId', $script:profileId)
+            $request.Headers.Add('X-SocialTelemetry-ProfileVersion', $script:profileVersion)
+        }
         $response = $http.SendAsync($request).GetAwaiter().GetResult()
         try {
             $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -85,12 +105,18 @@ function Assert-NoTemporaryExecution {
 function Start-SmokeHost([bool]$WithModel = $true) {
     Set-SmokeEnvironment 'WhisperCpp__ModelFile' $(if ($WithModel) { $tools.Model } else { Join-Path $runRoot 'missing-model.bin' })
     $suffix = if ($WithModel) { 'configured' } else { 'missing-model' }
-    $script:appProcess = Start-Process -FilePath 'dotnet.exe' -ArgumentList @($apiDll, '--urls', $script:baseUri) -WorkingDirectory $apiDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runRoot "$suffix.stdout.log") -RedirectStandardError (Join-Path $runRoot "$suffix.stderr.log")
+    $script:appProcess = Start-Process -FilePath 'dotnet.exe' -ArgumentList @(('"' + $apiDll + '"'), '--urls', $script:baseUri) -WorkingDirectory $apiDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runRoot "$suffix.stdout.log") -RedirectStandardError (Join-Path $runRoot "$suffix.stderr.log")
+    $null = $script:appProcess.Handle
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
         if ($appProcess.HasExited) { throw 'Smoke API exited during startup; inspect the private run directory.' }
         try {
-            $response = Invoke-SmokeApi 'GET' '/user-profile'
-            if ($response.Status -eq 200) { return }
+            $response = Invoke-SmokeApi 'GET' '/local-profiles'
+            if ($response.Status -eq 200 -and $response.Body.version) {
+                $port = ([uri]$script:baseUri).Port
+                $listeners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop)
+                Assert-Smoke ($listeners.Count -gt 0 -and @($listeners | Where-Object { $_.OwningProcess -ne $appProcess.Id }).Count -eq 0) 'API listener is not the retained owned process.'
+                return
+            }
         } catch { }
         Start-Sleep -Milliseconds 500
     }
@@ -99,15 +125,16 @@ function Start-SmokeHost([bool]$WithModel = $true) {
 
 function Stop-SmokeHost {
     if ($appProcess -and -not $appProcess.HasExited) {
-        Stop-Process -Id $appProcess.Id
-        $appProcess.WaitForExit()
+        $appProcess.Kill()
+        Assert-Smoke ($appProcess.WaitForExit(10000)) 'Owned API did not exit.'
     }
+    if ($appProcess) { $appProcess.Dispose() }
     $script:appProcess = $null
 }
 
 function Complete-SmokeArtifacts([string]$Root) {
     $absoluteRoot = [IO.Path]::GetFullPath($Root)
-    $smokeRoot = [IO.Path]::GetFullPath((Join-Path $ToolsDirectory 'smoke'))
+    $smokeRoot = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'smoke'))
     $name = [IO.Path]::GetFileName($absoluteRoot)
     Assert-Smoke ([IO.Path]::GetDirectoryName($absoluteRoot) -eq $smokeRoot -and $name -match '^(Sqlite|PostgreSql)-[a-f0-9]{32}$') 'Unexpected cleanup directory.'
     $directory = [IO.DirectoryInfo]::new($absoluteRoot)
@@ -115,9 +142,13 @@ function Complete-SmokeArtifacts([string]$Root) {
         Assert-Smoke (-not ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'Smoke cleanup cannot follow a linked directory.'
         $directory = $directory.Parent
     }
+    Assert-Smoke (@(Get-ChildItem -LiteralPath $absoluteRoot -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -eq 0) 'Cleanup cannot follow linked children.'
     Assert-Smoke ((Get-Content -LiteralPath (Join-Path $absoluteRoot 'result.json') -Raw | ConvertFrom-Json).status -eq 'PASS') 'Unsuccessful smoke fixtures must be retained for diagnosis.'
-    $evidenceRoot = Join-Path $ToolsDirectory "smoke-evidence\$name"
-    New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+    $evidenceRoot = Join-Path $artifactRoot "smoke-evidence\$name"
+    for ($ancestor=[IO.DirectoryInfo]::new($evidenceRoot); $ancestor; $ancestor=$ancestor.Parent) {
+        Assert-Smoke (-not ($ancestor.Exists -and ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint))) 'Linked evidence destination.'
+    }
+    New-Item -ItemType Directory -Path $evidenceRoot | Out-Null
     foreach ($file in Get-ChildItem -LiteralPath $absoluteRoot -File | Where-Object { $_.Name -eq 'result.json' -or $_.Extension -eq '.log' }) {
         $destination = Join-Path $evidenceRoot $file.Name
         Copy-Item -LiteralPath $file.FullName -Destination $destination
@@ -189,9 +220,14 @@ try {
     Set-SmokeEnvironment 'WhisperCpp__ModelId' $tools.ModelId
     Set-SmokeEnvironment 'WhisperCpp__TemporaryDirectory' 'transcription-temp'
     Set-SmokeEnvironment 'ConnectionStrings__Default' ''
+    Set-SmokeEnvironment 'ChatGpt__CallbackUri' ($script:baseUri + '/ai-connection/chatgpt/callback')
+    Set-SmokeEnvironment 'Observability__OtlpEnabled' 'false'
+    foreach ($setting in @('ASPNETCORE_HTTPS_PORT','ASPNETCORE_HTTPS_PORTS','HTTPS_PORT')) { Set-SmokeEnvironment $setting '' }
 
     if ($Provider -eq 'PostgreSql') {
-        $containerId = (& docker run --detach --name "socialtelemetry-audio-smoke-$runId" --label "socialtelemetry.audio-smoke=$runId" --publish '127.0.0.1::5432' --tmpfs '/var/lib/postgresql' --env 'POSTGRES_DB=smoke' --env 'POSTGRES_USER=smoke' --env 'POSTGRES_PASSWORD=disposable-smoke' $PostgresImage).Trim()
+        & docker image inspect $PostgresImage *> $null
+        Assert-Smoke ($LASTEXITCODE -eq 0) 'Required PostgreSQL image is not cached; no pull was attempted.'
+        $containerId = (& docker run --pull=never --detach --name "socialtelemetry-audio-smoke-$runId" --label "socialtelemetry.audio-smoke=$runId" --publish '127.0.0.1::5432' --tmpfs '/var/lib/postgresql' --env 'POSTGRES_DB=smoke' --env 'POSTGRES_USER=smoke' --env 'POSTGRES_PASSWORD=disposable-smoke' $PostgresImage).Trim()
         Assert-Smoke ($LASTEXITCODE -eq 0) 'Disposable PostgreSQL container did not start.'
         $portMap = (& docker inspect $containerId | ConvertFrom-Json)[0].NetworkSettings.Ports.'5432/tcp'[0].HostPort
         Set-SmokeEnvironment 'ConnectionStrings__Default' "Host=127.0.0.1;Port=$portMap;Database=smoke;Username=smoke;Password=disposable-smoke"
@@ -205,19 +241,17 @@ try {
     }
     & dotnet ef database update --project (Join-Path $repository 'SocialTelemetry.Infrastructure') --startup-project $apiDirectory --no-build -- --provider $Provider *> (Join-Path $runRoot 'migrations.log')
     Assert-Smoke ($LASTEXITCODE -eq 0) 'Provider migrations failed; inspect the run directory.'
-    # Profile creation is not exposed by the current API. Seed only this isolated fixture.
-    if ($Provider -eq 'Sqlite') {
-        @'
-import sqlite3, sys
-with sqlite3.connect(sys.argv[1]) as db:
-    db.execute('INSERT INTO "UserProfiles" ("Id", "DisplayName") VALUES (?, ?)', (sys.argv[2].upper(), 'Synthetic audio smoke'))
-'@ | & python - (Join-Path $runRoot 'smoke.db') $profileId
-        Assert-Smoke ($LASTEXITCODE -eq 0) 'SQLite fixture seed failed.'
-    } else {
-        "INSERT INTO `"UserProfiles`" (`"Id`", `"DisplayName`") VALUES ('$profileId', 'Synthetic audio smoke');" | & docker exec -i $containerId psql -U smoke -d smoke -v ON_ERROR_STOP=1 *> (Join-Path $runRoot 'seed.log')
-        Assert-Smoke ($LASTEXITCODE -eq 0) 'PostgreSQL fixture seed failed.'
-    }
     Start-SmokeHost
+    $selection = Invoke-SmokeApi 'GET' '/local-profiles'
+    Assert-Smoke ($selection.Status -eq 200 -and @($selection.Body.profiles).Count -eq 0 -and -not $selection.Body.userProfileId) 'Expected a fresh isolated profile store.'
+    $created = Invoke-SmokeApi 'POST' '/local-profiles' @{displayName='Synthetic audio smoke'; expectedVersion=$selection.Body.version}
+    Assert-Smoke ($created.Status -eq 201) 'Local profile creation failed.'
+    $selection = Invoke-SmokeApi 'GET' '/local-profiles'
+    $selected = Invoke-SmokeApi 'PUT' '/local-profiles/current' @{userProfileId=$created.Body.id; expectedVersion=$selection.Body.version}
+    Assert-Smoke ($selected.Status -eq 200 -and $selected.Body.userProfileId -eq $created.Body.id) 'Profile selection failed.'
+    $script:profileId = [string]$selected.Body.userProfileId
+    $script:profileVersion = [string]$selected.Body.version
+    Assert-Smoke ((Invoke-SmokeApi 'GET' '/user-profile').Body.id -eq $profileId) 'Selected journal identity mismatch.'
     $person = Invoke-SmokeApi 'POST' '/people' @{userProfileId=$profileId; displayName='Synthetic Alex'; relationshipContext=0}
     Assert-Smoke ($person.Status -eq 201) 'Person creation failed.'
     $personId = $person.Body.id
@@ -278,6 +312,9 @@ with sqlite3.connect(sys.argv[1]) as db:
     $missingAttachment = Add-SmokeAudio (Join-Path $fixture 'sample.wav') 'audio/wav'
     Stop-SmokeHost
     Start-SmokeHost $false
+    $restarted = Invoke-SmokeApi 'GET' '/local-profiles'
+    Assert-Smoke ($restarted.Body.userProfileId -eq $profileId -and $restarted.Body.version -eq $profileVersion) 'Restart lost the persisted profile selection.'
+    Assert-Smoke ((Invoke-SmokeApi 'GET' '/user-profile').Body.id -eq $profileId) 'Restart owner headers no longer match.'
     $missingPrefix = "/interactions/$interactionId/attachments/$($missingAttachment.id)"
     $missing = Invoke-SmokeApi 'POST' "$missingPrefix/transcribe"
     Assert-Smoke ($missing.Status -eq 503 -and $missing.Body.code -eq 'ConfigurationRequired') 'Missing model did not produce safe ConfigurationRequired.'
@@ -298,17 +335,24 @@ with sqlite3.connect(sys.argv[1]) as db:
     Assert-Smoke ($remainingMedia.Count -eq 0) 'Synthetic media remains after deletion.'
     Write-Output "$Provider corrupt/missing-config/no-transcript/preservation/restart/deletion PASS"
     $limits = if ($FixtureManifest) { 'One synthetic WAV per language; quality comparison is separate from lifecycle PASS. Windows CPU backend, not noisy/live/multi-speaker or real Linux inference.' } else { 'English synthetic speech; Windows CPU backend, not a Linux native runtime or broad multilingual quality test.' }
-    @{provider=$Provider; status='PASS'; model=$tools.ModelId; formats=$observations; limits=$limits} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runRoot 'result.json') -Encoding UTF8
+    @{provider=$Provider; status='PASS'; sourceRevision=$sourceRevision; binaries=$binaryHashes; model=$tools.ModelId; profileId=$profileId; profileVersion=$profileVersion; formats=$observations; limits=$limits} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runRoot 'result.json') -Encoding UTF8
 } finally {
-    Stop-SmokeHost
-    if ($http) { $http.Dispose() }
-    if ($containerId) {
-        $inspection = & docker inspect $containerId | ConvertFrom-Json
-        if ($LASTEXITCODE -eq 0 -and $inspection[0].Config.Labels.'socialtelemetry.audio-smoke' -eq $runId) {
+    $cleanupFailed = $false
+    try { Stop-SmokeHost } catch { $cleanupFailed=$true }
+    try { if ($http) { $http.Dispose() } } catch { $cleanupFailed=$true }
+    try {
+        if ($containerId) {
+            $inspection = & docker inspect $containerId | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $inspection[0].Config.Labels.'socialtelemetry.audio-smoke' -ne $runId) { throw 'Container ownership cannot be confirmed.' }
             & docker rm --force $containerId | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Owned database container cleanup failed.' }
         }
-    }
+    } catch { $cleanupFailed=$true }
     foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process') }
+    if ($cleanupFailed) {
+        @{status='FAIL'; category='OwnedCleanupFailed'; provider=$Provider} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runRoot 'result.json') -Encoding UTF8
+        throw 'Owned smoke cleanup could not be confirmed; isolated diagnostics retained.'
+    }
     if (-not $KeepFixtures -and (Test-Path -LiteralPath (Join-Path $runRoot 'result.json'))) {
         Complete-SmokeArtifacts $runRoot
     } else { Write-Output "Smoke artifacts: $runRoot" }
