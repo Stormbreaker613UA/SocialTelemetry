@@ -958,6 +958,8 @@ AudioTranscription
 
 A selected provider/model that lacks a required capability should fail clearly and early (for example: a screenshot cannot be analyzed by a text-only local model). Do not silently drop evidence.
 
+Capability information must distinguish Supported, Unsupported and Unknown; absence of confirmation must not be presented as confirmed Text-only support. The ChatGPT Plan catalog currently documents model availability/choice but no capability fields. The bounded ChatGPT improvement therefore uses validated adapter-owned compatibility profiles in ordinary configuration until documented metadata provides a reliable source. Keep exact provider model IDs and evidence for presets outside Application/business code; configuration is a maintained compatibility assertion, not automatic discovery or proof that an arbitrary model supports a feature. Expose neutral capability information additively with the existing model catalog, retain user/per-profile model selection, and permit inference only when every required capability is confirmed Supported. Unknown must fail safely before provider submission; no prefix-based guessing, automatic probe calls or discarded evidence. This changes capability reporting/compatibility, not the credential/ownership/lifetime protections.
+
 The existing `IAiClient` / provider abstraction should remain provider-neutral. `ChatGptPlanAiClient` is one adapter. Do not refactor working code merely to make folder names symmetrical; add additional adapters when they are actually implemented.
 
 Provider-specific integrations may use official SDKs or compatible HTTP APIs internally, but the rest of SocialTelemetry should not depend on those SDK contracts.
@@ -965,6 +967,10 @@ Provider-specific integrations may use official SDKs or compatible HTTP APIs int
 ### Local AI v1 reference path
 
 Local AI is a required v1 path for users with no ChatGPT/paid AI subscription or API key, or who do not want to send private content to a cloud provider. The target is a practical free local baseline demonstrating the complete product workflow, subject to suitable hardware; matching frontier cloud-model quality is not required. After runtimes and models are installed, local analysis/transcription must work offline without a cloud dependency. Initial runtime/model downloads are separate setup steps.
+
+Owner sequencing clarification (2026-10-20): implement the Local AI adapter and verify the real recommended offline baseline during the backend stage, BEFORE production Razor Pages UI, Desktop hosting or packaging. Local AI must not depend on UI completion; those later stages integrate an already working local provider. Optional one-click runtime/model installation remains distribution/first-run work and does not delay the backend provider. This supersedes the historical UI-before-Local-AI order in section 31, without changing the accepted provider-neutral boundary or model/runtime scope.
+
+The owner's subsequent explicit order is: synchronize the unified plan -> bounded ChatGPT integration improvement -> complete optional local profile/account protection -> Favorites/Groups -> Local AI -> remaining AI interaction workflows -> product UI/Desktop. See the current execution order in section 33. Existing analysis, transcription and migration checks are completed foundations, not work to repeat.
 
 The accepted default/recommended analysis model is **`Qwen3-VL-8B-Instruct`**, with **`Q6_K`** quantization. This reference baseline is intended for text, screenshots/images, social-context interpretation, and structured SocialTelemetry analysis output. Verify those capabilities and the product result contract when implementing/testing the adapter.
 
@@ -1438,6 +1444,8 @@ Future remote-server desktop access and authenticated multi-user hosting are pos
 
 Swagger remains useful for development, but v1 is no longer an API-only product. The user-facing application will use Razor Pages. In local/desktop mode the Razor UI is hosted inside WebView2; in server/development mode the same UI is available through a normal browser.
 
+Owner profile/mode visibility clarification (2026-10-21): the entry/profile picker and active workspace must clearly show the current operating mode and profile source. V1 identifies its profiles as Local and shows the active Local mode. When Desktop Remote/Web server access is implemented, distinguish server profiles and identify the selected server with a safe user-facing label; do not mix local and server profiles into an indistinguishable list. Optional password protection/Account linkage is separate from source: a protected local profile is still Local, and selecting one does not authenticate to a server. Reflect the actual host/connection mode, not a guessed mode derived from an Account FK or a new domain profile-kind flag. This is UI/contract direction for the existing profile work, not authorization to implement server/Remote mode, alter ownership or edit the prototype now.
+
 Main flow:
 
 ```text
@@ -1589,6 +1597,8 @@ AI provider independence is a cross-cutting requirement for every AI pass. Imple
 
 The Qwen/Whisper reference choices concretize already-planned v1 work; they add no subsystem or roadmap reordering. The sequence remains 7.2 AnalyzeInteraction → 7.2.1 audio ingestion/persisted transcription → later Local AI provider implementation → later one-click setup during desktop/installer work. See sections 19, 6, and 30 for those accepted targets; this note does not advance implementation status.
 
+The owner sequencing clarification dated 2026-10-20 in section 19 supersedes the historical placement of Local AI after Razor Pages in the numbered list above. Keep that list as history, not the current execution order.
+
 ---
 
 ## 32. Privacy / Context Boundaries
@@ -1613,6 +1623,20 @@ Local SQLite and attachment files are not automatically equivalent to full appli
 ## 33. V1 Scope Freeze and Planned Extensions
 
 The product scope should now be treated as stable enough to continue implementation without repeatedly redesigning the foundation. New ideas may be recorded, but they should not enter v1 unless they close a concrete usability, data-safety, or architecture blocker.
+
+### Current execution order (owner-approved 2026-10-20)
+
+1. Synchronize this unified plan, CURRENT and existing Tracker dependencies.
+2. Improve the existing ChatGPT integration in a bounded pass: model choice already exists; address capability information/compatibility and concrete transport gaps without guessing support, bypassing validation or changing profile/credential protection.
+3. Complete the integrated optional local password/session/remembered-access/offline-recovery pass, closing the current local profile/account scope. Existing Account foundation and profile/AI isolation are not reimplemented. Public registration, server authentication and UI remain outside this backend pass.
+4. Implement profile-owned Favorites and Groups with the accepted ownership, archive and membership rules.
+5. Implement the Local AI adapter and verify the real recommended offline baseline, including text, vision, structured results and the separate persisted transcription path.
+6. Complete the remaining AI interaction workflows: saved analysis retrieval/history, suggestion Accept/Edit+Accept/Reject, analysis Follow-up, Person Advisor and the separately scoped General Advisor with persistent create/switch/rename/delete conversations. These use the established provider-neutral boundary and bounded owned context; they do not load all journal history by default. General Advisor conversations are distinct from Person Advisor and analysis Follow-up.
+7. Stabilize the completed backend/AI workflows, then implement the shared production Razor Pages UI.
+8. Implement and verify the thin Desktop host, then distribution, optional one-click runtime/model setup and the manual updater.
+9. Complete release verification, architecture documentation and owner acceptance before publishing v1.
+
+This sequence supersedes the historical implementation order in section 31 and stale Tracker prerequisites. It is a scheduling decision, not evidence of implementation/test completion, a five-minute estimate, permission for unrelated features, or an automatic assignment of all later stages. Each implementation pass retains its concrete scope, meaningful verification and separately coordinated review/publication.
 
 ### Required in v1
 

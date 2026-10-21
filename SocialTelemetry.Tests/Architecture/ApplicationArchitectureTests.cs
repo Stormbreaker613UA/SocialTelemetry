@@ -36,6 +36,7 @@ public sealed class ApplicationArchitectureTests
         Type[] representativeTypes =
         [
             typeof(IAiClient), typeof(IAiExecutionLease), typeof(AiSelectedModel), typeof(AiExecutionBinding),
+            typeof(AiModelCapabilities), typeof(AiCapabilitySupport),
             typeof(AiTextRequest), typeof(AiTextResponse), typeof(InteractionAnalysisContext),
             typeof(InteractionAnalysisResult), typeof(SuggestedProfileUpdate), typeof(ISpeechToTextClient),
             typeof(SpeechToTextResult), typeof(IAttachmentStorage), typeof(IFileStorage),

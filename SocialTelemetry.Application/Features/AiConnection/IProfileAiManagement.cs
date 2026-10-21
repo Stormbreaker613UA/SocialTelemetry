@@ -1,9 +1,14 @@
+using SocialTelemetry.Application.Contracts.AI.Models;
+
 namespace SocialTelemetry.Application.Features.AiConnection;
 
 public sealed record ConnectionIdentity(Guid Id, string Label, bool Connected);
 public sealed record ConnectionStatus(bool Connected, bool InferencePermissionAvailable, Guid? ConnectionId,
     string? SelectedModel, IReadOnlyList<ConnectionIdentity> Accounts);
-public sealed record ModelIdentity(string Id, string DisplayName);
+public sealed record ModelIdentity(string Id, string DisplayName)
+{
+    public AiModelCapabilities CapabilitySupport { get; init; } = new();
+}
 public sealed record ModelCatalog(IReadOnlyList<ModelIdentity> Models, string? SelectedModel, bool SelectedModelAvailable);
 public sealed record DisconnectResult(bool RemoteRevocationConfirmed, string Message);
 

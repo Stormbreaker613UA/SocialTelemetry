@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -40,7 +41,8 @@ internal sealed class ChatGptTestApp : IDisposable
     public LocalProfileBinding ProfileBinding { get; private set; } = null!;
     public OwnedConnectionFixture OwnedConnection => new(this);
 
-    public ChatGptTestApp(ChatGptTestApp? sharedStorage = null, Action<ChatGptOptions>? configure = null)
+    public ChatGptTestApp(ChatGptTestApp? sharedStorage = null, Action<ChatGptOptions>? configure = null,
+        Dictionary<string, string?>? configuration = null)
     {
         ownsDirectory = sharedStorage is null;
         DataDirectory = sharedStorage?.DataDirectory ?? Path.Combine(Path.GetTempPath(), "SocialTelemetry.Tests", "ChatGpt", Guid.NewGuid().ToString("N"));
@@ -48,6 +50,8 @@ internal sealed class ChatGptTestApp : IDisposable
         Server = sharedStorage?.Server ?? new FakeChatGptServer(Browser);
         application = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            if (configuration is not null)
+                builder.ConfigureAppConfiguration((_, settings) => settings.AddInMemoryCollection(configuration));
             builder.UseSetting("ConnectionStrings:Default", "Host=localhost;Database=unused");
             builder.UseSetting("Persistence:Provider", "Sqlite");
             builder.UseSetting("ApplicationData:RootDirectory", DataDirectory);
@@ -62,6 +66,8 @@ internal sealed class ChatGptTestApp : IDisposable
                 services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(ProfileAvatarReconciliationService)));
                 services.Configure<ChatGptOptions>(options => options.DataDirectory = DataDirectory);
+                services.Configure<ChatGptOptions>(options => options.CompatibilityProfiles.Add(new()
+                    { ModelId = "model-a", Text = SocialTelemetry.Application.Contracts.AI.Models.AiCapabilitySupport.Supported }));
                 if (configure is not null) services.Configure(configure);
                 services.RemoveAll<ISystemBrowser>();
                 services.AddSingleton<ISystemBrowser>(Browser);
@@ -171,7 +177,8 @@ internal sealed class ChatGptTestApp : IDisposable
             if (operation.Binding is null)
                 operation.Bind(app.ProfileBinding, services.GetRequiredService<LocalProfileLifetimes>().Capture(app.ProfileBinding.SelectionVersion));
             return new ChatGptPlanAiClient(services.GetRequiredService<ChatGptConnection>(),
-                services.GetRequiredService<ChatGptHttpClient>(), services.GetRequiredService<ProfileAiAccess>());
+                services.GetRequiredService<ChatGptHttpClient>(), services.GetRequiredService<ProfileAiAccess>(),
+                services.GetRequiredService<ChatGptCapabilityResolver>());
         }
         public Task<SocialTelemetry.Application.Contracts.AI.Models.AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) => Resolve().GetSelectedModelAsync(cancellationToken);
         public Task<SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse> GenerateTextAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextRequest request, CancellationToken cancellationToken) => Resolve().GenerateTextAsync(request, cancellationToken);

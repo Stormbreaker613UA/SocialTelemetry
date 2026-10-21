@@ -3,7 +3,7 @@ using SocialTelemetry.Application.Features.AiConnection;
 namespace SocialTelemetry.Infrastructure.AI;
 
 // Provider DTOs terminate here; session/generation/file coordination stays in its existing adapter.
-public sealed class ProfileAiManagement(ProfileAiAccess access) : IProfileAiManagement
+public sealed class ProfileAiManagement(ProfileAiAccess access, ChatGptCapabilityResolver capabilityResolver) : IProfileAiManagement
 {
     public Task BeginAsync(Guid? connectionId, bool newAccount, bool requestConsent, CancellationToken cancellationToken) =>
         access.BeginAsync(connectionId, newAccount, requestConsent, cancellationToken);
@@ -20,7 +20,8 @@ public sealed class ProfileAiManagement(ProfileAiAccess access) : IProfileAiMana
     public async Task<ModelCatalog> ModelsAsync(CancellationToken cancellationToken)
     {
         var catalog = await access.ModelsAsync(cancellationToken);
-        return new ModelCatalog(catalog.Models.Select(model => new ModelIdentity(model.Id, model.DisplayName)).ToArray(),
+        return new ModelCatalog(catalog.Models.Select(model => new ModelIdentity(model.Id, model.DisplayName)
+            { CapabilitySupport = capabilityResolver.Resolve(model.Id) }).ToArray(),
             catalog.SelectedModel, catalog.SelectedModelAvailable);
     }
 

@@ -67,8 +67,9 @@ public static class InfrastructureRegistration
             .ValidateOnStart();
         services.AddSingleton<ApplicationPaths>();
         services.AddOptions<ChatGptOptions>()
-            .BindConfiguration("ChatGpt")
+            .Configure<IConfiguration>(ChatGptOptions.Bind)
             .ValidateDataAnnotations()
+            .Validate(options => options.HasValidCompatibilityProfiles(), "ChatGpt compatibility profiles require unique exact model IDs and valid capability states.")
             .Validate(options => options.HasConsistentTiming(), "ChatGpt lock retry delay cannot exceed its timeout.")
             .Validate(options => options.IsValid(), "ChatGpt requires an HTTP 127.0.0.1 callback with the fixed callback path and an absolute local data directory.")
             .ValidateOnStart();
@@ -120,6 +121,7 @@ public static class InfrastructureRegistration
                 PooledConnectionLifetime = services.GetRequiredService<IOptions<ChatGptOptions>>().Value.PooledConnectionLifetime
             })
             .RemoveAllLoggers();
+        services.AddSingleton<ChatGptCapabilityResolver>();
         services.AddScoped<IAiClient, ChatGptPlanAiClient>();
         services.AddKeyedSingleton<IFileStorage>("attachments", (services, _) =>
         {

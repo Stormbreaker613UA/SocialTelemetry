@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
@@ -489,6 +490,67 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Live_catalog_new_model_remains_selectable_and_owned_while_unknown_capabilities_block_inference(bool configured)
+    {
+        var owner = await SeedAsync();
+        await fixture.SelectProfileAsync(owner.Owner);
+        var configuration = new Dictionary<string, string?>
+        {
+            ["ChatGpt:CompatibilityProfiles:0:ModelId"] = "provider-new-model",
+            ["ChatGpt:CompatibilityProfiles:0:Text"] = "Supported"
+        };
+        if (configured)
+        {
+            configuration["ChatGpt:CompatibilityProfiles:0:Vision"] = "Supported";
+            configuration["ChatGpt:CompatibilityProfiles:0:StructuredOutput"] = "Supported";
+        }
+        using var host = Host(configuration: configuration);
+        using var client = host.Client();
+        await AdoptAsync(client, await LegacyAsync(host));
+        host.Server.ModelsBody = """{"models":[{"slug":"provider-new-model","display_name":"Provider new model","visibility":"list","supports_json_schema":true},{"slug":"gpt-5.6-sol","display_name":"Existing","visibility":"list"}]}""";
+        var catalog = await client.GetFromJsonAsync<JsonElement>("/ai-connection/chatgpt/models", Cancellation);
+        Assert.Equal(new[] { "provider-new-model", "gpt-5.6-sol" }, catalog.GetProperty("models").EnumerateArray().Select(model => model.GetProperty("id").GetString()));
+        var capabilities = catalog.GetProperty("models")[0].GetProperty("capabilitySupport");
+        Assert.Equal("Supported", capabilities.GetProperty("text").GetString());
+        Assert.Equal(configured ? "Supported" : "Unknown", capabilities.GetProperty("vision").GetString());
+        Assert.Equal(configured ? "Supported" : "Unknown", capabilities.GetProperty("structuredOutput").GetString());
+        using (var selection = await client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = "provider-new-model" }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, selection.StatusCode);
+        await using (var scope = host.Application.Services.CreateAsyncScope())
+        {
+            await BindCurrentOperationAsync(scope.ServiceProvider, client);
+            var selected = await scope.ServiceProvider.GetRequiredService<IAiClient>().GetSelectedModelAsync(Cancellation);
+            Assert.Equal("provider-new-model", selected.ModelId);
+            Assert.Equal(owner.Owner, selected.Binding?.UserProfileId);
+            Assert.Equal(configured, selected.Supports(AiCapability.StructuredOutput));
+        }
+        host.Server.StreamBody = CompletedResult(owner.Person);
+        using var analysis = await client.PostAsJsonAsync($"/interactions/{owner.Interaction}/analyze", new { }, Cancellation);
+        if (configured)
+        {
+            Assert.Equal(HttpStatusCode.Created, analysis.StatusCode);
+            using var payload = JsonDocument.Parse(host.Server.LastInferenceBody!);
+            Assert.Equal("provider-new-model", payload.RootElement.GetProperty("model").GetString());
+            await AssertStoredAsync(owner, 1);
+        }
+        else
+        {
+            await CodeAsync(analysis, HttpStatusCode.Conflict, "CapabilityMissing");
+            var problem = await analysis.Content.ReadAsStringAsync(Cancellation);
+            Assert.Contains("confirmed support", problem);
+            Assert.Equal(0, host.Server.InferenceCount);
+            Assert.Null(host.Server.LastInferenceBody);
+            await AssertStoredAsync(owner, 0);
+        }
+        Assert.Equal("provider-new-model", (await StatusAsync(client)).SelectedModel);
+        using var restarted = Host(credentialDirectory: host.CredentialDirectory);
+        using var restartedClient = restarted.Client();
+        Assert.Equal("provider-new-model", (await StatusAsync(restartedClient)).SelectedModel);
+    }
+
+    [Theory]
     [InlineData("switch")]
     [InlineData("model")]
     [InlineData("disconnect")]
@@ -503,7 +565,7 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
             services.RemoveAll<IAiClient>();
             services.AddScoped<IAiClient>(provider => new DelayedCompletedClient(new ChatGptPlanAiClient(
                 provider.GetRequiredService<ChatGptConnection>(), provider.GetRequiredService<ChatGptHttpClient>(),
-                provider.GetRequiredService<ProfileAiAccess>()), returned));
+                provider.GetRequiredService<ProfileAiAccess>(), provider.GetRequiredService<ChatGptCapabilityResolver>()), returned));
         });
         using var client = host.Client();
         await AdoptAsync(client, await LegacyAsync(host));
@@ -704,7 +766,8 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
         return new(owner, person.Id, interaction.Id, attachment.Id, fact.Id);
     }
 
-    private TestHost Host(Action<IServiceCollection>? configure = null, string? credentialDirectory = null) => new(fixture, configure, credentialDirectory);
+    private TestHost Host(Action<IServiceCollection>? configure = null, string? credentialDirectory = null,
+        Dictionary<string, string?>? configuration = null) => new(fixture, configure, credentialDirectory, configuration);
     private static async Task<SocialTelemetry.Api.Features.LocalProfiles.Get.Response> CurrentAsync(HttpClient client) =>
         await client.GetFromJsonAsync<SocialTelemetry.Api.Features.LocalProfiles.Get.Response>("/local-profiles", Cancellation) ?? throw new InvalidOperationException();
     private static async Task<ChatGptConnectionStatus> StatusAsync(HttpClient client) =>
@@ -766,7 +829,8 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
         public FakeChatGptServer Server { get; }
         public WebApplicationFactory<Program> Application { get; }
         public string CredentialDirectory { get; }
-        public TestHost(PeopleApiFixture fixture, Action<IServiceCollection>? configure, string? credentialDirectory)
+        public TestHost(PeopleApiFixture fixture, Action<IServiceCollection>? configure, string? credentialDirectory,
+            Dictionary<string, string?>? configuration)
         {
             CredentialDirectory = credentialDirectory ?? Path.GetFullPath(Path.Combine(fixture.AttachmentStorageDirectory, "..", "credentials-" + Guid.NewGuid()));
             Server = new(Browser) { ModelsBody = """{"models":[{"slug":"gpt-5.6-sol","display_name":"First","visibility":"list"},{"slug":"gpt-5.6","display_name":"Second","visibility":"list"}]}""" };
@@ -776,6 +840,10 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
                 services.RemoveAll<ISystemBrowser>(); services.AddSingleton<ISystemBrowser>(Browser);
                 services.AddHttpClient<ChatGptHttpClient>().ConfigurePrimaryHttpMessageHandler(() => Server).RemoveAllLoggers();
                 services.AddSingleton<IStartupFilter>(new Loopback()); configure?.Invoke(services);
+            }).WithWebHostBuilder(builder =>
+            {
+                if (configuration is not null)
+                    builder.ConfigureAppConfiguration((_, settings) => settings.AddInMemoryCollection(configuration));
             });
         }
         public HttpClient Client()

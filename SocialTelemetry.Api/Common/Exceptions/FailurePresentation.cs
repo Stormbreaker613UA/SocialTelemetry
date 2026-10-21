@@ -49,7 +49,7 @@ public static class FailurePresentation
         AiFailure.StaleTranscript => "The transcript no longer matches the selected audio. Provide a source-current transcript and review it before analysis.",
         AiFailure.EvidenceLimitExceeded => "The analysis context or evidence exceeds the supported limits.",
         AiFailure.InvalidEvidenceSelection => "Select only existing attachments belonging to this interaction.",
-        AiFailure.CapabilityMissing => "The selected model does not support a required analysis capability.",
+        AiFailure.CapabilityMissing => "The selected model does not have confirmed support for a required capability.",
         AiFailure.InvalidStructuredResponse => "The structured analysis did not pass validation. No analysis was saved.",
         AiFailure.StaleContext => "The analysis context changed. Run analysis again using current data.",
         AiFailure.ExecutionInvalidated => "The AI connection changed or disconnected. No result was accepted.",
