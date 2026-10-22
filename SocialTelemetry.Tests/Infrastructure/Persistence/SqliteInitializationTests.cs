@@ -105,7 +105,7 @@ public sealed class SqliteInitializationTests
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Persistence:Provider"] = "Sqlite", ["Persistence:SqliteTimeoutSeconds"] = "1",
-                ["ApplicationData:RootDirectory"] = root, ["ConnectionStrings:Default"] = ""
+                ["ApplicationData:RootDirectory"] = root, ["LocalAccess:DataDirectory"] = Path.Combine(root, "local-access"), ["ConnectionStrings:Default"] = ""
             })));
 
     private static SqliteConnection Connection(string file) => new(new SqliteConnectionStringBuilder

@@ -7,6 +7,26 @@ namespace SocialTelemetry.Api.Common.Exceptions;
 // Keep HTTP policy and provider-facing guidance outside the neutral operation failures.
 public static class FailurePresentation
 {
+    public static int StatusCode(LocalAccessFailure failure) => failure switch
+    {
+        LocalAccessFailure.Required or LocalAccessFailure.InvalidCredentials => 401,
+        LocalAccessFailure.LockedOut => 429,
+        LocalAccessFailure.InvalidInput => 400,
+        LocalAccessFailure.SecurityChanged => 409,
+        LocalAccessFailure.LocalRequestRequired => 403,
+        _ => 503
+    };
+
+    public static string Detail(LocalAccessFailure failure) => failure switch
+    {
+        LocalAccessFailure.Required => "Sign in to this local profile before continuing.",
+        LocalAccessFailure.InvalidCredentials => "The supplied local credentials are invalid.",
+        LocalAccessFailure.LockedOut => "Local authentication is temporarily limited. Try again later.",
+        LocalAccessFailure.InvalidInput => "The supplied local access input does not meet the requirements.",
+        LocalAccessFailure.SecurityChanged => "Local access changed. Sign in again before continuing.",
+        LocalAccessFailure.LocalRequestRequired => "A secure same-origin local request is required.",
+        _ => "Local access storage is unavailable."
+    };
     public static int StatusCode(AiFailure failure) => failure switch
     {
         AiFailure.AuthorizationDenied or AiFailure.InvalidCallback or AiFailure.UnsupportedEvidence or

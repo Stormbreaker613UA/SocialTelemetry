@@ -29,6 +29,7 @@ using SocialTelemetry.Infrastructure.Storage;
 using SocialTelemetry.Infrastructure.Transcription;
 using SocialTelemetry.Tests.Features.People;
 using SocialTelemetry.Tests.Infrastructure.AI;
+using SocialTelemetry.Application.Features.LocalAccess;
 
 namespace SocialTelemetry.Tests.Features.Profiles;
 
@@ -36,6 +37,224 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     where TFixture : PeopleApiFixture
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public async Task Bound_callback_checks_cross_host_admission_before_registration_and_after_exchange(bool duringExchange, bool expire, bool expireAfterGuard)
+    {
+        var data = await SeedAsync();
+        // Deliberately withhold maintenance publication on the callback host. The SQL
+        // checks must work even though its captured owner lifetime is still live.
+        var clock = new LocalAccessClock();
+        var publicationRead = new CallbackPublicationRead(() => clock.Advance(TimeSpan.FromDays(14)));
+        void DelayRefresh(IServiceCollection services)
+        {
+            services.AddSingleton<TimeProvider>(clock);
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(publicationRead));
+            foreach (var descriptor in services.Where(service => service.ImplementationType == typeof(LocalAccessExpirationService)).ToArray())
+                services.Remove(descriptor);
+        }
+        using var host = Host(DelayRefresh);
+        using var client = host.Client();
+        using var otherHost = Host(DelayRefresh, host.CredentialDirectory);
+        using var otherClient = otherHost.Client();
+        const string password = "Synthetic-Callback9!";
+        var login = "cross-host-" + Guid.NewGuid().ToString("N");
+        AccessChange enrolled;
+        await using (var enrollment = host.Application.Services.CreateAsyncScope())
+        {
+            var selection = await enrollment.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+            await enrollment.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(data.Owner, selection.Version, Cancellation);
+            enrolled = await enrollment.ServiceProvider.GetRequiredService<ILocalAccessManagement>().EnableAsync(new(login, password), Cancellation);
+        }
+        AccessChange signed;
+        await using (var signing = host.Application.Services.CreateAsyncScope())
+            signed = await signing.ServiceProvider.GetRequiredService<ILocalAccessManagement>()
+                .SignInAsync(new(login, password, data.Owner, enrolled.Selection.Version, true), Cancellation);
+
+        async Task<CancellationToken> BeginAsync(Guid? connectionId)
+        {
+            await using var beginning = host.Application.Services.CreateAsyncScope();
+            beginning.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+            await beginning.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(data.Owner, signed.Selection.Version, Cancellation);
+            await beginning.ServiceProvider.GetRequiredService<ProfileAiAccess>().BeginAsync(connectionId, connectionId is null, false, Cancellation);
+            return beginning.ServiceProvider.GetRequiredService<LocalProfileOperation>().Lifetime;
+        }
+        async Task<ChatGptConnectionStatus> CompleteAsync()
+        {
+            var callback = QueryHelpers.ParseQuery(new Uri("http://127.0.0.1" + host.Callback()).Query);
+            await using var completing = host.Application.Services.CreateAsyncScope();
+            return await completing.ServiceProvider.GetRequiredService<ProfileAiAccess>().CompleteAsync(
+                callback["state"], callback["code"], callback["client_id"], null, Cancellation);
+        }
+
+        Guid? connectionId = null;
+        CancellationToken previousSessionLifetime = default;
+        Guid? previousSession = null;
+        var connection = host.Application.Services.GetRequiredService<ChatGptConnection>();
+        if (duringExchange)
+        {
+            await BeginAsync(null);
+            var connected = await CompleteAsync();
+            Assert.True(connected.Connected);
+            connectionId = Assert.IsType<Guid>(connected.ConnectionId);
+            var session = await connection.GetOwnedInferenceSessionAsync(data.Owner, connectionId.Value, "gpt-5.6-sol", Cancellation);
+            previousSession = session.SessionId;
+            previousSessionLifetime = session.LifetimeCancellationToken;
+        }
+        var ownerLifetime = await BeginAsync(connectionId);
+        var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+        ChatGptState before;
+        using (await store.LockAsync(Cancellation)) before = await store.ReadAsync(Cancellation);
+        var credentialFile = Path.Combine(host.CredentialDirectory, "chatgpt-state.bin");
+        var beforeFileHash = SHA256.HashData(await File.ReadAllBytesAsync(credentialFile, Cancellation));
+        Guid pendingGeneration;
+        await using (var beforeCallback = fixture.CreateAsyncScope())
+            pendingGeneration = await beforeCallback.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>()
+                .Where(selection => selection.UserProfileId == data.Owner).Select(selection => selection.Generation).SingleAsync(Cancellation);
+        var exchangeCount = host.Server.ExchangeCount;
+        var exchangeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseExchange = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (duringExchange)
+        {
+            host.Server.AuthorizationExchangeEntered = exchangeEntered;
+            host.Server.ContinueAuthorizationExchange = releaseExchange;
+        }
+        Task<ChatGptConnectionStatus>? completion = null;
+        if (duringExchange)
+        {
+            completion = CompleteAsync();
+            await exchangeEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
+        }
+        try
+        {
+            await using var revoking = otherHost.Application.Services.CreateAsyncScope();
+            if (expireAfterGuard)
+            {
+                // The final SQL guard has admitted the operation; advance time only
+                // after its selection query, immediately before credential publication.
+                publicationRead.Armed = true;
+            }
+            else if (expire)
+            {
+                var database = revoking.ServiceProvider.GetRequiredService<AppDbContext>();
+                await using var transaction = await database.Database.BeginTransactionAsync(Cancellation);
+                await database.LockLocalProfileSelectionAsync(Cancellation);
+                var grantId = (await database.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation)).AccessGrantId;
+                await database.Set<LocalProfileGrant>().Where(grant => grant.Id == grantId)
+                    .ExecuteUpdateAsync(update => update.SetProperty(grant => grant.ExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)), Cancellation);
+                await transaction.CommitAsync(Cancellation);
+            }
+            else
+            {
+                revoking.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+                await revoking.ServiceProvider.GetRequiredService<ILocalAccessManagement>().LockAsync(data.Owner, Cancellation);
+            }
+            Assert.False(ownerLifetime.IsCancellationRequested);
+        }
+        finally { releaseExchange.TrySetResult(); }
+        var failure = await Record.ExceptionAsync(async () => { await (completion ?? CompleteAsync()); });
+        Assert.True(failure is LocalAccessException or LocalProfileAccessException or OperationCanceledException);
+        Assert.Equal(exchangeCount + (duringExchange ? 1 : 0), host.Server.ExchangeCount);
+        Assert.False(previousSessionLifetime.IsCancellationRequested);
+        if (!duringExchange)
+            Assert.Equal(beforeFileHash, SHA256.HashData(await File.ReadAllBytesAsync(credentialFile, Cancellation)));
+        using (await store.LockAsync(Cancellation))
+        {
+            var after = await store.ReadAsync(Cancellation);
+            Assert.Equal(before.Accounts.Count, after.Accounts.Count);
+            Assert.Equal(before.ActiveConnectionId, after.ActiveConnectionId);
+            if (connectionId is { } id)
+            {
+                var original = Assert.Single(before.Accounts, account => account.Id == id);
+                var retained = Assert.Single(after.Accounts, account => account.Id == id);
+                Assert.Equal(previousSession, retained.Tokens?.SessionId);
+                Assert.True(original.Tokens?.AccessToken == retained.Tokens?.AccessToken);
+                Assert.True(original.Subject == retained.Subject);
+            }
+        }
+        var replay = await Assert.ThrowsAsync<AiProviderException>(() => CompleteAsync());
+        Assert.Equal(AiFailure.InvalidCallback, replay.Failure);
+        await using var checking = fixture.CreateAsyncScope();
+        var selected = await checking.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>()
+            .AsNoTracking().SingleAsync(selection => selection.UserProfileId == data.Owner, Cancellation);
+        Assert.Equal(connectionId, selected.ConnectionId);
+        Assert.Equal(duringExchange, selected.Enabled);
+        Assert.Equal(pendingGeneration, selected.Generation);
+        if (expireAfterGuard) Assert.True(publicationRead.Triggered);
+    }
+
+    private sealed class CallbackPublicationRead(Action advance) : DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+        public bool Triggered { get; private set; }
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (Armed && command.CommandText.Contains("FROM \"ProfileAiSelections\"", StringComparison.Ordinal))
+            {
+                Armed = false;
+                Triggered = true;
+                advance();
+            }
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    [Fact]
+    public async Task Protected_OAuth_callback_cannot_replace_revoked_begin_admission_with_current_device_or_owner()
+    {
+        var data = await SeedAsync();
+        using var host = Host();
+        using var client = host.Client();
+        const string password = "Synthetic-Callback9!";
+        var login = "callback-" + Guid.NewGuid().ToString("N");
+        AccessChange enrolled;
+        await using (var enrollment = host.Application.Services.CreateAsyncScope())
+        {
+            var selector = enrollment.ServiceProvider.GetRequiredService<LocalProfileSelectionService>();
+            var selected = await selector.GetAsync(Cancellation);
+            await enrollment.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(data.Owner, selected.Version, Cancellation);
+            enrolled = await enrollment.ServiceProvider.GetRequiredService<ILocalAccessManagement>().EnableAsync(new(login, password), Cancellation);
+        }
+        AccessChange signed;
+        await using (var signing = host.Application.Services.CreateAsyncScope())
+            signed = await signing.ServiceProvider.GetRequiredService<ILocalAccessManagement>()
+                .SignInAsync(new(login, password, data.Owner, enrolled.Selection.Version, true), Cancellation);
+        await using (var beginning = host.Application.Services.CreateAsyncScope())
+        {
+            beginning.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+            await beginning.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(data.Owner, signed.Selection.Version, Cancellation);
+            await beginning.ServiceProvider.GetRequiredService<ProfileAiAccess>().BeginAsync(null, true, false, Cancellation);
+        }
+        var callback = host.Callback();
+        await using (var locking = host.Application.Services.CreateAsyncScope())
+        {
+            locking.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+            await locking.ServiceProvider.GetRequiredService<ILocalAccessManagement>().LockAsync(data.Owner, Cancellation);
+        }
+        // A newly authenticated admission for the same owner cannot revive the old begin proof.
+        await using (var signingAgain = host.Application.Services.CreateAsyncScope())
+        {
+            var selected = await signingAgain.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+            await signingAgain.ServiceProvider.GetRequiredService<ILocalAccessManagement>()
+                .SignInAsync(new(login, password, data.Owner, selected.Version, true), Cancellation);
+        }
+        using var rejected = await client.GetAsync(callback, Cancellation);
+        await CodeAsync(rejected, HttpStatusCode.Conflict, "ExecutionInvalidated");
+        Assert.Equal(0, host.Server.ExchangeCount);
+        await using var check = fixture.CreateAsyncScope();
+        Assert.False(await check.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>()
+            .AnyAsync(row => row.UserProfileId == data.Owner && row.Enabled, Cancellation));
+    }
 
     [Fact]
     public async Task Selector_exposes_only_identities_and_CAS_assertions_never_override_current_owner()
@@ -739,8 +958,8 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     {
         var selected = await CurrentAsync(client);
         var owner = Assert.IsType<Guid>(selected.UserProfileId);
-        services.GetRequiredService<LocalProfileOperation>().Bind(new(owner, selected.Version),
-            services.GetRequiredService<LocalProfileLifetimes>().Capture(selected.Version));
+        await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(owner, selected.Version, Cancellation);
         return services.GetRequiredService<ProfileAiAccess>();
     }
 

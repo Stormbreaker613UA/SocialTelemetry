@@ -6,12 +6,16 @@ using AuthorizeRoot = SocialTelemetry.Application.Features.ProfileAccess.Authori
 
 namespace SocialTelemetry.Api.Common.Profiles;
 
+public sealed record LocalProfileRequestTransport(CancellationToken OriginalCancellation);
+
 public sealed class LocalProfileMiddleware(RequestDelegate next)
 {
     public const string OwnerHeader = "X-SocialTelemetry-ProfileId";
     public const string VersionHeader = "X-SocialTelemetry-ProfileVersion";
 
     public static bool IsOwnedPath(PathString path) => path.StartsWithSegments("/user-profile") ||
+        path == "/local-access/protection" || path == "/local-access/password" ||
+        path == "/local-access/recovery-code" || path == "/local-access/activity" ||
         path.StartsWithSegments("/people") || path.StartsWithSegments("/interactions") ||
         (path.StartsWithSegments("/ai-connection") && path != AiConnectionRoutes.CallbackPath);
 
@@ -30,6 +34,7 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
             lifetime = resolved.Lifetime;
         }
         var originalCancellation = context.RequestAborted;
+        context.Features.Set(new LocalProfileRequestTransport(originalCancellation));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
             new[] { originalCancellation, lifetime, host.ApplicationStopping });
         context.RequestAborted = linked.Token;

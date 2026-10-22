@@ -11,6 +11,7 @@ public sealed class LocalProfileSelection
     public Guid? UserProfileId { get; set; }
     public Guid Version { get; set; } = Guid.NewGuid();
     public bool LegacySingleProfileAccess { get; set; }
+    public Guid? AccessGrantId { get; set; }
 }
 
 public sealed class LocalProfileSelectionConfiguration : IEntityTypeConfiguration<LocalProfileSelection>

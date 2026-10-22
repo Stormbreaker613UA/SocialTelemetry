@@ -172,6 +172,7 @@ public abstract class PeopleCrudTestsContract<TFixture> : IClassFixture<TFixture
 public class PeopleApiFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer? database;
+    internal string? DisposablePostgresConnection => database?.GetConnectionString();
     private readonly bool sqlite;
 
     public PeopleApiFixture() : this(false) { }
@@ -341,6 +342,7 @@ public class PeopleApiFixture : IAsyncLifetime
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("AttachmentStorage:LocalDirectory", attachmentStorageDirectory);
+            builder.UseSetting("LocalAccess:DataDirectory", Path.Combine(Path.GetDirectoryName(attachmentStorageDirectory)!, "local-access"));
             if (sqlite)
             {
                 builder.UseSetting("Persistence:Provider", "Sqlite");

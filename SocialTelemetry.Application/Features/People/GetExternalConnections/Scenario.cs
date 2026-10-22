@@ -11,6 +11,8 @@ public sealed class Scenario(IProfileConnectionsPersistence persistence, LocalPr
     public async Task<IReadOnlyList<PersonExternalConnection>> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         var parentId = request.PersonId;
         if (!await persistence.PersonExistsAsync(ownerId, parentId, cancellationToken)) throw new NotFoundException();
 

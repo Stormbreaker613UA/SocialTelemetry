@@ -10,6 +10,8 @@ public sealed class Scenario(IPeoplePersistence persistence, LocalProfileOperati
     public async Task<IReadOnlyList<Person>> ExecuteAsync(Guid profileId, bool? archived, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         if (profileId != Guid.Empty && profileId != ownerId) throw new NotFoundException();
         return await persistence.ListPeopleAsync(ownerId, archived, cancellationToken);
     }

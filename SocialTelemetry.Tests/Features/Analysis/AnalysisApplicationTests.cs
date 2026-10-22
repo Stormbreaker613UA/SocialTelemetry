@@ -14,6 +14,7 @@ using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
 using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Infrastructure.Profiles;
+using SocialTelemetry.Application.Features.LocalAccess;
 using SocialTelemetry.Tests.Features.People;
 using AppAnalysis = SocialTelemetry.Application.Features.Analysis.AnalyzeInteraction;
 using ProposedUpdate = SocialTelemetry.Application.Contracts.AI.Models.SuggestedProfileUpdate;
@@ -273,6 +274,104 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         await AssertHistoricalOnlyAsync(data);
     }
 
+    [Theory]
+    [InlineData("snapshot", "lock")]
+    [InlineData("inference", "lock")]
+    [InlineData("inference", "password")]
+    [InlineData("inference", "recovery")]
+    [InlineData("inference", "expiry")]
+    [InlineData("commit", "lock")]
+    public async Task Protected_direct_analysis_obeys_revocation_and_preserves_committed_winner(string phase, string revocation)
+    {
+        var data = await SeedAsync();
+        var clock = new SocialTelemetry.Tests.Features.Profiles.LocalAccessClock();
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services =>
+        {
+            services.AddSingleton<TimeProvider>(clock);
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer));
+        });
+        using var client = application.CreateClient();
+        const string password = "Synthetic-Protected9!";
+        var login = "analysis-" + Guid.NewGuid().ToString("N");
+        AccessChange enrolled;
+        AccessChange signed;
+        await using (var enrollment = application.Services.CreateAsyncScope())
+        {
+            await BindAsync(enrollment.ServiceProvider, data.Owner);
+            var management = enrollment.ServiceProvider.GetRequiredService<ILocalAccessManagement>();
+            enrolled = await management.EnableAsync(new(login, password), Cancellation);
+        }
+        await using (var signing = application.Services.CreateAsyncScope())
+            signed = await signing.ServiceProvider.GetRequiredService<ILocalAccessManagement>()
+                .SignInAsync(new(login, password, data.Owner, enrolled.Selection.Version, false), Cancellation);
+        await using var active = application.Services.CreateAsyncScope();
+        var services = active.ServiceProvider;
+        services.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+        await BindAsync(services, data.Owner);
+        var operation = services.GetRequiredService<LocalProfileOperation>();
+        var database = services.GetRequiredService<AppDbContext>();
+        observer.Target = database;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task PauseAsync() { entered.TrySetResult(); await resume.Task.WaitAsync(deadline.Token); }
+        var persistence = new BoundaryPersistence(services.GetRequiredService<IAnalysisPersistence>())
+        {
+            AfterSnapshot = phase == "snapshot" ? PauseAsync : null,
+            AfterCommit = phase == "commit" ? PauseAsync : null
+        };
+        var provider = new ProbeProvider(database, observer) { DuringInference = phase == "inference" ? PauseAsync : null };
+        var execution = CreateScenario(services, provider, persistence).ExecuteAsync(new(data.InteractionId, null, []), Cancellation);
+        try
+        {
+            await entered.Task.WaitAsync(deadline.Token);
+            Assert.Null(database.Database.CurrentTransaction);
+            if (revocation == "expiry")
+            {
+                await clock.FirstTimer.Task.WaitAsync(deadline.Token);
+                var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                using var registration = operation.Lifetime.Register(() => canceled.TrySetResult());
+                clock.Advance(TimeSpan.FromMinutes(30));
+                await canceled.Task.WaitAsync(deadline.Token);
+            }
+            else
+            {
+                await using var changing = application.Services.CreateAsyncScope();
+                changing.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+                var management = changing.ServiceProvider.GetRequiredService<ILocalAccessManagement>();
+                if (revocation == "recovery")
+                    await management.RecoverAsync(new(login, enrolled.RecoveryCode!, "Synthetic-Replacement9!"), Cancellation);
+                else if (revocation == "password")
+                {
+                    await BindAsync(changing.ServiceProvider, data.Owner);
+                    await management.ChangePasswordAsync(new(password, "Synthetic-Replacement9!"), Cancellation);
+                }
+                else await management.LockAsync(data.Owner, Cancellation);
+            }
+            Assert.True(operation.Lifetime.IsCancellationRequested);
+            if (phase == "inference") Assert.True(provider.InferenceCancellation.IsCancellationRequested);
+            resume.TrySetResult();
+            if (phase == "commit")
+            {
+                var result = await execution;
+                await using var check = fixture.CreateAsyncScope();
+                var stored = check.ServiceProvider.GetRequiredService<AppDbContext>();
+                Assert.Equal(2, await stored.SuggestedProfileUpdates.CountAsync(row => row.InteractionAnalysisId == result.Id && row.Status == SuggestionStatus.Pending, Cancellation));
+                Assert.False(await stored.PersonFacts.AnyAsync(row => row.PersonId == data.PersonId, Cancellation));
+            }
+            else
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
+                Assert.Equal(phase == "snapshot" ? 0 : 1, provider.Calls);
+                Assert.Equal(0, provider.Leases);
+                await AssertHistoricalOnlyAsync(data);
+            }
+        }
+        finally { resume.TrySetResult(); }
+    }
+
     private async Task AssertHistoricalOnlyAsync(Seed data)
     {
         await using var verification = fixture.CreateAsyncScope();
@@ -301,8 +400,8 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         var selector = services.GetRequiredService<LocalProfileSelectionService>();
         var selection = await selector.GetAsync(Cancellation);
         var binding = await selector.ResolveAsync(owner, selection.Version, Cancellation);
-        services.GetRequiredService<LocalProfileOperation>().Bind(binding,
-            services.GetRequiredService<LocalProfileLifetimes>().Capture(binding.SelectionVersion));
+        await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(binding.UserProfileId, binding.SelectionVersion, Cancellation);
     }
 
     private async Task<Seed> SeedAsync()

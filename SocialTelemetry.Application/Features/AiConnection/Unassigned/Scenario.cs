@@ -1,6 +1,12 @@
 namespace SocialTelemetry.Application.Features.AiConnection.Unassigned;
 
-public sealed class Scenario(IProfileAiManagement connection)
+public sealed class Scenario(IProfileAiManagement connection, SocialTelemetry.Application.Contracts.Profiles.LocalProfileOperation operation)
 {
-    public Task<IReadOnlyList<ConnectionIdentity>> ExecuteAsync(CancellationToken cancellationToken) => connection.UnassignedAsync(cancellationToken);
+    public async Task<IReadOnlyList<ConnectionIdentity>> ExecuteAsync(CancellationToken cancellationToken)
+    {
+        operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
+        return await connection.UnassignedAsync(cancellationToken);
+    }
 }

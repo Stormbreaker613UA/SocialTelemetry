@@ -11,6 +11,7 @@ using SocialTelemetry.Api.Features.AiConnection;
 using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Infrastructure.Storage;
 using SocialTelemetry.Infrastructure.Transcription;
+using SocialTelemetry.Infrastructure.Identity;
 
 var launcherExit = NativeTranscriptionBootstrap.RunIfRequested(args);
 if (launcherExit is { } exitCode)
@@ -39,6 +40,13 @@ builder.Services.AddSocialTelemetryInfrastructure(builder.Configuration, builder
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddFastEndpoints();
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-SocialTelemetry-CSRF";
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+});
+builder.Services.AddSingleton(new LocalAccessTransport(LocalAccessRegistration.Scheme, LocalAccessRegistration.DeviceClaim));
 builder.Services.SwaggerDocument();
 builder.Services.AddSingleton(services =>
 {
@@ -59,6 +67,7 @@ if (app.Services.GetRequiredService<IOptions<MediaBindingOptions>>().Value.Actio
 app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
 app.UseExceptionHandler();
 app.UseRouting();
+app.UseMiddleware<LocalAccessHttpMiddleware>();
 app.UseWhen(context => context.Request.Path.StartsWithSegments("/ai-connection") || context.Request.Path.StartsWithSegments("/local-profiles") ||
     context.GetEndpoint()?.Metadata.GetMetadata<RequireLocalAiRequestAttribute>() is not null,
     localConnection => localConnection.UseMiddleware<LocalAiConnectionMiddleware>());

@@ -7,7 +7,8 @@ using SocialTelemetry.Infrastructure.Persistence;
 
 namespace SocialTelemetry.Infrastructure.Profiles;
 
-public sealed class LocalProfileSelectionService(AppDbContext database, LocalProfileLifetimes lifetimes) : ILocalProfileManagement
+public sealed class LocalProfileSelectionService(AppDbContext database, LocalProfileLifetimes lifetimes,
+    LocalAccessRequest? accessRequest = null, Identity.LocalAccessValidation? accessValidation = null) : ILocalProfileManagement
 {
     public async Task<LocalProfileSelection> GetAsync(CancellationToken cancellationToken)
     {
@@ -54,8 +55,14 @@ public sealed class LocalProfileSelectionService(AppDbContext database, LocalPro
     {
         // Serialize publication with commits inside this local host; callbacks run after commit.
         await lifetimes.SelectionGate.WaitAsync(cancellationToken);
-        try { return await SelectCoreAsync(userProfileId, expectedVersion, cancellationToken); }
-        finally { lifetimes.SelectionGate.Release(); }
+        CancellationTokenSource? retired = null;
+        try
+        {
+            var selected = await SelectCoreAsync(userProfileId, expectedVersion, cancellationToken);
+            retired = lifetimes.Replace(selected.Version);
+            return selected;
+        }
+        finally { lifetimes.SelectionGate.Release(); lifetimes.CancelRetired(retired); }
     }
 
     private async Task<LocalProfileSelection> SelectCoreAsync(Guid userProfileId, Guid expectedVersion, CancellationToken cancellationToken)
@@ -65,17 +72,20 @@ public sealed class LocalProfileSelectionService(AppDbContext database, LocalPro
         var selection = await database.Set<LocalProfileSelection>().SingleAsync(cancellationToken);
         CheckVersion(selection, expectedVersion);
         SelectionPolicy.CheckTargetExists(await database.UserProfiles.AnyAsync(profile => profile.Id == userProfileId, cancellationToken));
-        // No cookie/unlock mechanism exists in this increment. Never bypass a linked Account.
-        SelectionPolicy.CheckProtection(await database.Users.AnyAsync(account => account.UserProfileId == userProfileId, cancellationToken));
-        if (SelectionPolicy.ShouldSwitch(Snapshot(selection), userProfileId))
+        // Selection is not authentication: protected targets require their own device grant.
+        var access = await FindAccessAsync(userProfileId, cancellationToken);
+        if (SelectionPolicy.ShouldSwitch(Snapshot(selection), userProfileId) || selection.AccessGrantId != access?.GrantId)
         {
+            if (selection.AccessGrantId is { } previousId)
+                await database.Set<Identity.LocalProfileGrant>().Where(grant => grant.Id == previousId && !grant.Remembered)
+                    .ExecuteUpdateAsync(update => update.SetProperty(grant => grant.Revoked, true), cancellationToken);
             selection.UserProfileId = userProfileId;
+            selection.AccessGrantId = access?.GrantId;
             selection.Version = Guid.NewGuid();
             selection.LegacySingleProfileAccess = false;
             await database.SaveChangesAsync(cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
-        lifetimes.Publish(selection.Version);
         return selection;
     }
 
@@ -84,13 +94,14 @@ public sealed class LocalProfileSelectionService(AppDbContext database, LocalPro
         // Refresh a cooperating host's committed selection without allowing an older local
         // resolver to publish after a newer local switch. SQL remains the final commit guard.
         await lifetimes.SelectionGate.WaitAsync(cancellationToken);
+        CancellationTokenSource? retired = null;
         try
         {
             var binding = await ResolveCoreAsync(assertedOwner, assertedVersion, cancellationToken);
-            lifetimes.Publish(binding.SelectionVersion);
+            retired = lifetimes.Replace(binding.SelectionVersion);
             return binding;
         }
-        finally { lifetimes.SelectionGate.Release(); }
+        finally { lifetimes.SelectionGate.Release(); lifetimes.CancelRetired(retired); }
     }
 
     private async Task<LocalProfileBinding> ResolveCoreAsync(Guid? assertedOwner, Guid? assertedVersion, CancellationToken cancellationToken)
@@ -101,9 +112,17 @@ public sealed class LocalProfileSelectionService(AppDbContext database, LocalPro
             ? await database.UserProfiles.AsNoTracking().CountAsync(cancellationToken) : null;
         SelectionPolicy.CheckAssertions(snapshot, assertedOwner, assertedVersion, profileCount);
         var owner = selection.UserProfileId.GetValueOrDefault();
-        SelectionPolicy.CheckProtection(await database.Users.AsNoTracking()
-            .AnyAsync(account => account.UserProfileId == owner, cancellationToken));
-        return new LocalProfileBinding(owner, selection.Version);
+        var access = await FindAccessAsync(owner, cancellationToken);
+        if (selection.AccessGrantId != access?.GrantId) throw new LocalAccessException(LocalAccessFailure.Required);
+        return new LocalProfileBinding(owner, selection.Version) { Access = access };
+    }
+
+    private async Task<LocalAccessBinding?> FindAccessAsync(Guid owner, CancellationToken cancellationToken)
+    {
+        if (accessValidation is not null)
+            return await accessValidation.FindAsync(owner, accessRequest?.Evidence ?? new(null), cancellationToken);
+        SelectionPolicy.CheckProtection(await database.Users.AsNoTracking().AnyAsync(account => account.UserProfileId == owner, cancellationToken));
+        return null;
     }
 
     private static void CheckVersion(LocalProfileSelection selection, Guid expectedVersion) =>
@@ -112,11 +131,25 @@ public sealed class LocalProfileSelectionService(AppDbContext database, LocalPro
     public async Task<SelectionSnapshot> GetSelectionAsync(CancellationToken cancellationToken) =>
         Snapshot(await GetAsync(cancellationToken));
 
-    public async Task<IReadOnlyList<ProfileIdentity>> ListProfilesAsync(CancellationToken cancellationToken) =>
-        await database.UserProfiles.AsNoTracking().OrderBy(profile => profile.DisplayName).ThenBy(profile => profile.Id)
-            .Select(profile => new ProfileIdentity(profile.Id, profile.DisplayName,
-                database.Users.Any(account => account.UserProfileId == profile.Id)))
-            .ToListAsync(cancellationToken);
+    public async Task<IReadOnlyList<ProfileIdentity>> ListProfilesAsync(CancellationToken cancellationToken)
+    {
+        var rows = await database.UserProfiles.AsNoTracking().OrderBy(profile => profile.DisplayName).ThenBy(profile => profile.Id)
+            .Select(profile => new
+            {
+                profile.Id, profile.DisplayName,
+                Protection = database.Users.Where(account => account.UserProfileId == profile.Id)
+                    .Select(account => (Identity.LocalProtectionStatus?)account.LocalProtection).SingleOrDefault()
+            }).ToListAsync(cancellationToken);
+        var profiles = new List<ProfileIdentity>();
+        foreach (var row in rows)
+        {
+            var state = "Unprotected";
+            if (row.Protection == Identity.LocalProtectionStatus.Enabled) state = "Protected";
+            else if (row.Protection is not null && row.Protection != Identity.LocalProtectionStatus.Disabled) state = "Unavailable";
+            profiles.Add(new ProfileIdentity(row.Id, row.DisplayName, row.Protection is not null) { Protection = state });
+        }
+        return profiles;
+    }
 
     public async Task<SelectionSnapshot> SelectProfileAsync(Guid userProfileId, Guid expectedVersion, CancellationToken cancellationToken) =>
         Snapshot(await SelectAsync(userProfileId, expectedVersion, cancellationToken));

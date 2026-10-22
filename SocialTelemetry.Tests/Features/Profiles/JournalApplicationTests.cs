@@ -122,8 +122,8 @@ public abstract class JournalApplicationTestsContract<TFixture>(TFixture fixture
         var selector = services.GetRequiredService<LocalProfileSelectionService>();
         var selection = await selector.GetAsync(Cancellation);
         var ownerId = Assert.IsType<Guid>(selection.UserProfileId);
-        services.GetRequiredService<LocalProfileOperation>().Bind(new(ownerId, selection.Version),
-            services.GetRequiredService<LocalProfileLifetimes>().Capture(selection.Version));
+        await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(ownerId, selection.Version, Cancellation);
     }
 }
 

@@ -70,6 +70,9 @@ public sealed class JournalFeatureArchitectureTests
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.LocalAiConnectionMiddleware));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Profiles.LocalProfileMiddleware));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Analysis.AnalyzeInteraction.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.LocalAccess.SignIn.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.LocalAccess.Recover.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Profiles.LocalAccessHttpMiddleware));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Exceptions.GlobalExceptionHandler));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Exceptions.FailurePresentation));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Result<>));

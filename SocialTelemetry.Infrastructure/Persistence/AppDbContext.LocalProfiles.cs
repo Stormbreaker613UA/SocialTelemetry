@@ -29,7 +29,9 @@ public sealed partial class AppDbContext
             WHERE "Id" = 1 AND "UserProfileId" = {binding.UserProfileId} AND "Version" = {binding.SelectionVersion}
             """, cancellationToken);
         if (affected != 1) throw new LocalProfileAccessException(LocalProfileFailure.SelectionChanged);
-        if (await Users.AsNoTracking().AnyAsync(account => account.UserProfileId == binding.UserProfileId, cancellationToken))
-            throw new LocalProfileAccessException(LocalProfileFailure.ProtectedAccessUnavailable);
+        if (profileOperation is not null)
+        {
+            using var admission = await profileOperation.EnterAsync(cancellationToken);
+        }
     }
 }

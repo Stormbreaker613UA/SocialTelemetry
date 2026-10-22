@@ -2,12 +2,15 @@ using SocialTelemetry.Application.Contracts.AI;
 
 namespace SocialTelemetry.Application.Features.AiConnection.SelectModel;
 
-public sealed class Scenario(IProfileAiManagement connection)
+public sealed class Scenario(IProfileAiManagement connection, SocialTelemetry.Application.Contracts.Profiles.LocalProfileOperation operation)
 {
-    public Task ExecuteAsync(string modelId, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(string modelId, CancellationToken cancellationToken)
     {
+        operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         ValidateInput(modelId);
-        return connection.SelectModelAsync(modelId, cancellationToken);
+        await connection.SelectModelAsync(modelId, cancellationToken);
     }
 
     public static void ValidateInput(string modelId)

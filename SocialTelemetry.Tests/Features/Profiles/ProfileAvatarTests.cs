@@ -148,7 +148,7 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
         };
         database.Interactions.Add(interaction);
         await database.SaveChangesAsync(Cancellation);
-        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(person.UserProfileId, Guid.NewGuid()), CancellationToken.None);
+        await BindCurrentAsync(scope.ServiceProvider);
         var builder = scope.ServiceProvider.GetRequiredService<AiContextBuilder>();
         var before = await builder.BuildAsync(interaction.Id, null, [], Cancellation);
         await UploadAsync(fixture.Client, route, Png);
@@ -293,8 +293,8 @@ public abstract class ProfileAvatarTestsContract<TFixture>(TFixture fixture) : I
     {
         var selection = await services.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
         var owner = Assert.IsType<Guid>(selection.UserProfileId);
-        services.GetRequiredService<LocalProfileOperation>().Bind(new(owner, selection.Version),
-            services.GetRequiredService<LocalProfileLifetimes>().Capture(selection.Version));
+        await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(owner, selection.Version, Cancellation);
     }
 
     private async Task<string> KeyAsync(string route)

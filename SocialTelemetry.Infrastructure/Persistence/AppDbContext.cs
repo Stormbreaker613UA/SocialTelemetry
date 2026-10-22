@@ -20,7 +20,7 @@ namespace SocialTelemetry.Infrastructure.Persistence;
 public sealed partial class AppDbContext(
     DbContextOptions<AppDbContext> options,
     ProfileAvatarCleanup? avatarCleanup = null,
-    LocalProfileOperation? profileOperation = null) : IdentityUserContext<ApplicationUser, Guid>(options)
+    LocalProfileOperation? profileOperation = null, TimeProvider? clock = null) : IdentityUserContext<ApplicationUser, Guid>(options)
 {
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<StorageDatabaseIdentity> StorageDatabaseIdentities => Set<StorageDatabaseIdentity>();
@@ -77,6 +77,8 @@ public sealed partial class AppDbContext(
 
     private async Task<int> SaveCoordinatedChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
     {
+        if (localAccessMutation) return await SaveSecurityChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (HasAccountSecurityChanges()) return await SaveAccountSecurityChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         var obsoleteAvatarKeys = avatarCleanup is null
             ? []
             : await avatarCleanup.FindObsoleteKeysAsync(this, cancellationToken);
@@ -94,12 +96,14 @@ public sealed partial class AppDbContext(
         {
             await ProtectLocalProfileOperationAsync(cancellationToken);
             await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
+            await RecordCommittedActivityAsync(cancellationToken);
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
         await ProtectLocalProfileOperationAsync(cancellationToken);
         await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
+        await RecordCommittedActivityAsync(cancellationToken);
         var affectedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         if (avatarCleanup is not null)

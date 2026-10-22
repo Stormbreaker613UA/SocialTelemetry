@@ -12,6 +12,8 @@ public sealed class Scenario(IAttachmentPersistence persistence, LocalProfileOpe
     public async Task<InteractionAttachment> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, operation.Lifetime);
         cancellationToken = lifetime.Token;
         if (!Enum.IsDefined(request.Type))
@@ -46,13 +48,21 @@ public sealed class Scenario(IAttachmentPersistence persistence, LocalProfileOpe
         }
         try
         {
-            await persistence.AddPendingAttachmentAsync(attachment, cancellationToken);
+            // A Pending file row is not a completed user mutation. Only the Ready commit
+            // extends activity; failed completion/cleanup must not keep access alive.
+            if (attachment.Status == AttachmentStatus.Ready)
+            {
+                using var successfulMutation = await operation.EnterAsync(cancellationToken, userMutation: true);
+                await persistence.AddPendingAttachmentAsync(attachment, successfulMutation.CancellationToken);
+            }
+            else await persistence.AddPendingAttachmentAsync(attachment, cancellationToken);
             if (attachment.StorageKey is not null)
             {
                 if (!await storage.CompleteUploadAsync(attachment.StorageKey, cancellationToken))
                     throw new IOException("The staged attachment file is missing.");
                 attachment.Status = AttachmentStatus.Ready;
-                await persistence.SaveAttachmentStatusAsync(attachment, cancellationToken);
+                using var successfulMutation = await operation.EnterAsync(cancellationToken, userMutation: true);
+                await persistence.SaveAttachmentStatusAsync(attachment, successfulMutation.CancellationToken);
             }
         }
         catch

@@ -14,6 +14,8 @@ public sealed class Scenario(ITranscriptPersistence persistence, LocalProfileOpe
     public async Task<TranscriptMutation> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, operation.Lifetime);
         cancellationToken = lifetime.Token;
         var source = await persistence.LoadSourceAsync(ownerId, request.InteractionId, request.AttachmentId, cancellationToken);
@@ -33,6 +35,7 @@ public sealed class Scenario(ITranscriptPersistence persistence, LocalProfileOpe
         SpeechToTextResult? result = null;
         if (!reusable)
         {
+            await operation.RecordStartAsync(cancellationToken);
             using var content = new MemoryStream(audio, writable: false);
             result = await speech.TranscribeAsync(content, cancellationToken);
             ValidateResult(result);

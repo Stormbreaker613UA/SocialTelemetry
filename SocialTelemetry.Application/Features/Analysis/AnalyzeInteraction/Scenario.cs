@@ -17,6 +17,8 @@ public sealed class Scenario(IAnalysisPersistence persistence, AiContextBuilder 
     public async Task<Result> ExecuteAsync(Input input, CancellationToken cancellationToken)
     {
         var owner = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, operation.Lifetime);
         cancellationToken = operationCancellation.Token;
         cancellationToken.ThrowIfCancellationRequested();
@@ -30,6 +32,7 @@ public sealed class Scenario(IAnalysisPersistence persistence, AiContextBuilder 
             (built.Images.Count > 0 && !selected.Supports(AiCapability.Vision)))
             throw new AiProviderException(AiFailure.CapabilityMissing);
         AiTextResponse completed;
+        await operation.RecordStartAsync(cancellationToken);
         using (var execution = SocialTelemetryTelemetry.StartAi(selected.ProviderId, selected.ModelId, built.Images.Count > 0))
         {
             try

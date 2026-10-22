@@ -168,7 +168,9 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var account = Account(profile);
+            await using var transaction = await database.Database.BeginTransactionAsync(Cancellation);
             database.Users.Add(account);
+            await database.SaveChangesAsync(Cancellation);
             var interaction = new Interaction { Id = Guid.NewGuid(), UserProfileId = profile, Title = "Synthetic journal" };
             var attachment = new InteractionAttachment
             {
@@ -179,6 +181,7 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
             database.InteractionAttachments.Add(attachment);
             database.InteractionAnalyses.Add(new() { Id = Guid.NewGuid(), InteractionId = interaction.Id, Summary = "Historical analysis" });
             await database.SaveChangesAsync(Cancellation);
+            await transaction.CommitAsync(Cancellation);
             accountId = account.Id;
             interactionId = interaction.Id;
             attachmentId = attachment.Id;
@@ -271,6 +274,7 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
     public async Task Account_changes_do_not_enter_context_or_acquire_social_guards()
     {
         var profile = await fixture.CreateUserProfileAsync();
+        var accountProfile = await fixture.CreateUserProfileAsync(select: false);
         var person = await fixture.CreatePersonAsync(new() { UserProfileId = profile, DisplayName = "Synthetic participant" });
         Guid interactionId;
         await using (var seed = fixture.CreateAsyncScope())
@@ -283,7 +287,9 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
             interactionId = interaction.Id;
         }
         await using var scope = fixture.CreateAsyncScope();
-        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(profile, Guid.NewGuid()), CancellationToken.None);
+        var selection = await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelectionService>().GetAsync(Cancellation);
+        await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(profile, selection.Version, Cancellation);
         var builder = scope.ServiceProvider.GetRequiredService<AiContextBuilder>();
         var original = await builder.BuildAsync(interactionId, null, [], Cancellation);
         var observer = new GuardCommandObserver();
@@ -291,7 +297,9 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
             .AddInterceptors(observer).Options;
         await using (var database = new AppDbContext(options))
         {
-            var account = Account(profile);
+            // The protected account belongs to another journal. Its security changes must
+            // not affect this still-accessible journal's social context/fingerprint.
+            var account = Account(accountProfile);
             database.Users.Add(account);
             await database.SaveChangesAsync(Cancellation);
             account.SecurityStamp = Guid.NewGuid().ToString();
@@ -397,7 +405,7 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
     }
 
     [Fact]
-    public async Task Model_is_roleless_matches_snapshot_and_adds_no_application_auth_surface()
+    public async Task Model_is_roleless_matches_snapshot_with_only_local_device_auth_and_no_server_auth_surface()
     {
         await using var scope = fixture.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -410,7 +418,9 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
         Assert.DoesNotContain("AspNetUserPasskeys", tables);
         Assert.Null(scope.ServiceProvider.GetService<SignInManager<ApplicationUser>>());
         var schemes = scope.ServiceProvider.GetService<IAuthenticationSchemeProvider>();
-        if (schemes is not null) Assert.Empty(await schemes.GetAllSchemesAsync());
+        Assert.NotNull(schemes);
+        var localScheme = Assert.Single(await schemes.GetAllSchemesAsync());
+        Assert.Equal(LocalAccessRegistration.Scheme, localScheme.Name);
         var endpoints = scope.ServiceProvider.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>();
         Assert.DoesNotContain(endpoints, endpoint => endpoint.RoutePattern.RawText is "/login" or "/register" or "/connect/token" or "/connect/authorize" or "/unlock");
         using var response = await fixture.Client.PostAsync("/connect/token", null, Cancellation);

@@ -10,6 +10,8 @@ public sealed class Scenario(IPersonFactsPersistence persistence, LocalProfileOp
     public async Task<PersonFact> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         var fact = await persistence.FindFactAsync(ownerId, request.PersonId, request.Id, cancellationToken);
 
         if (fact is null)

@@ -81,14 +81,6 @@ public sealed partial class ChatGptConnection(
         string? returnedState, string? code, string? clientId, string? error, CancellationToken cancellationToken)
         => (await CompleteCoreAsync(returnedState, code, clientId, error, cancellationToken)).Status;
 
-    internal async Task<CompletedAuthorization> CompleteBoundAsync(
-        string? returnedState, string? code, string? clientId, string? error, CancellationToken cancellationToken)
-    {
-        var completed = await CompleteCoreAsync(returnedState, code, clientId, error, cancellationToken);
-        if (completed.Binding is null) throw new AiProviderException(AiFailure.InvalidCallback);
-        return completed;
-    }
-
     private async Task<CompletedAuthorization> CompleteCoreAsync(
         string? returnedState, string? code, string? clientId, string? error, CancellationToken cancellationToken)
     {
@@ -404,7 +396,7 @@ public sealed partial class ChatGptConnection(
 
     private static string RandomValue() => WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
 
-    private sealed class PendingAuthorization
+    internal sealed class PendingAuthorization
     {
         public LocalProfileBinding? OwnerBinding { get; init; }
         public Guid? SelectionGeneration { get; init; }

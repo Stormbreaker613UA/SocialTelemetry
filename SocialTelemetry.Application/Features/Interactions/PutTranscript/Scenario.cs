@@ -13,6 +13,8 @@ public sealed class Scenario(ITranscriptPersistence persistence, LocalProfileOpe
     public async Task<TranscriptMutation> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, operation.Lifetime);
         cancellationToken = lifetime.Token;
         if (request.CorrectedText is not null && (string.IsNullOrWhiteSpace(request.CorrectedText) ||

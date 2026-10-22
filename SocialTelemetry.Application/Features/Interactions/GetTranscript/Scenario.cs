@@ -9,6 +9,8 @@ public sealed class Scenario(ITranscriptPersistence persistence, LocalProfileOpe
     public async Task<AttachmentTranscript> ExecuteAsync(Guid interactionId, Guid attachmentId, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         var attachment = await persistence.LoadSourceAsync(ownerId, interactionId, attachmentId, cancellationToken);
         if (attachment.Type != AttachmentType.Audio)
             throw new FeatureValidationException("Transcripts require an Audio attachment.");

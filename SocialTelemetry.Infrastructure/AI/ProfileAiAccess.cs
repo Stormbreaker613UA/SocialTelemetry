@@ -9,14 +9,19 @@ using SocialTelemetry.Application.Features.AiConnection;
 namespace SocialTelemetry.Infrastructure.AI;
 
 public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation operation,
-    ProfileAiLifetimes lifetimes, ChatGptConnection connection)
+    ProfileAiLifetimes lifetimes, ChatGptConnection connection,
+    SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario? profileResolver = null)
 {
     // Adapter identifier belongs here, never in social domain or analysis feature code.
     private const string ProviderId = "chatgpt-plan";
 
-    public async Task<ProfileAiSelection?> ReadAsync(CancellationToken cancellationToken) =>
-        await database.Set<ProfileAiSelection>().AsNoTracking()
-            .SingleOrDefaultAsync(selection => selection.UserProfileId == operation.RequireOwner(), cancellationToken);
+    public async Task<ProfileAiSelection?> ReadAsync(CancellationToken cancellationToken)
+    {
+        var owner = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        return await database.Set<ProfileAiSelection>().AsNoTracking()
+            .SingleOrDefaultAsync(selection => selection.UserProfileId == owner, admission.CancellationToken);
+    }
 
     public async Task<(AiExecutionBinding Binding, string Provider, string Model, CancellationToken Lifetime)> CaptureAsync(CancellationToken cancellationToken)
     {
@@ -76,10 +81,11 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
             InferencePermissionAvailable = selection?.Enabled == true && status.InferencePermissionAvailable };
     }
 
-    public Task<IReadOnlyList<ChatGptAccountSummary>> UnassignedAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ChatGptAccountSummary>> UnassignedAsync(CancellationToken cancellationToken)
     {
         operation.RequireOwner();
-        return connection.GetUnassignedAsync(cancellationToken);
+        using var admission = await operation.EnterAsync(cancellationToken);
+        return await connection.GetUnassignedAsync(admission.CancellationToken);
     }
 
     public async Task SelectConnectionAsync(Guid connectionId, bool adoptUnassigned, CancellationToken cancellationToken)
@@ -140,20 +146,61 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
 
     public async Task<ChatGptConnectionStatus> CompleteAsync(string? state, string? code, string? clientId, string? error, CancellationToken cancellationToken)
     {
-        // This adapter phase owns only the protected file; it releases that lock before SQL.
-        var completed = await connection.CompleteBoundAsync(state, code, clientId, error, cancellationToken);
-        var binding = completed.Binding ?? throw new AiProviderException(AiFailure.InvalidCallback);
-        operation.Bind(binding, completed.OwnerLifetime);
-        if (completed.Status.ConnectionId is not { } id || completed.Generation is not { } generation)
-            throw new AiProviderException(AiFailure.InvalidCallback);
-        await ChangeAsync(generation, selection =>
+        var callback = await connection.TakeBoundCallbackAsync(state, code, clientId, error, cancellationToken);
+        var attempt = callback.Attempt;
+        var binding = attempt.OwnerBinding ?? throw new AiProviderException(AiFailure.InvalidCallback);
+        await (profileResolver ?? throw new LocalAccessException(LocalAccessFailure.Required))
+            .RestoreAsync(binding, attempt.OwnerLifetime, cancellationToken);
+        var generation = attempt.SelectionGeneration ?? throw new AiProviderException(AiFailure.InvalidCallback);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, attempt.OwnerLifetime, attempt.SelectionLifetime);
+        cancellationToken = lifetime.Token;
+        await RegisterCallbackAsync(callback, generation, cancellationToken);
+        // Neither SQL protection nor the credential file lock spans provider/identity calls.
+        await RevalidateCallbackAdmissionAsync(cancellationToken);
+        var identity = await connection.ExchangeBoundCallbackAsync(callback, cancellationToken);
+        ChatGptConnection.PublishedCallback? published = null;
+        ProfileAiSelection completed;
+        try
         {
-            selection.ModelId = ConnectionSelectionPolicy.ModelAfterCallback(selection.ConnectionId, selection.ModelId, id);
-            selection.ProviderId = ProviderId;
-            selection.ConnectionId = id;
-            selection.Enabled = true;
-        }, cancellationToken);
-        return await StatusAsync(cancellationToken);
+            completed = await ChangeCoreAsync(generation, async selection =>
+            {
+                // LockAnalysisContext has revalidated the original access under the selector.
+                // File publication and SQL selection share this short authorized commit boundary.
+                published = await connection.PublishBoundCallbackAsync(callback, identity, RevalidateCallbackAdmissionAsync, cancellationToken);
+                var id = attempt.ConnectionId;
+                selection.ModelId = ConnectionSelectionPolicy.ModelAfterCallback(selection.ConnectionId, selection.ModelId, id);
+                selection.ProviderId = ProviderId;
+                selection.ConnectionId = id;
+                selection.Enabled = true;
+            }, cancellationToken);
+        }
+        finally
+        {
+            if (published is not null) connection.RetireCallbackSession(published);
+        }
+        return (published ?? throw new AiProviderException(AiFailure.InvalidCallback)).Status with { SelectedModel = completed.ModelId };
+    }
+
+    private async Task RegisterCallbackAsync(ChatGptConnection.BoundCallback callback, Guid generation, CancellationToken cancellationToken)
+    {
+        await lifetimes.Changes.WaitAsync(cancellationToken);
+        try
+        {
+            await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+            var owner = operation.RequireOwner();
+            await database.LockAnalysisContextAsync(owner, cancellationToken);
+            var current = await database.Set<ProfileAiSelection>().AsNoTracking()
+                .SingleOrDefaultAsync(selection => selection.UserProfileId == owner, cancellationToken);
+            if (current?.Generation != generation) throw new AiProviderException(AiFailure.ExecutionInvalidated);
+            await connection.RegisterBoundCallbackAsync(callback, RevalidateCallbackAdmissionAsync, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        finally { lifetimes.Changes.Release(); }
+    }
+
+    private async Task RevalidateCallbackAdmissionAsync(CancellationToken cancellationToken)
+    {
+        using var admission = await operation.EnterAsync(cancellationToken);
     }
 
     public async Task<ChatGptDisconnectResult> DisconnectAsync(CancellationToken cancellationToken)
@@ -165,7 +212,10 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
         return await connection.DisconnectOwnedAsync(operation.RequireOwner(), before?.ConnectionId, cancellationToken);
     }
 
-    private async Task<ProfileAiSelection> ChangeAsync(Guid expectedGeneration, Action<ProfileAiSelection> change, CancellationToken cancellationToken)
+    private Task<ProfileAiSelection> ChangeAsync(Guid expectedGeneration, Action<ProfileAiSelection> change, CancellationToken cancellationToken) =>
+        ChangeCoreAsync(expectedGeneration, selection => { change(selection); return Task.CompletedTask; }, cancellationToken);
+
+    private async Task<ProfileAiSelection> ChangeCoreAsync(Guid expectedGeneration, Func<ProfileAiSelection, Task> change, CancellationToken cancellationToken)
     {
         await lifetimes.Changes.WaitAsync(cancellationToken);
         CancellationTokenSource? retired = null;
@@ -181,7 +231,7 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
                 selection = new ProfileAiSelection { UserProfileId = owner };
                 database.Set<ProfileAiSelection>().Add(selection);
             }
-            change(selection);
+            await change(selection);
             selection.Generation = Guid.NewGuid();
             await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

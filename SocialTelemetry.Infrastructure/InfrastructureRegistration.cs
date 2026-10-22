@@ -24,6 +24,19 @@ public static class InfrastructureRegistration
         services.AddSocialTelemetryDiagnostics(configuration, environment, hostAssembly);
         services.AddPersistence(configuration);
         services.AddIdentityFoundation();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Status.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Enable.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.SignIn.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Resume.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.ChangePassword.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Disable.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Lock.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Logout.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.RotateRecovery.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Recover.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalAccess.Activity.Scenario>();
+
+        services.AddLocalAccess(configuration);
         services.AddScoped<LocalProfileOperation>();
         services.AddScoped<LocalProfileSelectionService>();
         services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.ILocalProfileManagement>(services => services.GetRequiredService<LocalProfileSelectionService>());
@@ -202,6 +215,8 @@ public static class InfrastructureRegistration
         services.AddOptions<MediaBindingOptions>().BindConfiguration("MediaBinding").ValidateDataAnnotations()
             .Validate(options => options.LockRetryDelay <= options.LockTimeout, "MediaBinding retry delay cannot exceed its lock timeout.").ValidateOnStart();
         services.AddHostedService<MediaDirectoryBinding>();
+        services.AddHostedService(services => services.GetRequiredService<LocalAccessKeyRing>());
+        services.AddHostedService<LocalAccessExpirationService>();
         services.AddHostedService<ProfileAvatarReconciliationService>();
         services.AddHostedService<AttachmentReconciliationService>();
         return services;

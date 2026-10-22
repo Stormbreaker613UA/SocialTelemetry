@@ -7,15 +7,19 @@ namespace SocialTelemetry.Application.Features.ProfileAvatars;
 public sealed class ProfileAvatarService(
     IProfileAvatarPersistence persistence, LocalProfileOperation operation, UploadOptions options)
 {
-    public Task<AvatarOwner> FindOwnerAsync(Guid? personId, CancellationToken cancellationToken, bool readOnly = false)
+    public async Task<AvatarOwner> FindOwnerAsync(Guid? personId, CancellationToken cancellationToken, bool readOnly = false)
     {
         var ownerId = operation.RequireOwner();
-        return persistence.FindOwnerAsync(ownerId, personId, readOnly, cancellationToken);
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
+        return await persistence.FindOwnerAsync(ownerId, personId, readOnly, cancellationToken);
     }
 
     public async Task UploadAsync(AvatarOwner owner, byte[] bytes, string mimeType, CancellationToken cancellationToken)
     {
         RequireOwner(owner);
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         if (bytes.Length == 0 || bytes.LongLength > options.AvatarMaxBytes)
             throw new FeatureValidationException("A non-empty avatar within the configured upload limit is required.");
         if (!IsValidImage(bytes, mimeType))
@@ -40,6 +44,8 @@ public sealed class ProfileAvatarService(
     public async Task<(Stream Content, string MimeType)> OpenAsync(AvatarOwner owner, CancellationToken cancellationToken)
     {
         RequireOwner(owner);
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         var key = owner.StorageKey;
         var mimeType = owner.MimeType;
         if (key is null || mimeType is null) throw new NotFoundException();
@@ -50,6 +56,8 @@ public sealed class ProfileAvatarService(
     public async Task DeleteAsync(AvatarOwner owner, CancellationToken cancellationToken)
     {
         RequireOwner(owner);
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         owner.SetAvatar(null, null);
         await persistence.SaveAvatarAsync(cancellationToken);
     }

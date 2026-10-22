@@ -9,6 +9,8 @@ public sealed class Scenario(IAttachmentPersistence persistence, LocalProfileOpe
     public async Task<Guid> ExecuteAsync(Guid interactionId, Guid attachmentId, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         var attachment = await persistence.FindAttachmentAsync(ownerId, interactionId, attachmentId, false, cancellationToken)
             ?? throw new NotFoundException();
         attachment.Status = AttachmentStatus.Deleting;

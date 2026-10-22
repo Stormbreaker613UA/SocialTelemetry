@@ -36,7 +36,8 @@ public sealed class SqlitePersistenceTests(SqliteApiFixture fixture) : IClassFix
             Assert.False(database.Database.HasPendingModelChanges());
             var migrations = database.GetService<IMigrationsAssembly>();
             Assert.Equal(ProviderMigrationsAssembly.SqliteNamespace, migrations.ModelSnapshot?.GetType().Namespace);
-            Assert.Equal(6, migrations.Migrations.Count);
+            Assert.Equal(7, migrations.Migrations.Count);
+            Assert.Contains("20261021145335_AddLocalAccess", migrations.Migrations.Keys);
         }
         using var restarted = fixture.WithServices(_ => { });
         using var client = restarted.CreateClient();

@@ -40,7 +40,11 @@ public sealed class ApplicationArchitectureTests
             typeof(AiTextRequest), typeof(AiTextResponse), typeof(InteractionAnalysisContext),
             typeof(InteractionAnalysisResult), typeof(SuggestedProfileUpdate), typeof(ISpeechToTextClient),
             typeof(SpeechToTextResult), typeof(IAttachmentStorage), typeof(IFileStorage),
-            typeof(NotFoundException), typeof(ConflictException)
+            typeof(NotFoundException), typeof(ConflictException),
+            typeof(SocialTelemetry.Application.Contracts.Profiles.LocalAccessEvidence),
+            typeof(SocialTelemetry.Application.Contracts.Profiles.LocalAccessBinding),
+            typeof(SocialTelemetry.Application.Contracts.Profiles.ILocalProfileAdmission),
+            typeof(SocialTelemetry.Application.Features.LocalAccess.ILocalAccessManagement)
         ];
         Assert.All(representativeTypes, contract => Assert.Same(ApplicationAssembly, contract.Assembly));
         Assert.All(ApplicationAssembly.GetExportedTypes(), contract => Assert.Null(apiAssembly.GetType(contract.FullName!)));

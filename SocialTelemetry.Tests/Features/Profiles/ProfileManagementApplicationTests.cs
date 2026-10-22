@@ -100,7 +100,10 @@ public abstract class ProfileManagementApplicationTestsContract<TFixture>(TFixtu
         // Linking an account to the selected identity must also close direct access, without a selector/UI bypass.
         database.Users.Add(new ApplicationUser { UserProfileId = Assert.IsType<Guid>(list.Selection.UserProfileId), UserName = "synthetic-active-account" });
         await database.SaveChangesAsync(Cancellation);
-        var locked = await Assert.ThrowsAsync<LocalProfileAccessException>(() => ResolveAsync(services, list.Selection.UserProfileId, list.Selection.Version));
+        var stale = await Assert.ThrowsAsync<LocalProfileAccessException>(() => ResolveAsync(services, list.Selection.UserProfileId, list.Selection.Version));
+        Assert.Equal(LocalProfileFailure.SelectionChanged, stale.Failure);
+        var current = await services.GetRequiredService<AppFeatures.LocalProfiles.Get.Scenario>().ExecuteAsync(Cancellation);
+        var locked = await Assert.ThrowsAsync<LocalProfileAccessException>(() => ResolveAsync(services, current.Selection.UserProfileId, current.Selection.Version));
         Assert.Equal(LocalProfileFailure.ProtectedAccessUnavailable, locked.Failure);
         Assert.Null(services.GetRequiredService<LocalProfileOperation>().Binding);
     }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Infrastructure.Runtime;
 using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Identity;
 
 namespace SocialTelemetry.Tests.Infrastructure.Configuration;
 
@@ -149,13 +150,17 @@ public sealed class PersistenceConfigurationTests
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(values));
+            if (values.TryGetValue("ApplicationData:RootDirectory", out var root) && root is not null)
+                builder.UseSetting("LocalAccess:DataDirectory", Path.Combine(root, "local-access"));
             if (!maintenance)
                 builder.ConfigureServices(services =>
                 {
                     foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService) &&
                         (service.ImplementationType == typeof(AttachmentReconciliationService) ||
                          service.ImplementationType == typeof(ProfileAvatarReconciliationService) ||
-                         service.ImplementationType == typeof(MediaDirectoryBinding))).ToArray())
+                         service.ImplementationType == typeof(MediaDirectoryBinding) ||
+                         service.ImplementationType == typeof(LocalAccessExpirationService) ||
+                         service.ImplementationFactory?.Method.ReturnType == typeof(LocalAccessKeyRing))).ToArray())
                         services.Remove(service);
                 });
         });

@@ -10,6 +10,8 @@ public sealed class Scenario(IUserProfilePersistence persistence, LocalProfileOp
     public async Task<JournalProfile> ExecuteAsync(CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         return await persistence.FindProfileAsync(ownerId, true, cancellationToken) ?? throw new NotFoundException();
     }
 }

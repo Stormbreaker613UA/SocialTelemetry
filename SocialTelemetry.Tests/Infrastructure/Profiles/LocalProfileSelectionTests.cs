@@ -94,8 +94,8 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
         var lifetime = oldRequest.ServiceProvider.GetRequiredService<LocalProfileLifetimes>().Capture(selected.Version);
         // Deliberately omit cancellation from the bound DB operation to simulate a late provider
         // ignoring cancellation. The persisted selection guard must still reject its save.
-        oldRequest.ServiceProvider.GetRequiredService<LocalProfileOperation>()
-            .Bind(new LocalProfileBinding(first, selected.Version), CancellationToken.None);
+        await oldRequest.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .RestoreAsync(new LocalProfileBinding(first, selected.Version), CancellationToken.None, Cancellation);
         var database = oldRequest.ServiceProvider.GetRequiredService<AppDbContext>();
         var original = await database.UserProfiles.SingleAsync(profile => profile.Id == first, Cancellation);
         await SelectAsync(second, selected.Version);
@@ -116,8 +116,8 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
         var second = await fixture.CreateUserProfileAsync("Next");
         var selected = await SelectAsync(first, (await CurrentAsync()).Version);
         await using var committing = fixture.CreateAsyncScope();
-        committing.ServiceProvider.GetRequiredService<LocalProfileOperation>()
-            .Bind(new LocalProfileBinding(first, selected.Version), CancellationToken.None);
+        await committing.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .RestoreAsync(new LocalProfileBinding(first, selected.Version), CancellationToken.None, Cancellation);
         var database = committing.ServiceProvider.GetRequiredService<AppDbContext>();
         await using var transaction = await database.Database.BeginTransactionAsync(Cancellation);
         await database.LockAnalysisContextAsync(first, Cancellation);
@@ -178,14 +178,17 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
             database.Users.Add(new ApplicationUser { UserProfileId = owner });
             await database.SaveChangesAsync(Cancellation);
         }
-        await AssertFailureAsync(LocalProfileFailure.ProtectedAccessUnavailable, () => SelectAsync(owner, selection.Version));
+        await AssertFailureAsync(LocalProfileFailure.SelectionChanged, () => SelectAsync(owner, selection.Version));
+        var current = await CurrentAsync();
+        await AssertFailureAsync(LocalProfileFailure.ProtectedAccessUnavailable, () => SelectAsync(owner, current.Version));
         await using var request = fixture.CreateAsyncScope();
         var service = request.ServiceProvider.GetRequiredService<LocalProfileSelectionService>();
-        await AssertFailureAsync(LocalProfileFailure.ProtectedAccessUnavailable, () => service.ResolveAsync(owner, selection.Version, Cancellation));
-        request.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new LocalProfileBinding(owner, selection.Version), CancellationToken.None);
+        await AssertFailureAsync(LocalProfileFailure.ProtectedAccessUnavailable, () => service.ResolveAsync(owner, current.Version, Cancellation));
+        request.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new LocalProfileBinding(owner, current.Version), CancellationToken.None);
         var databaseForRequest = request.ServiceProvider.GetRequiredService<AppDbContext>();
         (await databaseForRequest.UserProfiles.SingleAsync(Cancellation)).DisplayName = "Bypass";
-        await AssertFailureAsync(LocalProfileFailure.ProtectedAccessUnavailable, () => databaseForRequest.SaveChangesAsync(Cancellation));
+        var denied = await Assert.ThrowsAsync<LocalAccessException>(() => databaseForRequest.SaveChangesAsync(Cancellation));
+        Assert.Equal(LocalAccessFailure.Required, denied.Failure);
     }
 
     [Fact]
@@ -316,7 +319,8 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
         await using (var request = fixture.CreateAsyncScope())
         {
             var operation = request.ServiceProvider.GetRequiredService<LocalProfileOperation>();
-            operation.Bind(new LocalProfileBinding(first, selected.Version), CancellationToken.None);
+            await request.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .RestoreAsync(new LocalProfileBinding(first, selected.Version), CancellationToken.None, Cancellation);
             Assert.Throws<InvalidOperationException>(() => operation.Bind(new LocalProfileBinding(second, selected.Version), CancellationToken.None));
             Assert.Equal(first, operation.RequireOwner());
             var database = request.ServiceProvider.GetRequiredService<AppDbContext>();

@@ -14,6 +14,7 @@ using Serilog.Core;
 using Serilog.Events;
 using SocialTelemetry.Api.Common.Exceptions;
 using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Identity;
 
 namespace SocialTelemetry.Tests.Common.Exceptions;
 
@@ -44,6 +45,10 @@ public sealed class ExceptionPipelineTests
                     service.ImplementationType == typeof(MediaDirectoryBinding)));
                 services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(ProfileAvatarReconciliationService)));
+                services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
+                    service.ImplementationFactory?.Method.ReturnType == typeof(LocalAccessKeyRing)));
+                services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
+                    service.ImplementationType == typeof(LocalAccessExpirationService)));
                 services.AddSingleton<ILogEventSink>(sink);
                 services.AddSingleton<IStartupFilter, FailureStartupFilter>();
             });

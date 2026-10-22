@@ -82,7 +82,9 @@ public abstract partial class AudioAnalysisTestsContract<TFixture>(TFixture fixt
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var saved = await database.InteractionAnalyses.AsNoTracking().SingleAsync(analysis => analysis.Id == created.Id, Cancellation);
         // Explicit owner for this context-only read fixture; no product selector fallback.
-        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(data.ProfileId, Guid.NewGuid()), CancellationToken.None);
+        var selection = await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelectionService>().GetAsync(Cancellation);
+        await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(data.ProfileId, selection.Version, Cancellation);
         var built = await scope.ServiceProvider.GetRequiredService<AiContextBuilder>().BuildAsync(data.InteractionId, null, [data.AttachmentId], Cancellation);
         Assert.Equal(built.Fingerprint, saved.ContextFingerprint);
         Assert.DoesNotContain(Corrected, saved.ResultJson!);
@@ -307,7 +309,9 @@ public abstract partial class AudioAnalysisTestsContract<TFixture>(TFixture fixt
     private async Task<BuiltAnalysisContext> BuildAsync(Seed data)
     {
         await using var scope = fixture.CreateAsyncScope();
-        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(data.ProfileId, Guid.NewGuid()), CancellationToken.None);
+        var selection = await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelectionService>().GetAsync(Cancellation);
+        await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(data.ProfileId, selection.Version, Cancellation);
         return await scope.ServiceProvider.GetRequiredService<AiContextBuilder>().BuildAsync(data.InteractionId, null, [data.AttachmentId], Cancellation);
     }
 

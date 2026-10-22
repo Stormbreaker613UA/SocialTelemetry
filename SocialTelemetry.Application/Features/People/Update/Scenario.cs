@@ -10,6 +10,8 @@ public sealed class Scenario(IPeoplePersistence persistence, LocalProfileOperati
     public async Task<Person> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         if (string.IsNullOrWhiteSpace(request.DisplayName))
         {
             throw new FeatureValidationException("DisplayName is required.");

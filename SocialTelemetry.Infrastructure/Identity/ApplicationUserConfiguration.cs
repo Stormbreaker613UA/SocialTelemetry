@@ -9,6 +9,7 @@ public sealed class ApplicationUserConfiguration : IEntityTypeConfiguration<Appl
     public void Configure(EntityTypeBuilder<ApplicationUser> builder)
     {
         builder.Property(account => account.Id).ValueGeneratedNever();
+        builder.Property(account => account.AccessEpoch).IsConcurrencyToken();
         builder.HasIndex(account => account.UserProfileId).IsUnique();
         builder.HasOne<UserProfile>().WithOne()
             .HasForeignKey<ApplicationUser>(account => account.UserProfileId)

@@ -7,6 +7,7 @@ using SocialTelemetry.Application.Contracts.Transcription;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.Interactions;
 using SocialTelemetry.Application.Options;
+using SocialTelemetry.Application.Features.LocalAccess;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Infrastructure.Profiles;
@@ -151,6 +152,56 @@ public abstract class InteractionApplicationTestsContract<TFixture>(TFixture fix
         finally { finish.TrySetResult(new("Late", "synthetic", "model", "v1")); }
     }
 
+    [Fact]
+    public async Task Protected_direct_STT_lock_cancels_native_request_and_rejects_ignored_late_result()
+    {
+        var data = await SeedAsync();
+        using var application = fixture.WithServices(_ => { });
+        using var client = application.CreateClient();
+        const string password = "Synthetic-Transcript9!";
+        var login = "speech-" + Guid.NewGuid().ToString("N");
+        AccessChange enrollment;
+        await using (var enrolling = application.Services.CreateAsyncScope())
+        {
+            await BindAsync(enrolling.ServiceProvider);
+            enrollment = await enrolling.ServiceProvider.GetRequiredService<ILocalAccessManagement>().EnableAsync(new(login, password), Cancellation);
+        }
+        AccessChange signed;
+        await using (var signing = application.Services.CreateAsyncScope())
+            signed = await signing.ServiceProvider.GetRequiredService<ILocalAccessManagement>()
+                .SignInAsync(new(login, password, data.OwnerId, enrollment.Selection.Version, true), Cancellation);
+        await using var active = application.Services.CreateAsyncScope();
+        active.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+        await BindAsync(active.ServiceProvider);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource<SpeechToTextResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken observed = default;
+        var database = active.ServiceProvider.GetRequiredService<AppDbContext>();
+        var speech = new DelegateSpeech(token =>
+        {
+            Assert.Null(database.Database.CurrentTransaction);
+            observed = token;
+            entered.TrySetResult();
+            return resume.Task;
+        });
+        var scenario = new AppInteractions.TranscribeAttachment.Scenario(active.ServiceProvider.GetRequiredService<ITranscriptPersistence>(),
+            active.ServiceProvider.GetRequiredService<LocalProfileOperation>(), active.ServiceProvider.GetRequiredService<IAttachmentStorage>(),
+            speech, new UploadOptions(), new TranscriptOptions());
+        var execution = scenario.ExecuteAsync(new() { InteractionId = data.InteractionId, AttachmentId = data.AttachmentId }, Cancellation);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            await using var locking = application.Services.CreateAsyncScope();
+            locking.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+            await locking.ServiceProvider.GetRequiredService<ILocalAccessManagement>().LockAsync(data.OwnerId, Cancellation);
+            Assert.True(observed.IsCancellationRequested);
+            resume.TrySetResult(new("Late synthetic", "fake-stt", "model", "v1"));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => execution);
+            Assert.False(await database.AttachmentTranscripts.AnyAsync(row => row.AttachmentId == data.AttachmentId, Cancellation));
+        }
+        finally { resume.TrySetResult(new("Late synthetic", "fake-stt", "model", "v1")); }
+    }
+
     private async Task<Seed> SeedAsync()
     {
         var ownerId = await fixture.CreateUserProfileAsync();
@@ -174,8 +225,8 @@ public abstract class InteractionApplicationTestsContract<TFixture>(TFixture fix
     {
         var selection = await services.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
         var ownerId = Assert.IsType<Guid>(selection.UserProfileId);
-        services.GetRequiredService<LocalProfileOperation>().Bind(new(ownerId, selection.Version),
-            services.GetRequiredService<LocalProfileLifetimes>().Capture(selection.Version));
+        await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(ownerId, selection.Version, Cancellation);
     }
 
     private sealed record Seed(Guid OwnerId, Guid InteractionId, Guid AttachmentId);

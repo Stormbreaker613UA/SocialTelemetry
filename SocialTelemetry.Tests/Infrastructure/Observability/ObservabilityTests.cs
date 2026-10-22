@@ -15,6 +15,7 @@ using Serilog.Core;
 using Serilog.Events;
 using SocialTelemetry.Infrastructure.Observability;
 using SocialTelemetry.Infrastructure.Storage;
+using SocialTelemetry.Infrastructure.Identity;
 
 namespace SocialTelemetry.Tests.Infrastructure.Observability;
 
@@ -187,7 +188,9 @@ public sealed class ObservabilityTests
             {
                 foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService) &&
                     (service.ImplementationType == typeof(AttachmentReconciliationService) || service.ImplementationType == typeof(ProfileAvatarReconciliationService) ||
-                     service.ImplementationType == typeof(MediaDirectoryBinding))).ToArray())
+                     service.ImplementationType == typeof(MediaDirectoryBinding) ||
+                     service.ImplementationType == typeof(LocalAccessExpirationService) ||
+                     service.ImplementationFactory?.Method.ReturnType == typeof(LocalAccessKeyRing))).ToArray())
                     services.Remove(service);
                 configure?.Invoke(services);
             });

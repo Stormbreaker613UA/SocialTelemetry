@@ -351,10 +351,7 @@ public sealed class RuntimeConfigurationTests
             builder.ConfigureServices(services =>
             {
                 // Configuration validation must not depend on a database or contact a provider.
-                foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService) &&
-                    (service.ImplementationType == typeof(AttachmentReconciliationService) ||
-                     service.ImplementationType == typeof(ProfileAvatarReconciliationService) ||
-                     service.ImplementationType == typeof(MediaDirectoryBinding))).ToArray())
+                foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService)).ToArray())
                     services.Remove(service);
             });
         });

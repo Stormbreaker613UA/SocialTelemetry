@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -335,7 +336,7 @@ public sealed class MediaDirectoryBindingTests : IAsyncLifetime
         }
         var settings = new Dictionary<string, string?>
         {
-            ["Persistence:Provider"] = provider, ["ApplicationData:RootDirectory"] = root,
+            ["Persistence:Provider"] = provider, ["ApplicationData:RootDirectory"] = root, ["LocalAccess:DataDirectory"] = Path.Combine(root, "local-access"),
             ["Persistence:SqliteFile"] = Path.Combine(root, databaseName + ".db"),
             ["ConnectionStrings:Default"] = connection.ToString(), ["MediaBinding:LockTimeout"] = "00:00:00.1"
         };
@@ -362,10 +363,9 @@ public sealed class MediaDirectoryBindingTests : IAsyncLifetime
     {
         var application = App(settings).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
-            // Exercise the service without running cleanup or HTTP maintenance commands.
-            foreach (var service in services.Where(service => service.ServiceType == typeof(IHostedService) &&
-                (service.ImplementationType == typeof(MediaDirectoryBinding) || service.ImplementationType == typeof(AttachmentReconciliationService) ||
-                 service.ImplementationType == typeof(ProfileAvatarReconciliationService))).ToArray()) services.Remove(service);
+            // This maintenance harness starts binding explicitly below, before a StoreId
+            // exists. Do not auto-start cleanup, local-access keys or expiration beforehand.
+            services.RemoveAll<IHostedService>();
             services.AddSingleton<MediaDirectoryBinding>();
         }));
         var options = application.Services.GetRequiredService<IOptions<MediaBindingOptions>>().Value;

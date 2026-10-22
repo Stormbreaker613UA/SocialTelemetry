@@ -10,6 +10,8 @@ public sealed class Scenario(IPeoplePersistence persistence, LocalProfileOperati
     public async Task<Person> ExecuteAsync(Guid personId, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         return await persistence.FindPersonAsync(ownerId, personId, true, cancellationToken) ?? throw new NotFoundException();
     }
 }

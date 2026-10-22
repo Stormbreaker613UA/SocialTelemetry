@@ -18,6 +18,7 @@ public sealed class GlobalExceptionHandler(
     {
         var (statusCode, title, detail) = exception switch
         {
+            LocalAccessException access => (FailurePresentation.StatusCode(access.Failure), "Local access failed.", FailurePresentation.Detail(access.Failure)),
             LocalProfileAccessException profile => (FailurePresentation.StatusCode(profile.Failure), "Local profile access failed.", FailurePresentation.Detail(profile.Failure)),
             SpeechToTextException transcription => (FailurePresentation.StatusCode(transcription.Failure), "Transcription failed.", FailurePresentation.Detail(transcription.Failure)),
             AiProviderException providerException => (FailurePresentation.StatusCode(providerException.Failure), "AI connection or request failed.", FailurePresentation.Detail(providerException.Failure)),
@@ -50,6 +51,8 @@ public sealed class GlobalExceptionHandler(
             problemDetails.Extensions["code"] = transcriptionException.Failure.ToString();
         if (exception is LocalProfileAccessException profileException)
             problemDetails.Extensions["code"] = profileException.Failure.ToString();
+        if (exception is LocalAccessException accessException)
+            problemDetails.Extensions["code"] = accessException.Failure.ToString();
         if (exception is AiProviderException aiException)
         {
             problemDetails.Extensions["code"] = aiException.Failure.ToString();

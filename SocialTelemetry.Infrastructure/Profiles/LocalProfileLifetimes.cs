@@ -2,11 +2,11 @@ using SocialTelemetry.Application.Contracts.Profiles;
 namespace SocialTelemetry.Infrastructure.Profiles;
 
 // The local host has one active owner. Persisted checks remain authoritative at commit.
-public sealed class LocalProfileLifetimes(ILogger<LocalProfileLifetimes>? logger = null) : IDisposable
+public sealed class LocalProfileLifetimes(ILogger<LocalProfileLifetimes>? logger = null, IHostApplicationLifetime? host = null) : IDisposable
 {
     private readonly object gate = new();
     private Guid? version;
-    private CancellationTokenSource current = new();
+    private CancellationTokenSource current = CancellationTokenSource.CreateLinkedTokenSource(host?.ApplicationStopping ?? CancellationToken.None);
     private bool disposed;
     internal SemaphoreSlim SelectionGate { get; } = new(1, 1);
 
@@ -24,17 +24,25 @@ public sealed class LocalProfileLifetimes(ILogger<LocalProfileLifetimes>? logger
 
     public void Publish(Guid newVersion)
     {
-        CancellationTokenSource previous;
+        CancelRetired(Replace(newVersion));
+    }
+
+    internal CancellationTokenSource? Replace(Guid newVersion)
+    {
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            if (version == newVersion) return;
-            previous = current;
-            current = new CancellationTokenSource();
+            if (version == newVersion) return null;
+            var previous = current;
+            current = CancellationTokenSource.CreateLinkedTokenSource(host?.ApplicationStopping ?? CancellationToken.None);
             version = newVersion;
+            return previous;
         }
-        // Cancellation callbacks run outside our gate and outside any database transaction.
-        CancelAndDispose(previous);
+    }
+
+    internal void CancelRetired(CancellationTokenSource? retired)
+    {
+        if (retired is not null) CancelAndDispose(retired);
     }
 
     public void Dispose()

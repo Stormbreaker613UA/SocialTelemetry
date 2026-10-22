@@ -10,6 +10,8 @@ public sealed class Scenario(IPersonFactsPersistence persistence, LocalProfileOp
     public async Task<PersonFact> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         if (string.IsNullOrWhiteSpace(request.Value))
         {
             throw new FeatureValidationException("Value is required.");

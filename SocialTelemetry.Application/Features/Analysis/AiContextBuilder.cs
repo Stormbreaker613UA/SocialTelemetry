@@ -22,6 +22,8 @@ public sealed class AiContextBuilder(IAnalysisContextQuery query, IAttachmentSto
         IReadOnlyList<Guid>? selectedAttachmentIds, CancellationToken cancellationToken)
     {
         var owner = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         CheckText(userQuestion, limits.QuestionCharacters);
         var interaction = CheckRead(await query.InteractionAsync(owner, interactionId, limits, cancellationToken))
             ?? throw new NotFoundException("Interaction not found.");

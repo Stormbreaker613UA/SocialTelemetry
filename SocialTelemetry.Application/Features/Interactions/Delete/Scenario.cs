@@ -9,6 +9,8 @@ public sealed class Scenario(IInteractionPersistence persistence, LocalProfileOp
     public async Task<Interaction> ExecuteAsync(Input request, CancellationToken cancellationToken)
     {
         var ownerId = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken, userMutation: true);
+        cancellationToken = admission.CancellationToken;
         var interaction = await persistence.FindForDeleteAsync(ownerId, request.Id, cancellationToken);
 
         if (interaction is null)

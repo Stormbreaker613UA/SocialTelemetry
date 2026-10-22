@@ -55,14 +55,13 @@ internal sealed class ChatGptTestApp : IDisposable
             builder.UseSetting("ConnectionStrings:Default", "Host=localhost;Database=unused");
             builder.UseSetting("Persistence:Provider", "Sqlite");
             builder.UseSetting("ApplicationData:RootDirectory", DataDirectory);
+            builder.UseSetting("LocalAccess:DataDirectory", Path.Combine(DataDirectory, "local-access"));
             builder.UseSetting("AttachmentStorage:LocalDirectory", Path.Combine(DataDirectory, "attachments"));
             builder.ConfigureServices(services =>
             {
                 var reconciliation = services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(AttachmentReconciliationService));
                 services.Remove(reconciliation);
-                services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
-                    service.ImplementationType == typeof(MediaDirectoryBinding)));
                 services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) &&
                     service.ImplementationType == typeof(ProfileAvatarReconciliationService)));
                 services.Configure<ChatGptOptions>(options => options.DataDirectory = DataDirectory);
@@ -171,43 +170,44 @@ internal sealed class ChatGptTestApp : IDisposable
 
     private sealed class BoundFixtureClient(IServiceProvider services, ChatGptTestApp app) : IAiClient
     {
-        private ChatGptPlanAiClient Resolve()
+        private async Task<ChatGptPlanAiClient> ResolveAsync(CancellationToken cancellationToken)
         {
             var operation = services.GetRequiredService<LocalProfileOperation>();
             if (operation.Binding is null)
-                operation.Bind(app.ProfileBinding, services.GetRequiredService<LocalProfileLifetimes>().Capture(app.ProfileBinding.SelectionVersion));
+                await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                    .ExecuteAsync(app.ProfileBinding.UserProfileId, app.ProfileBinding.SelectionVersion, cancellationToken);
             return new ChatGptPlanAiClient(services.GetRequiredService<ChatGptConnection>(),
                 services.GetRequiredService<ChatGptHttpClient>(), services.GetRequiredService<ProfileAiAccess>(),
                 services.GetRequiredService<ChatGptCapabilityResolver>());
         }
-        public Task<SocialTelemetry.Application.Contracts.AI.Models.AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) => Resolve().GetSelectedModelAsync(cancellationToken);
-        public Task<SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse> GenerateTextAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextRequest request, CancellationToken cancellationToken) => Resolve().GenerateTextAsync(request, cancellationToken);
-        public Task ValidateExecutionAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => Resolve().ValidateExecutionAsync(result, cancellationToken);
-        public Task<IAiExecutionLease> AcquireExecutionLeaseAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => Resolve().AcquireExecutionLeaseAsync(result, cancellationToken);
+        public async Task<SocialTelemetry.Application.Contracts.AI.Models.AiSelectedModel> GetSelectedModelAsync(CancellationToken cancellationToken) => await (await ResolveAsync(cancellationToken)).GetSelectedModelAsync(cancellationToken);
+        public async Task<SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse> GenerateTextAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextRequest request, CancellationToken cancellationToken) => await (await ResolveAsync(cancellationToken)).GenerateTextAsync(request, cancellationToken);
+        public async Task ValidateExecutionAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => await (await ResolveAsync(cancellationToken)).ValidateExecutionAsync(result, cancellationToken);
+        public async Task<IAiExecutionLease> AcquireExecutionLeaseAsync(SocialTelemetry.Application.Contracts.AI.Models.AiTextResponse result, CancellationToken cancellationToken) => await (await ResolveAsync(cancellationToken)).AcquireExecutionLeaseAsync(result, cancellationToken);
     }
 
     public sealed class OwnedConnectionFixture(ChatGptTestApp app)
     {
-        private ProfileAiAccess Bind(IServiceProvider services)
+        private async Task<ProfileAiAccess> BindAsync(IServiceProvider services, CancellationToken cancellationToken)
         {
-            services.GetRequiredService<LocalProfileOperation>().Bind(app.ProfileBinding,
-                services.GetRequiredService<LocalProfileLifetimes>().Capture(app.ProfileBinding.SelectionVersion));
+            await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(app.ProfileBinding.UserProfileId, app.ProfileBinding.SelectionVersion, cancellationToken);
             return services.GetRequiredService<ProfileAiAccess>();
         }
         public async Task<ChatGptModelCatalog> GetModelsAsync(CancellationToken cancellationToken)
         {
             await using var scope = app.Services.CreateAsyncScope();
-            return await Bind(scope.ServiceProvider).ModelsAsync(cancellationToken);
+            return await (await BindAsync(scope.ServiceProvider, cancellationToken)).ModelsAsync(cancellationToken);
         }
         public async Task<ChatGptConnectionStatus> GetStatusAsync(CancellationToken cancellationToken)
         {
             await using var scope = app.Services.CreateAsyncScope();
-            return await Bind(scope.ServiceProvider).StatusAsync(cancellationToken);
+            return await (await BindAsync(scope.ServiceProvider, cancellationToken)).StatusAsync(cancellationToken);
         }
         public async Task<ChatGptDisconnectResult> DisconnectAsync(CancellationToken cancellationToken)
         {
             await using var scope = app.Services.CreateAsyncScope();
-            return await Bind(scope.ServiceProvider).DisconnectAsync(cancellationToken);
+            return await (await BindAsync(scope.ServiceProvider, cancellationToken)).DisconnectAsync(cancellationToken);
         }
     }
 }
@@ -262,6 +262,8 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
     public CancellationTokenSource? CancelDuringRefresh { get; set; }
     public bool CancelModels { get; set; }
     public ConcurrentQueue<Dictionary<string, string>> TokenRequests { get; } = new();
+    public TaskCompletionSource? AuthorizationExchangeEntered { get; set; }
+    public TaskCompletionSource? ContinueAuthorizationExchange { get; set; }
     public string? LastInferenceBody { get; private set; }
     public string? LastBearer { get; private set; }
 
@@ -302,7 +304,13 @@ internal sealed class FakeChatGptServer(TestBrowser browser) : HttpMessageHandle
                 CancelDuringRefresh?.Cancel();
                 await Task.Delay(RefreshDelay, cancellationToken);
             }
-            else ExchangeCount++;
+            else
+            {
+                ExchangeCount++;
+                AuthorizationExchangeEntered?.TrySetResult();
+                if (ContinueAuthorizationExchange is { } gate)
+                    await gate.Task.WaitAsync(cancellationToken);
+            }
             if (TokenError is not null) return Json(new { error = TokenError, error_description = "private-provider-detail" }, TokenErrorStatus);
             var clientId = fields["client_id"];
             if (refreshing && (!refreshTokens.TryGetValue(clientId, out var expected) || fields["refresh_token"] != expected))

@@ -8,6 +8,8 @@ public sealed class Scenario(ILocalProfileAccess access, LocalProfileOperation o
     public async Task ExecuteAsync(OwnershipRoot root, Guid id, CancellationToken cancellationToken)
     {
         var owner = operation.RequireOwner();
+        using var admission = await operation.EnterAsync(cancellationToken);
+        cancellationToken = admission.CancellationToken;
         if (!await access.RootExistsAsync(owner, root, id, cancellationToken))
             throw new NotFoundException();
     }
