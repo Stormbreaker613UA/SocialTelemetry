@@ -35,8 +35,9 @@ public sealed class ProfileAvatarCleanup(
         return keys.ToArray();
     }
 
-    public async Task DeleteUnreferencedAsync(AppDbContext database, IEnumerable<string> keys)
+    public async Task<bool> DeleteUnreferencedAsync(AppDbContext database, IEnumerable<string> keys)
     {
+        var complete = true;
         foreach (var key in keys.Distinct())
         {
             try
@@ -48,9 +49,11 @@ public sealed class ProfileAvatarCleanup(
             }
             catch (Exception exception)
             {
+                complete = false;
                 logger.LogWarning("Avatar cleanup deferred for {StorageKey} ({ExceptionType})", key, exception.GetType().Name);
             }
         }
+        return complete;
     }
 
     public static async Task<bool> IsReferencedAsync(AppDbContext database, string key, CancellationToken cancellationToken)

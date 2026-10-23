@@ -14,10 +14,18 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
     public const string VersionHeader = "X-SocialTelemetry-ProfileVersion";
 
     public static bool IsOwnedPath(PathString path) => path.StartsWithSegments("/user-profile") ||
+        IsLifecyclePath(path) ||
         path == "/local-access/protection" || path == "/local-access/password" ||
         path == "/local-access/recovery-code" || path == "/local-access/activity" ||
         path.StartsWithSegments("/people") || path.StartsWithSegments("/interactions") ||
         (path.StartsWithSegments("/ai-connection") && path != AiConnectionRoutes.CallbackPath);
+
+    internal static bool IsLifecyclePath(PathString path)
+    {
+        var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        return segments.Length is 2 or 3 && segments[0].Equals("local-profiles", StringComparison.OrdinalIgnoreCase) &&
+            Guid.TryParse(segments[1], out _) && (segments.Length == 2 || segments[2].Equals("name", StringComparison.OrdinalIgnoreCase));
+    }
 
     public async Task InvokeAsync(HttpContext context, ResolveProfile resolveProfile,
         AuthorizeRoot authorizeRoot, IHostApplicationLifetime host)

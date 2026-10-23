@@ -19,7 +19,10 @@ public sealed class LocalAccessHttpMiddleware(RequestDelegate next, LocalAccessT
         var accessRoute = context.Request.Path.StartsWithSegments("/local-access");
         var protectedTransport = proof is not null && (LocalProfileMiddleware.IsOwnedPath(context.Request.Path) ||
             context.Request.Path.StartsWithSegments("/local-profiles"));
-        if (accessRoute || protectedTransport)
+        // A password-bearing destructive body must never be accepted over insecure transport,
+        // even when no device cookie was supplied. Unprotected profiles still need no account.
+        var journalDeletion = HttpMethods.IsDelete(context.Request.Method) && LocalProfileMiddleware.IsLifecyclePath(context.Request.Path);
+        if (accessRoute || protectedTransport || journalDeletion)
         {
             context.Response.Headers.CacheControl = "no-store";
             context.Response.Headers["Referrer-Policy"] = "no-referrer";
@@ -37,7 +40,7 @@ public sealed class LocalAccessHttpMiddleware(RequestDelegate next, LocalAccessT
                 catch (AntiforgeryValidationException) { throw new LocalAccessException(LocalAccessFailure.LocalRequestRequired); }
             }
         }
-        if (accessRoute)
+        if (accessRoute || LocalProfileMiddleware.IsLifecyclePath(context.Request.Path))
         {
             const int bodyBytes = 8192;
             if (context.Request.ContentLength > bodyBytes) throw new BadHttpRequestException("Request too large.", 413);

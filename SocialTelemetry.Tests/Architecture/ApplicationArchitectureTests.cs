@@ -44,7 +44,10 @@ public sealed class ApplicationArchitectureTests
             typeof(SocialTelemetry.Application.Contracts.Profiles.LocalAccessEvidence),
             typeof(SocialTelemetry.Application.Contracts.Profiles.LocalAccessBinding),
             typeof(SocialTelemetry.Application.Contracts.Profiles.ILocalProfileAdmission),
-            typeof(SocialTelemetry.Application.Features.LocalAccess.ILocalAccessManagement)
+            typeof(SocialTelemetry.Application.Features.LocalAccess.ILocalAccessManagement),
+            typeof(SocialTelemetry.Application.Features.LocalProfiles.IOpenedProfileLifecycle),
+            typeof(SocialTelemetry.Application.Features.LocalProfiles.RenamedProfile),
+            typeof(SocialTelemetry.Application.Features.LocalProfiles.DeletedProfile)
         ];
         Assert.All(representativeTypes, contract => Assert.Same(ApplicationAssembly, contract.Assembly));
         Assert.All(ApplicationAssembly.GetExportedTypes(), contract => Assert.Null(apiAssembly.GetType(contract.FullName!)));

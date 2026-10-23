@@ -62,6 +62,12 @@ public abstract class LocalAccessHttpTestsContract<TFixture>(TFixture fixture) :
             Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
         using (var rejected = await client.PutAsJsonAsync("/user-profile", new { DisplayName = "Forbidden CSRF change" }, Cancellation))
             Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        using (var rejected = await client.PatchAsJsonAsync($"/local-profiles/{owner}/name", new { DisplayName = "Forbidden rename", ExpectedVersion = selection.Version }, Cancellation))
+            Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        using (var request = new HttpRequestMessage(HttpMethod.Delete, $"/local-profiles/{owner}")
+            { Content = JsonContent.Create(new { ConfirmJournalDeletion = true, CurrentPassword = Password, ExpectedVersion = selection.Version }) })
+        using (var rejected = await client.SendAsync(request, Cancellation))
+            Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
         await SetCsrfAsync(client);
         client.DefaultRequestHeaders.Add("Origin", "https://foreign.example");
         using (var rejected = await client.GetAsync("/user-profile", Cancellation)) Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);

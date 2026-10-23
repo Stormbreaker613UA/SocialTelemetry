@@ -1,4 +1,5 @@
 using FastEndpoints;
+using SocialTelemetry.Api.Common.Profiles;
 using SocialTelemetry.Application.Observability;
 using SocialTelemetry.Api.Features.AiConnection;
 using Scenario = SocialTelemetry.Application.Features.Analysis.AnalyzeInteraction.Scenario;
@@ -23,9 +24,11 @@ public sealed class Endpoint(Scenario scenario, ILogger<Endpoint> logger) : Endp
             var result = await scenario.ExecuteAsync(new Input(request.InteractionId, request.UserQuestion, request.AttachmentIds), cancellationToken);
             logger.LogInformation("Analysis {AnalysisId} created for Interaction {InteractionId} with {SuggestionCount} pending suggestions",
                 result.Id, result.InteractionId, result.Analysis.SuggestedProfileUpdates.Count);
+            // A later owner change cannot revoke this committed result, but caller cancellation still applies.
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
             await Send.ResponseAsync(new Response(result.Id, result.InteractionId, result.Analysis, result.Provider,
                 result.Model, result.RequestedModel, result.ReturnedModel, result.SchemaVersion, result.PromptVersion, result.CreatedAt),
-                201, cancellationToken);
+                201, transport);
             operation.Complete();
         }
         catch (Exception exception)

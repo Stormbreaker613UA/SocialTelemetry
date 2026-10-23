@@ -1165,6 +1165,16 @@ namespace SocialTelemetry.Infrastructure.Persistence.Migrations.Sqlite
                         });
                 });
 
+            modelBuilder.Entity("SocialTelemetry.Infrastructure.Profiles.ProfileDeletionCleanupMarker", b =>
+                {
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserProfileId");
+
+                    b.ToTable("ProfileDeletionCleanupMarkers", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
                 {
                     b.HasOne("SocialTelemetry.Infrastructure.Identity.ApplicationUser", null)

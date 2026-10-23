@@ -91,7 +91,16 @@ public sealed class ProfileAiAccess(AppDbContext database, LocalProfileOperation
     public async Task SelectConnectionAsync(Guid connectionId, bool adoptUnassigned, CancellationToken cancellationToken)
     {
         var before = await ReadAsync(cancellationToken);
-        var model = await connection.ClaimAsync(operation.RequireOwner(), connectionId, adoptUnassigned, cancellationToken);
+        string? model;
+        // Claims still precede SQL publication, but admission must serialize with journal deletion.
+        // Acquire SQL before the credential file; neither protection spans provider/network work.
+        await using (var transaction = await database.Database.BeginTransactionAsync(cancellationToken))
+        {
+            await database.LockAnalysisContextAsync(operation.RequireOwner(), cancellationToken);
+            model = await connection.ClaimAsync(operation.RequireOwner(), connectionId, adoptUnassigned, cancellationToken,
+                RevalidateCallbackAdmissionAsync);
+            await transaction.CommitAsync(cancellationToken);
+        }
         // Protected claim precedes SQL publication. SQL failure cannot give another owner access;
         // the connection remains exclusively claimed and the same owner can explicitly retry.
         await ChangeAsync(before?.Generation ?? Guid.Empty, selection =>

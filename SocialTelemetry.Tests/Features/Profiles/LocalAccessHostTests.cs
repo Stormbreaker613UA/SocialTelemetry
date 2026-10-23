@@ -13,6 +13,62 @@ public abstract class LocalAccessHostTestsContract<TFixture>(TFixture fixture) :
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
+    [Fact]
+    public async Task Last_profile_journal_deletion_survives_real_host_restart_without_bootstrap_or_automatic_selection()
+    {
+        string? connection = null;
+        var administrative = fixture.DisposablePostgresConnection;
+        var schema = "profile_delete_" + Guid.NewGuid().ToString("N");
+        if (administrative is not null)
+        {
+            await using var admin = new NpgsqlConnection(administrative);
+            await admin.OpenAsync(Cancellation);
+            await using var create = new NpgsqlCommand($"CREATE SCHEMA \"{schema}\"", admin);
+            await create.ExecuteNonQueryAsync(Cancellation);
+            connection = new NpgsqlConnectionStringBuilder(administrative) { SearchPath = schema, Pooling = false }.ToString();
+            await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connection).Options);
+            await database.Database.MigrateAsync(Cancellation);
+        }
+        try
+        {
+            await using var host = new LocalAccessProcessHost(connection);
+            await host.StartAsync(Cancellation);
+            using var client = host.CreateClient();
+            using var initial = await GetAsync(client, "/local-profiles");
+            Assert.Empty(initial.RootElement.GetProperty("profiles").EnumerateArray());
+            var version = initial.RootElement.GetProperty("version").GetGuid();
+            using var created = await SendAsync(client, HttpMethod.Post, "/local-profiles", new { DisplayName = "Delete last synthetic journal", ExpectedVersion = version });
+            var owner = created.RootElement.GetProperty("id").GetGuid();
+            using var selected = await SendAsync(client, HttpMethod.Put, "/local-profiles/current", new { UserProfileId = owner, ExpectedVersion = version });
+            Bind(client, owner, selected.RootElement.GetProperty("version").GetGuid());
+            await CsrfAsync(client);
+            using var deleted = await SendAsync(client, HttpMethod.Delete, $"/local-profiles/{owner}",
+                new { ExpectedVersion = selected.RootElement.GetProperty("version").GetGuid(), ConfirmJournalDeletion = true });
+            Assert.Equal(JsonValueKind.Null, deleted.RootElement.GetProperty("userProfileId").ValueKind);
+            var emptyVersion = deleted.RootElement.GetProperty("version").GetGuid();
+            await host.StopAbruptlyAsync();
+            await host.StartAsync(Cancellation);
+            using var restarted = await GetAsync(client, "/local-profiles");
+            Assert.Equal(JsonValueKind.Null, restarted.RootElement.GetProperty("userProfileId").ValueKind);
+            Assert.Equal(emptyVersion, restarted.RootElement.GetProperty("version").GetGuid());
+            Assert.Empty(restarted.RootElement.GetProperty("profiles").EnumerateArray());
+            using var explicitCreate = await SendAsync(client, HttpMethod.Post, "/local-profiles", new { DisplayName = "New explicit journal", ExpectedVersion = emptyVersion });
+            Assert.NotEqual(owner, explicitCreate.RootElement.GetProperty("id").GetGuid());
+            using var stillEmptySelection = await GetAsync(client, "/local-profiles");
+            Assert.Equal(JsonValueKind.Null, stillEmptySelection.RootElement.GetProperty("userProfileId").ValueKind);
+        }
+        finally
+        {
+            if (administrative is not null)
+            {
+                await using var admin = new NpgsqlConnection(administrative);
+                await admin.OpenAsync(CancellationToken.None);
+                await using var drop = new NpgsqlCommand($"DROP SCHEMA \"{schema}\" CASCADE", admin);
+                await drop.ExecuteNonQueryAsync(CancellationToken.None);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -46,6 +46,10 @@ public static class InfrastructureRegistration
         services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Get.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Create.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Select.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Rename.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.Delete.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.LocalProfiles.IOpenedProfileLifecycle, OpenedProfileLifecycle>();
+        services.AddScoped<ProfileDeletionCleanup>();
         services.AddScoped<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.ProfileAccess.AuthorizeRoot.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.AiConnection.Begin.Scenario>();

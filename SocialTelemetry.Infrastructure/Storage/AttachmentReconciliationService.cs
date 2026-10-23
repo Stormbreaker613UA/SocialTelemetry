@@ -35,6 +35,7 @@ public sealed class AttachmentReconciliationService(
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var storage = scope.ServiceProvider.GetRequiredService<IAttachmentStorage>();
+        await scope.ServiceProvider.GetRequiredService<Profiles.ProfileDeletionCleanup>().ReconcileAsync(cancellationToken);
         var unfinishedAttachments = await dbContext.InteractionAttachments
             .AsNoTracking()
             .Where(attachment => attachment.Status != AttachmentStatus.Ready)

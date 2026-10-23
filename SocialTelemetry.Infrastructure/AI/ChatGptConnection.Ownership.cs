@@ -37,9 +37,11 @@ public sealed partial class ChatGptConnection
             .Select((account, index) => new ChatGptAccountSummary(account.Id, $"Unassigned connection {index + 1}", account.Tokens is not null)).ToArray();
     }
 
-    internal async Task<string?> ClaimAsync(Guid owner, Guid connectionId, bool adoptUnassigned, CancellationToken cancellationToken)
+    internal async Task<string?> ClaimAsync(Guid owner, Guid connectionId, bool adoptUnassigned, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? revalidate = null)
     {
         using var storageLock = await store.LockAsync(cancellationToken);
+        if (revalidate is not null) await revalidate(cancellationToken);
         var state = await store.ReadAsync(cancellationToken);
         var account = state.Accounts.SingleOrDefault(account => account.Id == connectionId)
             ?? throw new AiProviderException(AiFailure.NotConnected);
@@ -122,6 +124,25 @@ public sealed partial class ChatGptConnection
             await store.SaveAsync(state, CancellationToken.None);
         }
         return new ChatGptDisconnectResult(confirmed, confirmed ? "Disconnected; remote revocation confirmed." : "Disconnected locally; remote revocation was not confirmed.");
+    }
+
+    internal async Task ForgetDeletedOwnerAsync(Guid owner, CancellationToken cancellationToken)
+    {
+        Guid[] sessions;
+        using (await store.LockAsync(cancellationToken))
+        {
+            var state = await store.ReadAsync(cancellationToken);
+            var removed = state.Accounts.Where(account => account.UserProfileId == owner).ToArray();
+            sessions = removed.Where(account => account.Tokens is not null).Select(account => account.Tokens!.SessionId).ToArray();
+            if (pending?.OwnerBinding?.UserProfileId == owner) pending = null;
+            if (removed.Length > 0)
+            {
+                state.Accounts.RemoveAll(account => account.UserProfileId == owner);
+                if (removed.Any(account => account.Id == state.ActiveConnectionId)) state.ActiveConnectionId = null;
+                await store.SaveAsync(state, cancellationToken);
+            }
+        }
+        foreach (var session in sessions) InvalidateLifetime(session);
     }
 
     private static ChatGptAccount OwnedAccount(ChatGptState state, Guid owner, Guid connectionId) =>

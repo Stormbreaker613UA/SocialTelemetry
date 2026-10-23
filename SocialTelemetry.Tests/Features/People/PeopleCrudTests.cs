@@ -280,6 +280,10 @@ public class PeopleApiFixture : IAsyncLifetime
     public async Task SelectProfileAsync(Guid owner)
     {
         await using var scope = CreateAsyncScope();
+        // A preceding expiry/revocation test may leave an admission for maintenance to close.
+        // Settle that real transition before capturing setup CAS; never retry a rejected product request.
+        await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Infrastructure.Identity.LocalAccessManagement>()
+            .ExpireAsync(TestContext.Current.CancellationToken);
         var selector = scope.ServiceProvider.GetRequiredService<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelectionService>();
         var before = await selector.GetAsync(TestContext.Current.CancellationToken);
         var selected = await selector.SelectAsync(owner, before.Version, TestContext.Current.CancellationToken);

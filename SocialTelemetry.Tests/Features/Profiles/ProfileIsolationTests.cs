@@ -39,6 +39,283 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Other_host_journal_deletion_blocks_original_callback_before_or_during_exchange(bool duringExchange)
+    {
+        var first = await SeedAsync();
+        void DelayRefresh(IServiceCollection services)
+        {
+            foreach (var descriptor in services.Where(service => service.ImplementationType == typeof(LocalAccessExpirationService)).ToArray())
+                services.Remove(descriptor);
+        }
+        using var host = Host(DelayRefresh);
+        using var other = Host(DelayRefresh, host.CredentialDirectory);
+        using var client = host.Client();
+        using (var begin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, begin.StatusCode);
+        var callback = host.Callback();
+        host.Server.AuthorizationExchangeEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Server.ContinueAuthorizationExchange = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<HttpResponseMessage>? completing = null;
+        if (duringExchange)
+        {
+            completing = client.GetAsync(callback, Cancellation);
+            await host.Server.AuthorizationExchangeEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
+        }
+        try { await DeleteOpenedAsync(other, first.Owner); }
+        finally { host.Server.ContinueAuthorizationExchange.TrySetResult(); }
+        using var rejected = await (completing ?? client.GetAsync(callback, Cancellation));
+        Assert.Contains(rejected.StatusCode, new[] { HttpStatusCode.BadRequest, HttpStatusCode.Conflict });
+        Assert.Equal(duringExchange ? 1 : 0, host.Server.ExchangeCount);
+        Assert.Equal(0, host.Server.RevokeCount);
+        using var replay = await client.GetAsync(callback, Cancellation);
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+        var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+        using (await store.LockAsync(Cancellation))
+            Assert.DoesNotContain((await store.ReadAsync(Cancellation)).Accounts, account => account.UserProfileId == first.Owner);
+        await using var checking = fixture.CreateAsyncScope();
+        Assert.False(await checking.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>()
+            .AnyAsync(selection => selection.UserProfileId == first.Owner, Cancellation));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Journal_deletion_cancels_unfinished_AI_or_STT_and_ignored_late_output_cannot_restore_the_graph(bool speech)
+    {
+        var first = await SeedAsync();
+        var retained = await SeedAsync();
+        await fixture.SelectProfileAsync(first.Owner);
+        var transcription = new PausedSpeech();
+        using var host = Host(services =>
+        {
+            services.RemoveAll<ISpeechToTextClient>();
+            services.AddSingleton<ISpeechToTextClient>(transcription);
+        });
+        using var client = host.Client();
+        if (speech)
+        {
+            await using var remove = fixture.CreateAsyncScope();
+            await remove.ServiceProvider.GetRequiredService<AppDbContext>().AttachmentTranscripts
+                .Where(transcript => transcript.AttachmentId == first.Audio).ExecuteDeleteAsync(Cancellation);
+        }
+        else
+        {
+            await AdoptAsync(client, await LegacyAsync(host));
+            host.Server.StreamBody = CompletedResult(first.Person);
+            using var committed = await client.PostAsJsonAsync($"/interactions/{first.Interaction}/analyze", new { }, Cancellation);
+            Assert.Equal(HttpStatusCode.Created, committed.StatusCode);
+            await AssertStoredAsync(first, 1); // A valid prior commit is successful before explicit deletion removes its history.
+            host.Server.InferenceStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            host.Server.ContinueInference = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            host.Server.IgnoreInferenceCancellation = true;
+        }
+        var running = client.PostAsJsonAsync(speech ? $"/interactions/{first.Interaction}/attachments/{first.Audio}/transcribe" :
+            $"/interactions/{first.Interaction}/analyze", new { }, Cancellation);
+        await (speech ? transcription.Started.Task : host.Server.InferenceStarted!.Task).WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+        try { await DeleteOpenedAsync(host, first.Owner); }
+        finally
+        {
+            transcription.Continue.TrySetResult();
+            host.Server.ContinueInference?.TrySetResult();
+        }
+        using var late = await running;
+        Assert.Equal(HttpStatusCode.Conflict, late.StatusCode);
+        if (speech) Assert.True(transcription.Token.IsCancellationRequested);
+        await using var checking = fixture.CreateAsyncScope();
+        var database = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await database.UserProfiles.AnyAsync(profile => profile.Id == first.Owner, Cancellation));
+        Assert.False(await database.AttachmentTranscripts.AnyAsync(transcript => transcript.AttachmentId == first.Audio, Cancellation));
+        Assert.False(await database.InteractionAnalyses.AnyAsync(analysis => analysis.InteractionId == first.Interaction, Cancellation));
+        Assert.True(await database.UserProfiles.AnyAsync(profile => profile.Id == retained.Owner, Cancellation));
+        Assert.True(await database.PersonFacts.AnyAsync(fact => fact.Id == retained.Fact, Cancellation));
+    }
+
+    [Fact]
+    public async Task Deletion_winning_before_adoption_protection_cannot_claim_an_unassigned_credential()
+    {
+        var first = await SeedAsync();
+        var gate = new BeforeAdoption();
+        using var host = Host(services =>
+        {
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(gate));
+            foreach (var descriptor in services.Where(service => service.ImplementationType == typeof(LocalAccessExpirationService)).ToArray())
+                services.Remove(descriptor);
+        });
+        using var other = Host(credentialDirectory: host.CredentialDirectory);
+        using var client = host.Client();
+        var unassigned = await LegacyAsync(host);
+        gate.Armed = true;
+        var claiming = client.PutAsJsonAsync("/ai-connection/chatgpt/connection", new { ConnectionId = unassigned, AdoptUnassigned = true }, Cancellation);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
+        try { await DeleteOpenedAsync(other, first.Owner); }
+        finally { gate.Continue.TrySetResult(); }
+        using var rejected = await claiming;
+        Assert.Equal(HttpStatusCode.Conflict, rejected.StatusCode);
+        var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+        using (await store.LockAsync(Cancellation))
+        {
+            var account = Assert.Single((await store.ReadAsync(Cancellation)).Accounts, account => account.Id == unassigned);
+            Assert.Null(account.UserProfileId); Assert.NotNull(account.Tokens);
+        }
+    }
+
+    private static async Task DeleteOpenedAsync(TestHost host, Guid owner)
+    {
+        await using var scope = host.Application.Services.CreateAsyncScope();
+        var selection = await scope.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+        await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+            .ExecuteAsync(owner, selection.Version, Cancellation);
+        var result = await scope.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.LocalProfiles.Delete.Scenario>()
+            .ExecuteAsync(owner, selection.Version, true, null, Cancellation);
+        Assert.Null(result.UserProfileId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Valid_analysis_commit_wins_before_waiting_journal_deletion(bool otherHost)
+    {
+        var first = await SeedAsync();
+        var commit = new AnalysisCommitGate();
+        var response = new CommittedResponseGate();
+        var attempt = new SelectionAttempt();
+        using var host = Host(services =>
+        {
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(commit, attempt));
+            ConfigureCommittedResponse(services, response);
+        });
+        using var other = otherHost ? Host(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(attempt)), host.CredentialDirectory) : null;
+        using var startedOther = other?.Client(); // Finish host startup before holding the analysis writer gate.
+        using var client = host.Client();
+        await AdoptAsync(client, await LegacyAsync(host));
+        host.Server.StreamBody = CompletedResult(first.Person);
+        var analysis = client.PostAsJsonAsync($"/interactions/{first.Interaction}/analyze", new { }, Cancellation);
+        Task? deleting = null;
+        try
+        {
+            await commit.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            attempt.Armed = true;
+            deleting = Task.Run(() => DeleteOpenedAsync(other ?? host, first.Owner), Cancellation);
+            await attempt.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            Assert.False(deleting.IsCompleted);
+            commit.Continue.TrySetResult();
+            await response.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            await deleting;
+            Assert.True(commit.Committed);
+            if (otherHost)
+            {
+                // Cooperating hosts refresh from authoritative SQL; there is no immediate IPC cancellation.
+                Assert.False(response.OwnerLifetime.IsCancellationRequested);
+                await using var refresh = host.Application.Services.CreateAsyncScope();
+                await refresh.ServiceProvider.GetRequiredService<LocalAccessManagement>().ExpireAsync(Cancellation);
+            }
+            Assert.True(response.OwnerLifetime.IsCancellationRequested);
+            response.Continue.TrySetResult();
+            using var completed = await analysis;
+            Assert.Equal(HttpStatusCode.Created, completed.StatusCode);
+            await using var checking = fixture.CreateAsyncScope();
+            var database = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.False(await database.UserProfiles.AnyAsync(profile => profile.Id == first.Owner, Cancellation));
+            Assert.False(await database.InteractionAnalyses.AnyAsync(row => row.InteractionId == first.Interaction, Cancellation));
+            Assert.Equal(0, host.Server.RevokeCount);
+        }
+        finally
+        {
+            commit.Continue.TrySetResult();
+            response.Continue.TrySetResult();
+            if (deleting is not null) await deleting;
+        }
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_after_analysis_commit_is_not_replaced_by_a_success_response()
+    {
+        var first = await SeedAsync();
+        var response = new CommittedResponseGate();
+        using var host = Host(services => ConfigureCommittedResponse(services, response));
+        using var client = host.Client();
+        await AdoptAsync(client, await LegacyAsync(host));
+        host.Server.StreamBody = CompletedResult(first.Person);
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        var analysis = client.PostAsJsonAsync($"/interactions/{first.Interaction}/analyze", new { }, caller.Token);
+        try
+        {
+            await response.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            await AssertStoredAsync(first, 1);
+            caller.Cancel();
+            response.Continue.TrySetResult();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => analysis);
+            await response.Released.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            await AssertStoredAsync(first, 1);
+        }
+        finally { response.Continue.TrySetResult(); }
+    }
+
+    private static void ConfigureCommittedResponse(IServiceCollection services, CommittedResponseGate response)
+    {
+        // Refresh explicitly in the race test rather than depending on the maintenance timer.
+        foreach (var descriptor in services.Where(service => service.ImplementationType == typeof(LocalAccessExpirationService)).ToArray())
+            services.Remove(descriptor);
+        services.RemoveAll<IAnalysisPersistence>();
+        services.AddScoped<IAnalysisPersistence>(provider =>
+        {
+            var database = provider.GetRequiredService<AppDbContext>();
+            return new CommittedResponsePersistence(new AnalysisExecutionPersistence(database), database,
+                provider.GetRequiredService<LocalProfileOperation>(), response);
+        });
+    }
+
+    private sealed class CommittedResponseGate
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Released { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationToken OwnerLifetime { get; set; }
+    }
+
+    private sealed class CommittedResponsePersistence(IAnalysisPersistence inner, AppDbContext database,
+        LocalProfileOperation operation, CommittedResponseGate response) : IAnalysisPersistence
+    {
+        public Task<BuiltAnalysisContext> SnapshotAsync(Func<CancellationToken, Task<BuiltAnalysisContext>> build,
+            CancellationToken cancellationToken) => inner.SnapshotAsync(build, cancellationToken);
+
+        public async Task<InteractionAnalysis> CommitAsync(Guid owner, Func<CancellationToken, Task> verifyContext,
+            Func<CancellationToken, Task<IAiExecutionLease>> acquireExecutionLease, Func<AnalysisMutation> create,
+            CancellationToken cancellationToken)
+        {
+            var result = await inner.CommitAsync(owner, verifyContext, acquireExecutionLease, create, cancellationToken);
+            Assert.Null(database.Database.CurrentTransaction);
+            response.OwnerLifetime = operation.Lifetime;
+            response.Entered.TrySetResult();
+            // Intentionally pause only AFTER the real atomic commit and disposal of all protection.
+            // Cancellation here must neither undo the committed result nor retarget the response.
+            await response.Continue.Task;
+            response.Released.TrySetResult();
+            return result;
+        }
+    }
+
+    private sealed class BeforeAdoption : DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (Armed && command.CommandText.Contains("ProfileAiSelections", StringComparison.Ordinal) && command.CommandText.StartsWith("SELECT", StringComparison.Ordinal))
+            {
+                Armed = false;
+                Entered.TrySetResult();
+                await Continue.Task.WaitAsync(cancellationToken);
+            }
+            return result;
+        }
+    }
+
+    [Theory]
     [InlineData(false, false, false)]
     [InlineData(false, true, false)]
     [InlineData(true, false, false)]
@@ -147,8 +424,9 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
                 await using var transaction = await database.Database.BeginTransactionAsync(Cancellation);
                 await database.LockLocalProfileSelectionAsync(Cancellation);
                 var grantId = (await database.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation)).AccessGrantId;
+                var expiredAt = clock.GetUtcNow().AddSeconds(-1);
                 await database.Set<LocalProfileGrant>().Where(grant => grant.Id == grantId)
-                    .ExecuteUpdateAsync(update => update.SetProperty(grant => grant.ExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)), Cancellation);
+                    .ExecuteUpdateAsync(update => update.SetProperty(grant => grant.ExpiresAt, expiredAt), Cancellation);
                 await transaction.CommitAsync(Cancellation);
             }
             else
@@ -1191,6 +1469,7 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
 
     private sealed class AnalysisCommitGate : DbTransactionInterceptor
     {
+        public bool Committed { get; private set; }
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public override async ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
@@ -1202,6 +1481,12 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
                 await Continue.Task.WaitAsync(cancellationToken);
             }
             return result;
+        }
+        public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context?.ChangeTracker.Entries<InteractionAnalysis>().Any() == true) Committed = true;
+            return Task.CompletedTask;
         }
     }
 

@@ -66,6 +66,8 @@ public sealed class JournalFeatureArchitectureTests
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.Interactions.TranscribeAttachment.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.RequireLocalAiRequestAttribute));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.LocalProfiles.Get.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.LocalProfiles.Rename.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.LocalProfiles.Delete.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.Callback.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.AiConnection.LocalAiConnectionMiddleware));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Common.Profiles.LocalProfileMiddleware));
