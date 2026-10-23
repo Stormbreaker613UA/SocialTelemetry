@@ -169,6 +169,16 @@ public static class InfrastructureRegistration
             services.GetRequiredService<IOptions<UploadOptions>>().Value));
         services.AddScoped<SocialTelemetry.Application.Features.People.AddExternalConnection.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.People.Archive.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.IPersonGroupsPersistence, PersonGroupsPersistence>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.List.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.Get.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.Create.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.Rename.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.Delete.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.ListMembers.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.AddMember.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.PersonGroups.RemoveMember.Scenario>();
+        services.AddScoped<SocialTelemetry.Application.Features.People.SetFavorite.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.People.Create.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.People.Delete.Scenario>();
         services.AddScoped<SocialTelemetry.Application.Features.People.DeleteExternalConnection.Scenario>();

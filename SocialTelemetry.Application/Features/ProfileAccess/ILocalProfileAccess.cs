@@ -2,7 +2,7 @@ using SocialTelemetry.Application.Contracts.Profiles;
 
 namespace SocialTelemetry.Application.Features.ProfileAccess;
 
-public enum OwnershipRoot { Person, Interaction }
+public enum OwnershipRoot { Person, Interaction, PersonGroup }
 public sealed record ResolvedProfile(LocalProfileBinding Binding, CancellationToken Lifetime);
 
 public interface ILocalProfileAccess : ILocalProfileAdmission

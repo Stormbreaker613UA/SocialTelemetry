@@ -27,7 +27,7 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
                 HowWeMet = request.HowWeMet,
                 Notes = request.Notes
             }, cancellationToken);
-            await Send.ResponseAsync(new Response(person.Id), 201, cancellationToken);
+            await Send.ResponseAsync(new Response(person.Id, person.IsFavorite), 201, cancellationToken);
         }
         catch (FeatureValidationException exception)
         {

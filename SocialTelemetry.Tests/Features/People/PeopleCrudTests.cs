@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using SocialTelemetry.Application.Contracts.Profiles;
 using System.Net;
 using System.Net.Http.Json;
@@ -346,6 +347,10 @@ public class PeopleApiFixture : IAsyncLifetime
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("AttachmentStorage:LocalDirectory", attachmentStorageDirectory);
+            builder.ConfigureServices(services => services.AddDataProtection().PersistKeysToFileSystem(
+                new DirectoryInfo(Path.Combine(Path.GetDirectoryName(attachmentStorageDirectory)!, "framework-keys"))));
+            builder.UseSetting("ApplicationData:RootDirectory", Path.GetDirectoryName(attachmentStorageDirectory));
+            builder.UseSetting("ChatGpt:DataDirectory", Path.Combine(Path.GetDirectoryName(attachmentStorageDirectory)!, "provider-credentials"));
             builder.UseSetting("LocalAccess:DataDirectory", Path.Combine(Path.GetDirectoryName(attachmentStorageDirectory)!, "local-access"));
             if (sqlite)
             {

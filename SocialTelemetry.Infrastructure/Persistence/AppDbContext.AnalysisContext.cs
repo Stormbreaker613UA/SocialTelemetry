@@ -167,6 +167,7 @@ public sealed partial class AppDbContext
             foreach (var interaction in ChangeTracker.Entries<Interaction>().Where(entry => interactionIds.Contains(entry.Entity.Id)))
                 AddScopeValues(interaction, nameof(Interaction.UserProfileId), profiles);
         }
+        profiles.UnionWith(await ResolveOrganizationProfilesAsync(changes, deletedProfiles, deletedPeople, cancellationToken));
         return profiles;
     }
 

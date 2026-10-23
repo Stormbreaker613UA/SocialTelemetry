@@ -27,6 +27,8 @@ public sealed partial class AppDbContext(
     public DbSet<UserProfileExternalConnection> UserProfileExternalConnections => Set<UserProfileExternalConnection>();
     public DbSet<PersonExternalConnection> PersonExternalConnections => Set<PersonExternalConnection>();
     public DbSet<Person> People => Set<Person>();
+    public DbSet<PersonGroup> PersonGroups => Set<PersonGroup>();
+    public DbSet<PersonGroupMembership> PersonGroupMemberships => Set<PersonGroupMembership>();
     public DbSet<PersonFact> PersonFacts => Set<PersonFact>();
     public DbSet<PersonInference> PersonInferences => Set<PersonInference>();
     public DbSet<Interaction> Interactions => Set<Interaction>();
@@ -83,7 +85,7 @@ public sealed partial class AppDbContext(
             ? []
             : await avatarCleanup.FindObsoleteKeysAsync(this, cancellationToken);
         var hasExternalTransaction = Database.CurrentTransaction is not null;
-        var sourceChanges = AnalysisSourceChanges();
+        var sourceChanges = AnalysisSourceChanges().Union(OrganizationChanges()).ToArray();
         if (sourceChanges.Length == 0 && profileOperation?.Binding is null)
         {
             var savedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -96,6 +98,7 @@ public sealed partial class AppDbContext(
         {
             await ProtectLocalProfileOperationAsync(cancellationToken);
             await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
+            await ValidateOrganizationChangesAsync(sourceChanges, cancellationToken);
             await RecordCommittedActivityAsync(cancellationToken);
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
@@ -103,6 +106,7 @@ public sealed partial class AppDbContext(
         await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
         await ProtectLocalProfileOperationAsync(cancellationToken);
         await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
+        await ValidateOrganizationChangesAsync(sourceChanges, cancellationToken);
         await RecordCommittedActivityAsync(cancellationToken);
         var affectedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await transaction.CommitAsync(cancellationToken);

@@ -391,6 +391,41 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         await selector.SelectAsync(owner, before.Version, Cancellation);
     }
 
+    [Fact]
+    public async Task Organization_during_inference_preserves_context_fingerprint_and_valid_analysis()
+    {
+        var data = await SeedAsync();
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer)));
+        await using var scope = application.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        await BindAsync(services, data.Owner);
+        var database = services.GetRequiredService<AppDbContext>(); observer.Target = database;
+        var before = await services.GetRequiredService<AiContextBuilder>().BuildAsync(data.InteractionId, null, [], Cancellation);
+        var provider = new ProbeProvider(database, observer)
+        {
+            DuringInference = async () =>
+            {
+                await using var writer = fixture.CreateAsyncScope();
+                var writing = writer.ServiceProvider;
+                await BindAsync(writing, data.Owner);
+                await writing.GetRequiredService<SocialTelemetry.Application.Features.People.SetFavorite.Scenario>()
+                    .ExecuteAsync(data.PersonId, true, Cancellation);
+                var group = await writing.GetRequiredService<SocialTelemetry.Application.Features.PersonGroups.Create.Scenario>()
+                    .ExecuteAsync("Not AI context", Cancellation);
+                await writing.GetRequiredService<SocialTelemetry.Application.Features.PersonGroups.AddMember.Scenario>()
+                    .ExecuteAsync(group.Id, data.PersonId, Cancellation);
+                var after = await writing.GetRequiredService<AiContextBuilder>().BuildAsync(data.InteractionId, null, [], Cancellation);
+                Assert.Equal(before.InputJson, after.InputJson);
+                Assert.Equal(before.Fingerprint, after.Fingerprint);
+            }
+        };
+        var result = await CreateScenario(services, provider).ExecuteAsync(new(data.InteractionId, null, []), Cancellation);
+        Assert.Equal("synthetic-provider", result.Provider); Assert.Equal(1, provider.Calls); Assert.Equal(1, provider.Leases);
+        Assert.Equal(2, await database.InteractionAnalyses.CountAsync(row => row.InteractionId == data.InteractionId, Cancellation));
+        Assert.Equal(2, await database.SuggestedProfileUpdates.CountAsync(row => row.InteractionAnalysis.InteractionId == data.InteractionId, Cancellation));
+    }
+
     private static AppAnalysis.Scenario CreateScenario(IServiceProvider services, IAiClient provider, IAnalysisPersistence? persistence = null) => new(
         persistence ?? services.GetRequiredService<IAnalysisPersistence>(), services.GetRequiredService<AiContextBuilder>(), provider,
         services.GetRequiredService<IOptions<AnalysisOptions>>().Value, services.GetRequiredService<LocalProfileOperation>());

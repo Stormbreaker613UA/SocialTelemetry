@@ -547,6 +547,11 @@ namespace SocialTelemetry.Infrastructure.Persistence.Migrations
                     b.Property<string>("HowWeMet")
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsFavorite")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
@@ -637,6 +642,48 @@ namespace SocialTelemetry.Infrastructure.Persistence.Migrations
                     b.HasIndex("PersonId");
 
                     b.ToTable("PersonFacts");
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Domain.People.PersonGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserProfileId");
+
+                    b.ToTable("PersonGroups");
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Domain.People.PersonGroupMembership", b =>
+                {
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PersonId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("GroupId", "PersonId");
+
+                    b.HasIndex("PersonId");
+
+                    b.ToTable("PersonGroupMemberships");
                 });
 
             modelBuilder.Entity("SocialTelemetry.Domain.People.PersonInference", b =>
@@ -1207,6 +1254,36 @@ namespace SocialTelemetry.Infrastructure.Persistence.Migrations
                         .HasForeignKey("PersonId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Person");
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Domain.People.PersonGroup", b =>
+                {
+                    b.HasOne("SocialTelemetry.Domain.Users.UserProfile", "UserProfile")
+                        .WithMany()
+                        .HasForeignKey("UserProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UserProfile");
+                });
+
+            modelBuilder.Entity("SocialTelemetry.Domain.People.PersonGroupMembership", b =>
+                {
+                    b.HasOne("SocialTelemetry.Domain.People.PersonGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SocialTelemetry.Domain.People.Person", "Person")
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
 
                     b.Navigation("Person");
                 });

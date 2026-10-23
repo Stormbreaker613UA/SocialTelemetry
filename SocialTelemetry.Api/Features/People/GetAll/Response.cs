@@ -15,4 +15,5 @@ public sealed record PersonResponse(
     string? Notes,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? ArchivedAt = null);
+    DateTimeOffset? ArchivedAt = null,
+    bool IsFavorite = false);

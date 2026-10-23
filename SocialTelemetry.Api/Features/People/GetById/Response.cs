@@ -14,4 +14,5 @@ public sealed record Response(
     string? Notes,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? ArchivedAt = null);
+    DateTimeOffset? ArchivedAt = null,
+    bool IsFavorite = false);

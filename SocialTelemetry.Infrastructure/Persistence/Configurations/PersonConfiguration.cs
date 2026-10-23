@@ -9,6 +9,7 @@ public sealed class PersonConfiguration : IEntityTypeConfiguration<Person>
     public void Configure(EntityTypeBuilder<Person> builder)
     {
         builder.HasKey(person => person.Id);
+        builder.Property(person => person.IsFavorite).HasDefaultValue(false);
 
         builder.Property(person => person.DisplayName)
             .HasMaxLength(200)

@@ -245,7 +245,12 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
             await database.GetService<IMigrator>().MigrateAsync(previous, Cancellation);
             storeId = (await database.StorageDatabaseIdentities.SingleAsync(Cancellation)).StoreId;
             database.UserProfiles.Add(new UserProfile { Id = profileId, DisplayName = "Existing owner" });
-            database.People.Add(new Person { Id = personId, UserProfileId = profileId, DisplayName = "Existing person" });
+            await database.SaveChangesAsync(Cancellation);
+            object timestamp = database.Database.IsSqlite() ? DateTimeOffset.UnixEpoch.UtcTicks : DateTimeOffset.UnixEpoch;
+            await database.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "People" ("Id", "UserProfileId", "DisplayName", "RelationshipContext", "CreatedAt", "UpdatedAt")
+                VALUES ({personId}, {profileId}, {"Existing person"}, {"Unknown"}, {timestamp}, {timestamp})
+                """, Cancellation);
             database.Interactions.Add(new Interaction { Id = interactionId, UserProfileId = profileId, Title = "Existing journal" });
             database.InteractionParticipants.Add(new() { InteractionId = interactionId, PersonId = personId });
             database.InteractionAttachments.Add(new()

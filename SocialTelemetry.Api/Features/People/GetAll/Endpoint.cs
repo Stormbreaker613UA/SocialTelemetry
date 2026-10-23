@@ -14,10 +14,10 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
 
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
-        var people = await scenario.ExecuteAsync(request.UserProfileId, request.Archived, cancellationToken);
+        var people = await scenario.ExecuteAsync(request.UserProfileId, request.Archived, cancellationToken, request.IsFavorite, request.GroupId);
         await Send.OkAsync(new Response(people.Select(person => new PersonResponse(
             person.Id, person.DisplayName, person.Age, person.Gender, person.Description,
             person.RelationshipContext, person.HowWeMet, person.Notes, person.CreatedAt,
-            person.UpdatedAt, person.ArchivedAt)).ToList()), cancellationToken);
+            person.UpdatedAt, person.ArchivedAt, person.IsFavorite)).ToList()), cancellationToken);
     }
 }

@@ -36,7 +36,7 @@ public sealed partial class AppDbContext
 
     private async Task<int> SaveAccountSecurityChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
     {
-        if (AnalysisSourceChanges().Length > 0)
+        if (AnalysisSourceChanges().Length > 0 || OrganizationChanges().Length > 0)
             throw new InvalidOperationException("Account security and journal mutations require separate operations.");
         var ownedTransaction = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
         try

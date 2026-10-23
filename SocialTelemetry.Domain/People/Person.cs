@@ -6,6 +6,7 @@ public sealed class Person
 {
     public Guid Id { get; set; }
     public Guid UserProfileId { get; set; }
+    public bool IsFavorite { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public int? Age { get; set; }
     public string? Gender { get; set; }

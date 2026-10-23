@@ -19,7 +19,7 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
             var person = await scenario.ExecuteAsync(request.Id, cancellationToken);
             await Send.OkAsync(new Response(person.Id, person.UserProfileId, person.DisplayName, person.Age,
                 person.Gender, person.Description, person.RelationshipContext, person.HowWeMet,
-                person.Notes, person.CreatedAt, person.UpdatedAt, person.ArchivedAt), cancellationToken);
+                person.Notes, person.CreatedAt, person.UpdatedAt, person.ArchivedAt, person.IsFavorite), cancellationToken);
         }
         catch (NotFoundException)
         {

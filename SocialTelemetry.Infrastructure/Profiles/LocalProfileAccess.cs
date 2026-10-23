@@ -22,6 +22,8 @@ public sealed class LocalProfileAccess(LocalProfileSelectionService selector, Lo
     public Task<bool> RootExistsAsync(Guid owner, OwnershipRoot root, Guid id, CancellationToken cancellationToken) =>
         root switch
         {
+            OwnershipRoot.PersonGroup => database.PersonGroups.AsNoTracking()
+                .AnyAsync(group => group.Id == id && group.UserProfileId == owner, cancellationToken),
             OwnershipRoot.Person => database.People.AsNoTracking()
                 .AnyAsync(person => person.Id == id && person.UserProfileId == owner, cancellationToken),
             OwnershipRoot.Interaction => database.Interactions.AsNoTracking()

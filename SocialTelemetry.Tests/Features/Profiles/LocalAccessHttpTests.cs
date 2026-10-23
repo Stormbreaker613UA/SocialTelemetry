@@ -57,7 +57,13 @@ public abstract class LocalAccessHttpTestsContract<TFixture>(TFixture fixture) :
         await SetSelectionHeadersAsync(application.Services, client, owner);
         await SetCsrfAsync(client); // The authenticated device has a new antiforgery identity.
         using (var read = await client.GetAsync("/user-profile", Cancellation)) Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        using (var group = await client.PostAsJsonAsync("/person-groups", new { Name = "Admitted" }, Cancellation))
+            Assert.Equal(HttpStatusCode.Created, group.StatusCode);
         client.DefaultRequestHeaders.Remove("X-SocialTelemetry-CSRF");
+        using (var rejected = await client.PostAsJsonAsync("/person-groups", new { Name = "Forbidden" }, Cancellation))
+            Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        using (var rejected = await client.PutAsJsonAsync($"/people/{Guid.NewGuid()}/favorite", new { IsFavorite = true }, Cancellation))
+            Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
         using (var rejected = await client.PutAsJsonAsync("/local-profiles/current", new { UserProfileId = owner, ExpectedVersion = (await SelectionAsync(application.Services)).Version }, Cancellation))
             Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
         using (var rejected = await client.PutAsJsonAsync("/user-profile", new { DisplayName = "Forbidden CSRF change" }, Cancellation))
@@ -75,6 +81,7 @@ public abstract class LocalAccessHttpTestsContract<TFixture>(TFixture fixture) :
         using (var locked = await client.PostAsJsonAsync("/local-access/lock", new { UserProfileId = owner }, Cancellation)) Assert.Equal(HttpStatusCode.OK, locked.StatusCode);
         await SetSelectionHeadersAsync(application.Services, client, owner);
         using (var denied = await client.GetAsync("/user-profile", Cancellation)) Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        using (var denied = await client.GetAsync("/person-groups", Cancellation)) Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
 
         using var insecure = application.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost"), AllowAutoRedirect = false });
         insecure.DefaultRequestHeaders.Add("X-SocialTelemetry-Local", "1");

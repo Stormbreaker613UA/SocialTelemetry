@@ -84,6 +84,9 @@ public sealed partial class AppDbContext
         var foreignSuggestion = await SuggestedProfileUpdates.AnyAsync(suggestion =>
             (suggestion.Person.UserProfileId == owner && suggestion.InteractionAnalysis.Interaction.UserProfileId != owner) ||
             (suggestion.InteractionAnalysis.Interaction.UserProfileId == owner && suggestion.Person.UserProfileId != owner), cancellationToken);
-        if (foreignParticipant || foreignInference || foreignSuggestion) throw new ConflictException();
+        var foreignMembership = await PersonGroupMemberships.AnyAsync(membership =>
+            (membership.Group.UserProfileId == owner || membership.Person.UserProfileId == owner) &&
+            membership.Group.UserProfileId != membership.Person.UserProfileId, cancellationToken);
+        if (foreignParticipant || foreignInference || foreignSuggestion || foreignMembership) throw new ConflictException();
     }
 }

@@ -13,4 +13,5 @@ public sealed record Response(
     string? HowWeMet,
     string? Notes,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool IsFavorite = false);

@@ -529,8 +529,13 @@ public abstract class OpenedProfileLifecycleTestsContract<TFixture>(TFixture fix
                 var migration = previous.Database.GetMigrations().Single(id => id.EndsWith("_AddLocalAccess", StringComparison.Ordinal));
                 await previous.GetService<IMigrator>().MigrateAsync(migration, Cancellation);
                 previous.UserProfiles.Add(new() { Id = owner, DisplayName = "Before upgrade" });
-                previous.People.Add(new() { Id = person, UserProfileId = owner, DisplayName = "Retained person" });
+
                 await previous.SaveChangesAsync(Cancellation);
+                object timestamp = previous.Database.IsSqlite() ? DateTimeOffset.UnixEpoch.UtcTicks : DateTimeOffset.UnixEpoch;
+                await previous.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO "People" ("Id", "UserProfileId", "DisplayName", "Notes", "RelationshipContext", "CreatedAt", "UpdatedAt")
+                    VALUES ({person}, {owner}, {"Retained person"}, {"Retained"}, {"Unknown"}, {timestamp}, {timestamp})
+                    """, Cancellation);
             }
             await using var upgraded = new AppDbContext(options.Options);
             await upgraded.Database.MigrateAsync(Cancellation);

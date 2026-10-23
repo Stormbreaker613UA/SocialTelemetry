@@ -38,7 +38,7 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
                 person.HowWeMet,
                 person.Notes,
                 person.CreatedAt,
-                person.UpdatedAt), cancellationToken);
+                person.UpdatedAt, person.IsFavorite), cancellationToken);
         }
         catch (FeatureValidationException exception)
         {

@@ -17,7 +17,7 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
         IsLifecyclePath(path) ||
         path == "/local-access/protection" || path == "/local-access/password" ||
         path == "/local-access/recovery-code" || path == "/local-access/activity" ||
-        path.StartsWithSegments("/people") || path.StartsWithSegments("/interactions") ||
+        path.StartsWithSegments("/person-groups") || path.StartsWithSegments("/people") || path.StartsWithSegments("/interactions") ||
         (path.StartsWithSegments("/ai-connection") && path != AiConnectionRoutes.CallbackPath);
 
     internal static bool IsLifecyclePath(PathString path)
@@ -84,7 +84,8 @@ public sealed class LocalProfileMiddleware(RequestDelegate next)
         if (segments.Length < 2 || !Guid.TryParse(segments[1], out var id)) return;
         var segment = segments[0].ToLowerInvariant();
         OwnershipRoot? root = null;
-        if (segment == "people") root = OwnershipRoot.Person;
+        if (segment == "person-groups") root = OwnershipRoot.PersonGroup;
+        else if (segment == "people") root = OwnershipRoot.Person;
         else if (segment == "interactions") root = OwnershipRoot.Interaction;
         if (root is { } ownedRoot) await authorizeRoot.ExecuteAsync(ownedRoot, id, cancellationToken);
     }

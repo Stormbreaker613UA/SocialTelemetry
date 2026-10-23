@@ -21,7 +21,7 @@ public sealed class DomainArchitectureTests
         Assert.NotSame(apiAssembly, domainAssembly);
         Type[] representativeTypes =
         [
-            typeof(Person), typeof(PersonFact), typeof(PersonInference), typeof(SuggestedProfileUpdate),
+            typeof(PersonGroup), typeof(PersonGroupMembership), typeof(Person), typeof(PersonFact), typeof(PersonInference), typeof(SuggestedProfileUpdate),
             typeof(Interaction), typeof(InteractionParticipant), typeof(InteractionAttachment),
             typeof(AttachmentTranscript), typeof(InteractionAnalysis), typeof(AttachmentType)
         ];

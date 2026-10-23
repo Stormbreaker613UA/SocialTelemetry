@@ -59,6 +59,10 @@ public sealed class JournalFeatureArchitectureTests
     public void Migrated_HTTP_features_cannot_reach_concrete_mechanisms_or_service_location()
     {
         var migratedTypes = ApiAssembly.GetTypes().Where(IsMigratedType).ToArray();
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.People.SetFavorite.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.PersonGroups.Create.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.PersonGroups.AddMember.Endpoint));
+        Assert.Contains(migratedTypes, type => type == typeof(Api.Features.PersonGroups.RemoveMember.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.People.Create.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.PersonFacts.Add.Endpoint));
         Assert.Contains(migratedTypes, type => type == typeof(Api.Features.UserProfile.Update.Endpoint));

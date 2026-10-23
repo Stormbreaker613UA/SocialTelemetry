@@ -35,6 +35,8 @@ public sealed class ApplicationArchitectureTests
         Assert.NotSame(DomainAssembly, ApplicationAssembly);
         Type[] representativeTypes =
         [
+            typeof(SocialTelemetry.Application.Features.PersonGroups.IPersonGroupsPersistence),
+            typeof(SocialTelemetry.Application.Features.People.SetFavorite.Result),
             typeof(IAiClient), typeof(IAiExecutionLease), typeof(AiSelectedModel), typeof(AiExecutionBinding),
             typeof(AiModelCapabilities), typeof(AiCapabilitySupport),
             typeof(AiTextRequest), typeof(AiTextResponse), typeof(InteractionAnalysisContext),
