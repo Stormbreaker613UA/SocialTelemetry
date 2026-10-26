@@ -17,6 +17,17 @@ public sealed partial class AppDbContext
     private Task LockAnalysisSourceChangesAsync(EntityEntry[] changes, CancellationToken cancellationToken) =>
         LockResolvedProfilesAsync(token => ResolveAnalysisProfilesAsync(changes, token), cancellationToken);
 
+    internal async Task LockInteractionDeletionAsync(Interaction interaction, CancellationToken cancellationToken)
+    {
+        await ProtectLocalProfileOperationAsync(cancellationToken);
+        var changes = AnalysisSourceChanges().Union(OrganizationChanges())
+            .Append(Entry(interaction)).Union(interaction.Attachments.Select(attachment => (EntityEntry)Entry(attachment)))
+            .ToArray();
+        // Protect the impending cascade before committing Deleting or removing any bytes.
+        // Use the same ordered, re-resolved owner set as the final coordinated delete.
+        await LockResolvedProfilesAsync(token => ResolveAnalysisProfilesAsync(changes, token, interaction.Id), cancellationToken);
+    }
+
     private async Task LockResolvedProfilesAsync(Func<CancellationToken, Task<HashSet<Guid>>> resolveProfiles,
         CancellationToken cancellationToken)
     {
@@ -52,7 +63,8 @@ public sealed partial class AppDbContext
         }
     }
 
-    private async Task<HashSet<Guid>> ResolveAnalysisProfilesAsync(EntityEntry[] changes, CancellationToken cancellationToken)
+    private async Task<HashSet<Guid>> ResolveAnalysisProfilesAsync(EntityEntry[] changes, CancellationToken cancellationToken,
+        Guid? impendingInteractionDeletion = null)
     {
         var profiles = new HashSet<Guid>();
         var personIds = new HashSet<Guid>();
@@ -61,6 +73,7 @@ public sealed partial class AppDbContext
         var deletedProfiles = new HashSet<Guid>();
         var deletedPeople = new HashSet<Guid>();
         var deletedInteractions = new HashSet<Guid>();
+        if (impendingInteractionDeletion is Guid deletingInteractionId) deletedInteractions.Add(deletingInteractionId);
         foreach (var entry in changes)
         {
             switch (entry.Entity)
@@ -149,9 +162,14 @@ public sealed partial class AppDbContext
                 .Where(participant => sourcePersonIds.Contains(participant.PersonId))
                 .Select(participant => participant.InteractionId).ToListAsync(cancellationToken));
         if (sourceInteractionIds.Length > 0)
+        {
             personIds.UnionWith(await PersonInferences.AsNoTracking()
                 .Where(inference => inference.SourceInteractionId != null && sourceInteractionIds.Contains(inference.SourceInteractionId.Value))
                 .Select(inference => inference.PersonId).ToListAsync(cancellationToken));
+            personIds.UnionWith(await SuggestedProfileUpdates.AsNoTracking()
+                .Where(suggestion => sourceInteractionIds.Contains(suggestion.InteractionAnalysis.InteractionId))
+                .Select(suggestion => suggestion.PersonId).ToListAsync(cancellationToken));
+        }
 
         if (personIds.Count > 0)
         {

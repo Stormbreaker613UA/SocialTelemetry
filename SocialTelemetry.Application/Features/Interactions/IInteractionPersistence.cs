@@ -13,7 +13,7 @@ public interface IInteractionPersistence
     Task<IReadOnlyList<InteractionSummary>> ReadForPersonAsync(Guid ownerId, Guid personId, CancellationToken cancellationToken);
     Task AddInteractionAsync(Interaction interaction, CancellationToken cancellationToken);
     Task UpdateInteractionAsync(Interaction interaction, IReadOnlyList<InteractionParticipant> removed, IReadOnlyList<InteractionParticipant> added, CancellationToken cancellationToken);
-    Task MarkAttachmentsDeletingAsync(Interaction interaction, CancellationToken cancellationToken);
+    Task PrepareDeletionAsync(Interaction interaction, Action<Interaction> markAttachmentsDeleting, CancellationToken cancellationToken);
     Task DeleteMarkedFileAsync(string key, CancellationToken cancellationToken);
     Task DeleteInteractionAsync(Interaction interaction, CancellationToken cancellationToken);
 }

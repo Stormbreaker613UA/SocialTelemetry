@@ -18,12 +18,13 @@ public sealed class Scenario(IInteractionPersistence persistence, LocalProfileOp
             throw new NotFoundException();
         }
 
-        foreach (var attachment in interaction.Attachments)
+        await persistence.PrepareDeletionAsync(interaction, current =>
         {
-            attachment.Status = AttachmentStatus.Deleting;
-        }
-
-        await persistence.MarkAttachmentsDeletingAsync(interaction, cancellationToken);
+            foreach (var attachment in current.Attachments)
+            {
+                attachment.Status = AttachmentStatus.Deleting;
+            }
+        }, cancellationToken);
 
         foreach (var attachment in interaction.Attachments)
         {

@@ -297,6 +297,109 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
         Assert.Equal(new byte[] { 2 }, await File.ReadAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, otherAttachment.StorageKey!), TestContext.Current.CancellationToken));
     }
 
+    [Theory]
+    [InlineData("inference", "http")]
+    [InlineData("suggestion", "http")]
+    [InlineData("inference", "scenario")]
+    [InlineData("suggestion", "scenario")]
+    [InlineData("inference", "save")]
+    [InlineData("suggestion", "save")]
+    public async Task Foreign_interaction_cascade_is_refused_before_evidence_or_metadata_changes(string relation, string deletion)
+    {
+        var cancellation = TestContext.Current.CancellationToken;
+        var interactionId = await CreateInteractionAsync();
+        var bytes = new byte[] { 4, 8, 15, 16 };
+        var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Audio, bytes, "audio/wav");
+        var otherOwner = await fixture.CreateUserProfileAsync(select: false);
+        var foreignPerson = Guid.NewGuid();
+        var analysisId = Guid.NewGuid();
+        var dependentId = Guid.NewGuid();
+        var transcriptVersion = Guid.NewGuid();
+        await using (var seed = fixture.CreateAsyncScope())
+        {
+            // This unbound fixture context deliberately represents legacy data. Product
+            // writes still use the real admission and coordinated owner guards below.
+            var database = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.People.Add(new Person { Id = foreignPerson, UserProfileId = otherOwner, DisplayName = "Other journal" });
+            database.InteractionAnalyses.Add(new InteractionAnalysis { Id = analysisId, InteractionId = interactionId, Summary = "Retained analysis" });
+            database.AttachmentTranscripts.Add(new AttachmentTranscript { AttachmentId = attachment.Id,
+                GeneratedText = "Retained transcript", Version = transcriptVersion, SourceStorageKey = attachment.StorageKey!,
+                SourceSha256 = new string('A', 64), ReviewStatus = TranscriptReviewStatus.Reviewed });
+            if (relation == "inference")
+                database.PersonInferences.Add(new PersonInference { Id = dependentId, PersonId = foreignPerson,
+                    SourceInteractionId = interactionId, Value = "Retained inference" });
+            else
+                database.SuggestedProfileUpdates.Add(new SuggestedProfileUpdate { Id = dependentId, PersonId = foreignPerson,
+                    InteractionAnalysisId = analysisId, Field = "Notes", SuggestedValue = "Retained suggestion" });
+            await database.SaveChangesAsync(cancellation);
+            Assert.Equal(relation == "inference", await database.PersonInferences.AnyAsync(row => row.SourceInteractionId == interactionId, cancellation));
+            Assert.Equal(relation == "suggestion", await database.SuggestedProfileUpdates.AnyAsync(row => row.InteractionAnalysisId == analysisId, cancellation));
+        }
+
+        if (deletion == "http")
+        {
+            using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", cancellation);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        else
+        {
+            await using var active = fixture.CreateAsyncScope();
+            var services = active.ServiceProvider;
+            var selected = await services.GetRequiredService<SocialTelemetry.Infrastructure.Profiles.LocalProfileSelectionService>().GetAsync(cancellation);
+            await services.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(selected.UserProfileId, selected.Version, cancellation);
+            if (deletion == "scenario")
+                await Assert.ThrowsAsync<SocialTelemetry.Application.Exceptions.NotFoundException>(() =>
+                    services.GetRequiredService<SocialTelemetry.Application.Features.Interactions.Delete.Scenario>()
+                        .ExecuteAsync(new() { Id = interactionId }, cancellation));
+            else
+            {
+                var database = services.GetRequiredService<AppDbContext>();
+                database.Interactions.Remove(await database.Interactions.SingleAsync(row => row.Id == interactionId, cancellation));
+                await Assert.ThrowsAsync<SocialTelemetry.Application.Exceptions.NotFoundException>(() => database.SaveChangesAsync(cancellation));
+            }
+        }
+
+        await using var checking = fixture.CreateAsyncScope();
+        var stored = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.True(await stored.Interactions.AnyAsync(row => row.Id == interactionId, cancellation));
+        Assert.True(await stored.InteractionAnalyses.AnyAsync(row => row.Id == analysisId, cancellation));
+        var retainedAttachment = await stored.InteractionAttachments.AsNoTracking().SingleAsync(row => row.Id == attachment.Id, cancellation);
+        Assert.Equal(AttachmentStatus.Ready, retainedAttachment.Status);
+        Assert.Equal(attachment.StorageKey, retainedAttachment.StorageKey);
+        var transcript = await stored.AttachmentTranscripts.AsNoTracking().SingleAsync(row => row.AttachmentId == attachment.Id, cancellation);
+        Assert.Equal(transcriptVersion, transcript.Version);
+        Assert.Equal("Retained transcript", transcript.GeneratedText);
+        Assert.Equal(TranscriptReviewStatus.Reviewed, transcript.ReviewStatus);
+        if (relation == "inference")
+            Assert.Equal(foreignPerson, (await stored.PersonInferences.SingleAsync(row => row.Id == dependentId, cancellation)).PersonId);
+        else
+            Assert.Equal(foreignPerson, (await stored.SuggestedProfileUpdates.SingleAsync(row => row.Id == dependentId, cancellation)).PersonId);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!), cancellation));
+    }
+
+    [Fact]
+    public async Task Delete_interaction_preserves_a_ready_file_reference_in_another_journal()
+    {
+        var interactionId = await CreateInteractionAsync();
+        var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [4, 5], "image/png");
+        var otherInteraction = await CreateInteractionAsync();
+        var otherAttachment = await AddFileAttachmentAsync(otherInteraction, AttachmentType.Image, [6], "image/png");
+        await using (var setup = fixture.CreateAsyncScope())
+        {
+            var database = setup.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await database.InteractionAttachments.SingleAsync(row => row.Id == otherAttachment.Id, TestContext.Current.CancellationToken))
+                .StorageKey = attachment.StorageKey;
+            await database.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        await SelectInteractionOwnerAsync(interactionId);
+        using var response = await fixture.Client.DeleteAsync($"/interactions/{interactionId}", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
+        Assert.Equal(AttachmentStatus.Ready, (await fixture.FindAttachmentAsync(otherAttachment.Id))!.Status);
+        Assert.Equal(new byte[] { 4, 5 }, await File.ReadAllBytesAsync(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!), TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task Missing_file_returns_not_found_and_can_still_be_deleted()
     {
@@ -334,8 +437,10 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
             .AnyAsync(attachment => attachment.InteractionId == interactionId, TestContext.Current.CancellationToken));
     }
 
-    [Fact]
-    public async Task Failed_file_delete_keeps_metadata_for_retry()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_file_delete_keeps_metadata_for_retry(bool wholeInteraction)
     {
         var interactionId = await CreateInteractionAsync();
         var attachment = await AddFileAttachmentAsync(interactionId, AttachmentType.Image, [1], "image/png");
@@ -343,11 +448,13 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
         {
             services.AddScoped<LocalAttachmentStorage>();
             services.AddScoped<IAttachmentStorage>(serviceProvider =>
-                new FailedDeleteStorage(serviceProvider.GetRequiredService<LocalAttachmentStorage>()));
+                new FailedDeleteStorage(serviceProvider.GetRequiredService<LocalAttachmentStorage>(),
+                    serviceProvider.GetRequiredService<AppDbContext>()));
         });
         using var client = application.CreateClient();
 
-        using var failedResponse = await client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
+        var path = wholeInteraction ? $"/interactions/{interactionId}" : $"/interactions/{interactionId}/attachments/{attachment.Id}";
+        using var failedResponse = await client.DeleteAsync(path, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.InternalServerError, failedResponse.StatusCode);
         var failedAttachment = await fixture.FindAttachmentAsync(attachment.Id);
@@ -355,7 +462,7 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
         Assert.Equal(AttachmentStatus.Deleting, failedAttachment.Status);
         Assert.True(File.Exists(Path.Combine(fixture.AttachmentStorageDirectory, attachment.StorageKey!)));
 
-        using var retryResponse = await fixture.Client.DeleteAsync($"/interactions/{interactionId}/attachments/{attachment.Id}", TestContext.Current.CancellationToken);
+        using var retryResponse = await fixture.Client.DeleteAsync(path, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode);
         Assert.Null(await fixture.FindAttachmentAsync(attachment.Id));
     }
@@ -418,7 +525,7 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
         }
     }
 
-    private sealed class FailedDeleteStorage(IAttachmentStorage storage) : IAttachmentStorage
+    private sealed class FailedDeleteStorage(IAttachmentStorage storage, AppDbContext database) : IAttachmentStorage
     {
         public Task<string> SaveAsync(Stream content, string fileName, string? mimeType, CancellationToken cancellationToken) =>
             storage.SaveAsync(content, fileName, mimeType, cancellationToken);
@@ -438,8 +545,11 @@ public abstract class InteractionAttachmentsTestsContract<TFixture> : IClassFixt
         public IEnumerable<StoredAttachmentFile> EnumerateFiles() => storage.EnumerateFiles();
         public IEnumerable<StoredAttachmentFile> EnumerateStagedFiles() => storage.EnumerateStagedFiles();
 
-        public Task DeleteAsync(string storageKey, CancellationToken cancellationToken) =>
+        public Task DeleteAsync(string storageKey, CancellationToken cancellationToken)
+        {
+            Assert.Null(database.Database.CurrentTransaction);
             throw new IOException("Simulated file deletion failure.");
+        }
     }
 
     private async Task SelectInteractionOwnerAsync(Guid interactionId)

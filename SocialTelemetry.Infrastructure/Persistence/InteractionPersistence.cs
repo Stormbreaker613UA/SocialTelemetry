@@ -56,8 +56,15 @@ public sealed class InteractionPersistence(AppDbContext database, IAttachmentSto
         await database.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task MarkAttachmentsDeletingAsync(Interaction interaction, CancellationToken cancellationToken) =>
+    public async Task PrepareDeletionAsync(Interaction interaction, Action<Interaction> markAttachmentsDeleting,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await database.LockInteractionDeletionAsync(interaction, cancellationToken);
+        markAttachmentsDeleting(interaction);
         await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
 
     public Task DeleteMarkedFileAsync(string key, CancellationToken cancellationToken) =>
         AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(database, storage, key, cancellationToken);
