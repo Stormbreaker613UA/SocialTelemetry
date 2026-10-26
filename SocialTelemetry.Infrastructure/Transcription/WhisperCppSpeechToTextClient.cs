@@ -38,8 +38,7 @@ public sealed class WhisperCppSpeechToTextClient(IOptions<WhisperCppOptions> opt
             // Do not queue requests holding audio buffers behind a long-running native job.
             if (!await slots.WaitAsync(0, timeout.Token)) throw new SpeechToTextException(SpeechToTextFailure.Busy);
             acquired = true;
-            working = Path.Combine(root, Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(working);
+            working = CreateExecutionDirectory(root);
             var input = Path.Combine(working, "source.audio");
             await CopyInputAsync(audio, input, settings.InputBytes, timeout.Token);
             if (!HasSupportedSignature(input)) throw new SpeechToTextException(SpeechToTextFailure.InvalidAudio);
@@ -97,6 +96,35 @@ public sealed class WhisperCppSpeechToTextClient(IOptions<WhisperCppOptions> opt
                 }
             }
             if (acquired) slots.Release();
+        }
+    }
+
+    private static string CreateExecutionDirectory(string root)
+    {
+        var directory = new DirectoryInfo(Path.Combine(root, Guid.NewGuid().ToString("N")));
+        try
+        {
+            // Never reuse or clean up a preexisting path, including a dangling symbolic link.
+            if (directory.Exists || File.Exists(directory.FullName) || directory.LinkTarget is not null)
+                throw new SpeechToTextException(SpeechToTextFailure.ConfigurationRequired);
+            if (OperatingSystem.IsWindows())
+            {
+                directory.Create();
+                return directory.FullName;
+            }
+
+            const UnixFileMode privateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+            Directory.CreateDirectory(directory.FullName, privateMode);
+            directory.Refresh();
+            // Set the creation mode, not chmod afterward: even the first audio write must be private.
+            if (!directory.Exists || directory.LinkTarget is not null ||
+                File.GetUnixFileMode(directory.FullName) != privateMode)
+                throw new SpeechToTextException(SpeechToTextFailure.ConfigurationRequired);
+            return directory.FullName;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            throw new SpeechToTextException(SpeechToTextFailure.ConfigurationRequired);
         }
     }
 

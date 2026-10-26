@@ -14,6 +14,89 @@ public sealed class WhisperCppTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "SocialTelemetry.Tests", Guid.NewGuid().ToString("N"));
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+    public static bool IsUnix => !OperatingSystem.IsWindows();
+
+    [Theory(SkipUnless = nameof(IsUnix), Skip = "Unix creation permissions")]
+    [InlineData("success")]
+    [InlineData("decoder-failure")]
+    [InlineData("caller-cancel")]
+    public async Task Unix_execution_is_private_before_decoding_and_preserves_parent_permissions(string outcome)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var settings = Settings();
+        const UnixFileMode traversableMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        const UnixFileMode privateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        Directory.CreateDirectory(settings.TemporaryDirectory!);
+        File.SetUnixFileMode(root, traversableMode);
+        File.SetUnixFileMode(settings.TemporaryDirectory!, traversableMode);
+        var audio = Header("wav");
+        string? execution = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        var runner = new FakeProcess { Execute = async (command, token) =>
+        {
+            if (OperatingSystem.IsWindows()) throw new InvalidOperationException();
+            execution ??= command.WorkingDirectory;
+            Assert.Equal(execution, command.WorkingDirectory);
+            Assert.Equal(settings.TemporaryDirectory, Directory.GetParent(execution)!.FullName);
+            Assert.Null(new DirectoryInfo(execution).LinkTarget);
+            Assert.Equal(privateMode, File.GetUnixFileMode(execution));
+            Assert.Equal(traversableMode, File.GetUnixFileMode(settings.TemporaryDirectory!));
+            Assert.Equal(audio, await File.ReadAllBytesAsync(Path.Combine(execution, "source.audio"), token));
+            Assert.Equal(execution, Path.GetDirectoryName(command.OutputFile));
+            if (!command.Arguments.Contains("--output-txt"))
+            {
+                if (outcome == "decoder-failure") return 1;
+                await File.WriteAllBytesAsync(command.OutputFile, Wave(), token);
+            }
+            else
+            {
+                if (outcome == "caller-cancel")
+                {
+                    cancellation.Cancel();
+                    token.ThrowIfCancellationRequested();
+                }
+                await File.WriteAllTextAsync(command.OutputFile, "Synthetic words", token);
+            }
+            Assert.True(File.Exists(command.OutputFile));
+            Assert.Equal(privateMode, File.GetUnixFileMode(execution));
+            return 0;
+        } };
+        using var client = Client(settings, runner);
+        using var input = new MemoryStream(audio);
+        if (outcome == "success") Assert.Equal("Synthetic words", (await client.TranscribeAsync(input, cancellation.Token)).Text);
+        else if (outcome == "caller-cancel")
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.TranscribeAsync(input, cancellation.Token));
+        else Assert.Equal(SpeechToTextFailure.InvalidAudio,
+            (await Assert.ThrowsAsync<SpeechToTextException>(() => client.TranscribeAsync(input, cancellation.Token))).Failure);
+        Assert.NotNull(execution);
+        Assert.False(Directory.Exists(execution));
+        Assert.Equal(traversableMode, File.GetUnixFileMode(root));
+        Assert.Equal(traversableMode, File.GetUnixFileMode(settings.TemporaryDirectory!));
+        AssertClean(settings);
+    }
+
+    [Fact(SkipUnless = nameof(IsUnix), Skip = "Unix symbolic link configuration")]
+    public async Task Unix_symbolic_link_work_root_is_refused_without_reading_audio_or_removing_target()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var settings = Settings();
+        var target = Path.Combine(root, "existing-target");
+        Directory.CreateDirectory(target);
+        var sentinel = Path.Combine(target, "sentinel.txt");
+        await File.WriteAllTextAsync(sentinel, "Preserve", Cancellation);
+        Directory.CreateSymbolicLink(settings.TemporaryDirectory!, target);
+        var runner = new FakeProcess();
+        using var client = Client(settings, runner);
+        using var input = new MemoryStream(Header("wav"));
+        var error = await Assert.ThrowsAsync<SpeechToTextException>(() => client.TranscribeAsync(input, Cancellation));
+        Assert.Equal(SpeechToTextFailure.ConfigurationRequired, error.Failure);
+        Assert.Equal(0, input.Position);
+        Assert.Empty(runner.Commands);
+        Assert.Equal("Preserve", await File.ReadAllTextAsync(sentinel, Cancellation));
+        Assert.Single(Directory.GetFiles(target));
+        Directory.Delete(settings.TemporaryDirectory!);
+    }
 
     [Theory]
     [InlineData("wav")]

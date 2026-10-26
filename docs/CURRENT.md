@@ -1,10 +1,14 @@
 # SocialTelemetry Current State
 
-Updated: 2026-10-26 (published baseline4fcf93a7; B5A-01/B5A-02 CLOSED/published; B5B-01 independent review CLOSED, five-path scoped publication pending; nine P2 open; LocalAI unpublished)
+Updated: 2026-10-26 (published baseline0a46f2a5; B5A-01/B5A-02/B5B-01 CLOSED/published; B5B-02 independently CLOSED, scoped publication pending; eight P2 open; LocalAI unpublished)
 
 ## Active review corrections (owner-approved 2026-10-26)
 
-The functional-block source review found twelve independent required P2 findings. The SAME Astra reviewer has independently CLOSED B5A-01/B5A-02 (published4fcf93a7) and now B5B-01, with no remaining required findings for this correction. NINE remain open: B1-P2, B2-01, B2-02, B2-03, B3A-01, B3B-01, B4-01, B5B-02 and B6-01. Narrow closure used source/log/hash inspection only, no source corrections or reruns. Deferred A5 remains separate.
+Root verified B5B-01 publication 0a46f2a50b623a5b78de54513a47d42ef3fc8a54, parent4fcf93a7: exact5M/0A/0D, approved raw aggregate69D06D538168DD219ECF7BA8D1F892E0EBBA671766DC87F21CF7DA204F70EFD3, all normalized blobs, fresh live origin/main and empty index. Remaining LocalAI/Planner changes stay unpublished. Historical pending wording below is superseded only for this correction.
+
+B5B-02 is implemented/tested and independently CLOSED by SAME Astra actual FINAL, with no remaining required finding for this correction. Closure used source/privacy-test/log/hash inspection only, no reruns. ONLY WhisperCppSpeechToTextClient.cs + WhisperCppTests.cs + CURRENT (three modified paths) await separately coordinated scoped publication; existing LocalAI34, PlannerSpec/.gitignore and unrelated files are excluded. Other EIGHT P2 remain open; no LocalAI clearance/publication, release acceptance or DONE claim. Backend SOURCE STOP. Historical assignment follows (superseded by this closure): ensure each Unix transcription execution directory is private before writing raw audio, including a traversable parent and umask0022. Reuse the existing Whisper adapter; keep Windows behavior and path/symlink validation, cancellation, limits and cleanup. Do not change global umask, chmod/move existing shared roots, alter native process containment, install models/tools or add services/options/dependencies. Add focused Linux mode assertions using the existing fake process seam, verify cleanup and Windows behavior, then narrow independent review. No real-model/native stress or broad rerun is required for this permission fix. Backend owns targeted source/CURRENT after this planning checkpoint; nine findings remain open until closure.
+
+The functional-block source review found twelve independent required P2 findings. The SAME Astra reviewer has independently CLOSED B5A-01/B5A-02 (published4fcf93a7), B5B-01 (published0a46f2a5) and now B5B-02 (scoped publication PENDING), with no remaining required finding for this correction. EIGHT remain open: B1-P2, B2-01, B2-02, B2-03, B3A-01, B3B-01, B4-01 and B6-01. Narrow closure used source/log/hash inspection only, no source corrections or reruns. Deferred A5 remains separate.
 
 Root verified the separate B5A publication: commit 4fcf93a74503a411190f95ffb5ab25fd84791d8f, parent313754bd, exact6M/0A/0D, approved raw aggregate F3248594F58A90BD78B864BCCD683593C614DDE60CF948B523D1A0749DA2F5A3, all six normalized working blobs, fresh live origin/main, empty index and preserved exclusions. Old pending-publication wording below is historical for this pair; no LocalAI publication or whole-v1 acceptance follows.
 
@@ -17,6 +21,73 @@ First group is B5A-01/B5A-02 only: refuse an Interaction deletion with foreign l
 Backend source editing is STOPPED after implementation/testing and the SAME Reviewer's final narrow closure of B5A-01/B5A-02. Owner explicitly authorized separately coordinated scoped publication of ONLY the five reviewed correction source/test paths plus CURRENT (six paths), which remains PENDING until Git succeeds. Unpublished LocalAI source, Planner Spec/.gitignore and the other ten P2 are excluded from that bounded publication. Do not claim LocalAI reviewed clear/published or whole-v1 acceptance. Existing test counts, setup failures, platform/keyring qualifications and logs remain unchanged; no reruns or additional model/native/live-provider work.
 
 Subsequent priority groups remain storage recovery/avatar/temp privacy; selector/journal classification/analysis pending writes; provider callbacks/SSE/locking/post-commit responses. Final publication requires the explicit corrected scope, review closure and preserved unrelated tracker/voice/ignored files. Future UI/Advisor/server work does not start here.
+
+### B5B-02 final implementation/test/review checkpoint (Backend, 2026-10-26; SOURCE STOP)
+
+ONLY B5B-02 implemented/tested; SAME Astra actual FINAL independent narrow review CLOSED it with no remaining required finding for this correction. Source/privacy-test/log/hash inspection only, no reruns; reviewed source/build01/fiveDLL/protected freeze unchanged. Pre-closure CorrectionALL3 B2A97B98228B935AA3F2683C76116D60AE373588962427B5552463045F30E931, C#2 312102D9DBAA8DF2C3F2C7469E22A9F4B530FA75ADA49C145D54EDAA16FCCB2B, BackendALL37 5F5349EF474811FE9094237A5CDA2319EE5BE63E213618CC426DBBEC8C2C19D7, C#35 51A45ED51F013167CD80129068D23A5BDFACC4641C2385134B97C3EF8C9223C9 and CURRENT22D2300D768FE6D2371CF764E74AF78B4E3F5D99168B0A948A8559F10651E170 remain historical freeze evidence; only this factual CURRENT metadata changed afterward. Other EIGHT P2 remain open; B5A01/02+B5B01 stay CLOSED/published0a46f2a5/parent4fcf93a7. Scoped publication of ONLY WhisperCppSpeechToTextClient.cs + WhisperCppTests.cs + CURRENT (3M/0A/0D) is PENDING until separately coordinated Git succeeds. Existing LocalAI34/PlannerSpec/.gitignore/unrelated files excluded. No LocalAI package clearance/publication, release acceptance or task-DONE claim. This FINAL closure supersedes earlier pending-review/recovery wording; actual build01 Windows38pass4Unixskip/Linux42pass0skip results, exclusions, failure history, keyring uncertainty and platform limits below remain unchanged.
+
+- Correction closure: two existing files + CURRENT = three modified paths, zero additions/deletions relative0a46f2a5. Existing unpublished LocalAI34 non-CURRENT paths remain unchanged/excluded; RootSpec/.gitignore separate/protected. No other source edits. No entity/model/migration/Options/dependency/HTTP/credential/native-host/runner/protocol/prompt changes. No EF/model CLI or DB fixtures needed for this permission-only correction.
+- Existing adapter now creates each Unix GUID execution directory with UnixFileMode0700, verifies actual0700 and no symbolic link BEFORE returning it for CopyInputAsync. No after-write chmod window. Existing paths/dangling links refused; existing configured ancestors/media-overlap/link validation retained. Windows uses its existing ordinary directory creation. No chmod of configured/shared parents, global umask or data-root change. Unverifiable creation returns ConfigurationRequired without audio writes; it is not adopted for recursive cleanup (an empty unverifiable candidate can remain rather than risking foreign-path cleanup). Existing verified-work finally cleanup, slots, byte/duration limits, decoder/transcription failures, true caller cancellation and safe diagnostics remain.
+- New Unix theory under explicit0755 owned parent proves actual0700 before first fake decoder invocation, owner-readable exact source bytes, decoded/transcript outputs inside the private directory, unchanged0755 parent/root, and cleanup on success, decoder exit and real caller cancellation. Separate Unix symlink-root case proves ConfigurationRequired before input read/process invocation, with target sentinel unchanged. Existing27 fake-client cases preserve formats/provenance/errors/bounds/timeout/cancellation/concurrency; eleven architecture guards also run. No second-UID access test/Windows permission-defect claim. This proves ordinary Unix permission isolation under umask0022; no privileged/same-UID hostile filesystem tampering claim.
+
+| FINAL build01 evidence | Actual summary / exit / duration | Existing ignored log |
+| --- | --- | --- |
+| dotnet build SocialTelemetry.slnx --no-restore | 0warnings/0errors; exit0;10.67s MSBuild/11.190s wrapper | .local-dev/logs/b5b-02-build01.log |
+| Windows x64 fake Whisper + architecture | total42,passed38,failed0,skipped4 Unix-only; exit0;1.799s framework/2.074s wrapper | .local-dev/logs/b5b-02-windows-focused01.log |
+| Linux x64 SAME five DLLs, root/glibc/init/network-none; shell umask0022 | total42,passed42,failed0,skipped0; exit0;4.584s framework/14.250s wrapper | .local-dev/logs/b5b-02-linux-focused01.log |
+
+Exact test arguments for BOTH OS: --filter-class '*WhisperCppTests' '*ArchitectureTests' --filter-not-method '*WhisperCppTests.Native_runner*' '*WhisperCppTests.Actual_runner*' --parallel none --no-ansi --progress off. Windows starts dotnet SocialTelemetry.Tests/bin/Debug/net10.0/SocialTelemetry.Tests.dll; Linux starts dotnet /work/bin/SocialTelemetry.Tests.dll. Excluded3 real Native_runner cases and12 Actual_runner teardown cases. No real Whisper/FFmpeg/native children/containment/Qwen/cloud/OAuth/smoke/broad runs; no repeat of unrelated green suites. Counts overlap between OS and are not summed as unique cases. No B5B-02 failed build/test run; prior failed histories retained without relabeling.
+
+- Logs include exact command/header/start/finish/exit/PID and five DLLs. Build started2026-10-26T20:54:18.520592Z/finished20:54:29.710755Z; Windows20:54:56.332581Z..20:54:58.406154Z; Linux20:55:37.985842Z..20:55:52.235238Z. Source unchanged throughout tests. Same5DLL hashes in Windows header, Linux readonly input copy and final host output verified. Source revision0a46f2a5 + preexisting unpublishedLocalAI + this correction; source generation/metadata changed since earlier B5B01 build, old builds are NOT current proof.
+- Linux uses existing cached aspnet10 image sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c, existing DockerLinux29.9.2. No image pull/build/install/Desktop start/reset/socket/PG/real network. Readonly Windows output /input copied to F-bound /work/bin; /work/temp/home/cache + process TEMP/TMP/TMPDIR/HOME/DOTNET_CLI_HOME/XDG_CACHE_HOME explicit. Windows equivalent app-specific temp/home/cache F-bound. Linux runtime proof is NOT Linux SDK/fullsuite/musl/nonroot/ARM64/packaging/native quality or secondUID proof.
+- Owned buildPID37424, Windows testPID52644 and DockerPID54812 completed normally; retained exec37639/46351 completed. Container testPID16 completed0; --rm container socialtelemetry-b5b02 checked absent. No owned runner retained, shared Docker/unrelated resources untouched. Generated logs/bin copies retained under ignored F roots; each test-owned execution directory cleaned. No old/default C keys/data moved/deleted; historical default LocalAccess keyring-touch uncertainty unchanged. Models/fixtures/archives/old.local-stt/private inputs untouched. SQL/file nonatomicity and other review findings remain separate.
+
+Correction source raw SHA256 (final):
+- SocialTelemetry.Infrastructure/Transcription/WhisperCppSpeechToTextClient.cs F12A4029E0FC075DE526737A157AF2F44276EB4C983F8DC67ED2CD62B60A54B6
+- SocialTelemetry.Tests/Infrastructure/Transcription/WhisperCppTests.cs 007988F42BC79325C7E54B2BD3A498DD70036E4CBD9338FF3166BEDACFDD3002
+
+Final tested build01 DLL raw SHA256:
+- Api FDD88F3798D57CAA90ACECED834F3534F20D9109475D28A928FBFBE5DFB024CB
+- Application 9D75DB1D7A6EE258A4CDB319E9FFDEB4D64643D68C340EA46DF5C11A3F03558E
+- Domain DF954149C5498178B3213BFED7EF50AA362B38982CDA31D8401E3C3E6BC9DF8B
+- Infrastructure 91376FC05678313BBD2CAA04CF4396F9803415A3D10BC92C91B3D2167B92E185
+- Tests B4BE110CC32EFE1BE364E783ED92F2694EBAA541BDF139E05BCD275AF3BF0CEE
+
+CURRENT self-hash/true ordinal CorrectionALL3/C#2 and integrated BackendALL37/C#35 aggregates are supplied after this metadata write in the direct handoff, not embedded recursively. Final HEAD/index/status/diff/protected freeze checked after write. SOURCE EDITING STOPPED after SAME Reviewer narrow B5B-02 closure; only separately coordinated three-path scoped publication remains pending. No Git/Tracker/Memory/next correction.
+
+### B5B-02 implementation recovery checkpoint (Backend, 2026-10-26)
+
+Owner-authorized correction ONLY; nine P2 still open pending independent closure. Baseline0a46f2a50b623a5b78de54513a47d42ef3fc8a54/index empty. Implemented Unix creation-mode0700 and actual mode/link validation before copying audio; Windows creation unchanged. No chmod of existing ancestors, native runner/options/schema/provider/model changes. A preexisting candidate/link is refused and never adopted for cleanup; an unverifiable newly created directory is not returned for recursive cleanup and receives no audio. Existing configured-root symlink/media-overlap checks retained. Four Unix-only cases cover traversable0755 parent + success/decoder refusal/caller cancellation, exact owner-readable bytes/children/private mode/cleanup, and configured symlink refusal preserving its target. No second-UID access claim.
+
+Source raw SHA256 before build01:
+- SocialTelemetry.Infrastructure/Transcription/WhisperCppSpeechToTextClient.cs F12A4029E0FC075DE526737A157AF2F44276EB4C983F8DC67ED2CD62B60A54B6
+- SocialTelemetry.Tests/Infrastructure/Transcription/WhisperCppTests.cs 007988F42BC79325C7E54B2BD3A498DD70036E4CBD9338FF3166BEDACFDD3002
+
+PRE-build candidate DLLs (historical B5B-01, NOT proof of this patch):
+- Api A689EC003B15240907F7E09083C6040118091DDE81A15C8700466C059142FFF1
+- Application B3E590F3167BDBA5368A3A4509E7154B9B05C406D638EE5876D6CE2E4050B697
+- Domain BED1466D0C3351E3B7C3155E85072330E54387ADCAC80FD17F01B660A4D7C021
+- Infrastructure D1C93C23E23C0DC77A319C87B23CA1A005BFAEC2E9D998571A9F8F862D658F49
+- Tests F989A14AC5C022BFED1D880B036B40AA245F3D4010B3C88F1FF132B6EBE191E5
+
+Pending EXACT commands (no B5B-02 run yet; no owned runner at checkpoint):
+- dotnet build SocialTelemetry.slnx --no-restore -> .local-dev/logs/b5b-02-build01.log
+- dotnet SocialTelemetry.Tests/bin/Debug/net10.0/SocialTelemetry.Tests.dll --filter-class '*WhisperCppTests' '*ArchitectureTests' --filter-not-method '*WhisperCppTests.Native_runner*' '*WhisperCppTests.Actual_runner*' --parallel none --no-ansi --progress off -> .local-dev/logs/b5b-02-windows-focused01.log
+- SAME final DLLs via cached aspnet10 readonly /input copied to F-bind /work/bin; isolated /work/temp/home/cache; owned /bin/sh sets umask0022 ONLY inside container, then SAME filters -> .local-dev/logs/b5b-02-linux-focused01.log. No PostgreSQL/socket needed: fake transcription + architecture only; no real native/engine/provider/broad/EF checks. Windows/Linux app temp/logs F-bound. Historical default-keyring touch uncertainty unchanged; do not remove old keys.
+
+Next: build, focused Windows then same-DLL Linux; inspect actual exits/failures, final raw/protected/5DLL freeze and SOURCE STOP for narrow review. No automatic Git/next correction.
+
+
+B5B-02 build01/Windows checkpoint 2026-10-26T20:55Z: final source frozen (hashes above); build01 exit0,0warnings/0errors,11.19s wrapper/10.67s MSBuild. Windows focused SAME build01: total42,passed38,failed0,skipped4 (new Unix cases), exit0,1.799s framework/2.074s wrapper. Logs .local-dev/logs/b5b-02-build01.log and b5b-02-windows-focused01.log. Build PID37424 and test PID52644 completed; no retained active runner. Cached aspnet10 image sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c; existing DockerLinux29.9.2 available. No Desktop start/install/reset. Linux same-filter permission proof PENDING; no other checks/reruns planned.
+
+Final build01 five DLL SHA256 (tests output copy):
+- Api FDD88F3798D57CAA90ACECED834F3534F20D9109475D28A928FBFBE5DFB024CB
+- Application 9D75DB1D7A6EE258A4CDB319E9FFDEB4D64643D68C340EA46DF5C11A3F03558E
+- Domain DF954149C5498178B3213BFED7EF50AA362B38982CDA31D8401E3C3E6BC9DF8B
+- Infrastructure 91376FC05678313BBD2CAA04CF4396F9803415A3D10BC92C91B3D2167B92E185
+- Tests B4BE110CC32EFE1BE364E783ED92F2694EBAA541BDF139E05BCD275AF3BF0CEE
+
+Linux next command: docker run --rm --pull=never --init --user root --name socialtelemetry-b5b02 --mount type=bind,source=<F repo>/SocialTelemetry.Tests/bin/Debug/net10.0,target=/input,readonly --mount type=bind,source=<F repo>/.local-dev/runs/b5b-02-linux-focused01,target=/work --entrypoint /bin/sh mcr.microsoft.com/dotnet/aspnet:10.0 -c <owned shell: umask0022; copy readonly DLLs; set /work TEMP/TMP/TMPDIR/HOME/DOTNET_CLI_HOME/XDG_CACHE_HOME; dotnet SAME filters>. Exact expanded command/environment/output/exit retained in .local-dev/logs/b5b-02-linux-focused01.log. Container name socialtelemetry-b5b02 reserved for this one owned run; no existing container will be removed/reused. Linux runtime only, Windows-built DLLs/glibc/root/init; no Linux SDK/native/fullsuite/secondUID claim.
 
 ### B5B-01 final correction handoff (Backend, 2026-10-26; SOURCE STOP)
 
