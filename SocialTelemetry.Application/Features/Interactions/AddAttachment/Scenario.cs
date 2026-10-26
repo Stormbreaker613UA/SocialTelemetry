@@ -62,7 +62,7 @@ public sealed class Scenario(IAttachmentPersistence persistence, LocalProfileOpe
                     throw new IOException("The staged attachment file is missing.");
                 attachment.Status = AttachmentStatus.Ready;
                 using var successfulMutation = await operation.EnterAsync(cancellationToken, userMutation: true);
-                await persistence.SaveAttachmentStatusAsync(attachment, successfulMutation.CancellationToken);
+                await persistence.CompletePendingAttachmentAsync(ownerId, attachment, successfulMutation.CancellationToken);
             }
         }
         catch

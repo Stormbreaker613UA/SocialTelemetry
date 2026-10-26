@@ -29,6 +29,32 @@ public sealed class AttachmentPersistence(
         await database.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task CompletePendingAttachmentAsync(Guid ownerId, InteractionAttachment attachment, CancellationToken cancellationToken)
+    {
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await database.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, cancellationToken);
+        var status = await OwnedUpload(ownerId, attachment).AsNoTracking()
+            .Select(existing => (AttachmentStatus?)existing.Status).SingleOrDefaultAsync(cancellationToken);
+        if (status is not (AttachmentStatus.Pending or AttachmentStatus.Ready))
+            throw new SocialTelemetry.Application.Exceptions.ConflictException();
+
+        // This completion may reconcile its status only, never flush or discard caller work.
+        var tracked = database.Entry(attachment);
+        if (tracked.State is not (EntityState.Unchanged or EntityState.Modified) ||
+            database.ChangeTracker.Entries().Any(entry =>
+                entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted &&
+                (!ReferenceEquals(entry.Entity, attachment) || entry.Properties.Any(property =>
+                    property.IsModified && property.Metadata.Name != nameof(InteractionAttachment.Status)))))
+            throw new SocialTelemetry.Application.Exceptions.ConflictException();
+
+        // Recovery can already have committed Ready for this exact upload. Refresh only
+        // its concurrency token under protection; Deleting/missing/reparented rows fail above.
+        tracked.Property(existing => existing.Status).OriginalValue = status.Value;
+        attachment.Status = AttachmentStatus.Ready;
+        await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task SaveAttachmentStatusAsync(InteractionAttachment attachment, CancellationToken cancellationToken) =>
         await database.SaveChangesAsync(cancellationToken);
 
@@ -53,8 +79,11 @@ public sealed class AttachmentPersistence(
         {
             await using var transaction = await database.Database.BeginTransactionAsync(CancellationToken.None);
             await database.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
-            await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == ownerId)
-                .Where(existingAttachment => existingAttachment.Id == attachment.Id)
+            var unfinished = OwnedUpload(ownerId, attachment)
+                .Where(existing => existing.Status == AttachmentStatus.Pending || existing.Status == AttachmentStatus.Deleting);
+            if (await database.InteractionAttachments.AnyAsync(existing => existing.Id == attachment.Id, CancellationToken.None) &&
+                !await unfinished.AnyAsync(CancellationToken.None)) return;
+            await unfinished
                 .ExecuteUpdateAsync(update => update.SetProperty(existingAttachment => existingAttachment.Status, AttachmentStatus.Deleting),
                     CancellationToken.None);
             await transaction.CommitAsync(CancellationToken.None);
@@ -69,11 +98,12 @@ public sealed class AttachmentPersistence(
         {
             await using var transaction = await database.Database.BeginTransactionAsync(CancellationToken.None);
             await database.LockAttachmentAnalysisContextAsync(attachment.Id, attachment.InteractionId, CancellationToken.None);
+            var deleting = OwnedUpload(ownerId, attachment).Where(existing => existing.Status == AttachmentStatus.Deleting);
+            if (await database.InteractionAttachments.AnyAsync(existing => existing.Id == attachment.Id, CancellationToken.None) &&
+                !await deleting.AnyAsync(CancellationToken.None)) return;
             await AttachmentFileCleanup.DeleteForMarkedAttachmentsAsync(
                 database, attachmentStorage, attachment.StorageKey, CancellationToken.None);
-            await database.InteractionAttachments.Where(attachment => attachment.Interaction.UserProfileId == ownerId)
-                .Where(existingAttachment => existingAttachment.Id == attachment.Id)
-                .ExecuteDeleteAsync(CancellationToken.None);
+            await deleting.ExecuteDeleteAsync(CancellationToken.None);
             await transaction.CommitAsync(CancellationToken.None);
         }
         catch (Exception cleanupException)
@@ -83,4 +113,8 @@ public sealed class AttachmentPersistence(
         }
     }
 
+    private IQueryable<InteractionAttachment> OwnedUpload(Guid ownerId, InteractionAttachment attachment) =>
+        database.InteractionAttachments.Where(existing => existing.Id == attachment.Id &&
+            existing.InteractionId == attachment.InteractionId && existing.Interaction.UserProfileId == ownerId &&
+            existing.StorageKey == attachment.StorageKey && existing.Type == attachment.Type && existing.MimeType == attachment.MimeType);
 }
