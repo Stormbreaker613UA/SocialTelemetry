@@ -8,10 +8,20 @@ public sealed class AvatarOwner
     private readonly Person? person;
     private readonly JournalProfile? profile;
 
-    public AvatarOwner(Person person) => this.person = person;
-    public AvatarOwner(JournalProfile profile) => this.profile = profile;
+    public AvatarOwner(Person person)
+    {
+        this.person = person;
+        UserProfileId = person.UserProfileId;
+        PersonId = person.Id;
+    }
+    public AvatarOwner(JournalProfile profile)
+    {
+        this.profile = profile;
+        UserProfileId = profile.Id;
+    }
 
-    public Guid UserProfileId => person?.UserProfileId ?? profile!.Id;
+    public Guid UserProfileId { get; }
+    public Guid? PersonId { get; }
     public string? StorageKey => person is not null ? person.AvatarStorageKey : profile!.AvatarStorageKey;
     public string? MimeType => person is not null ? person.AvatarMimeType : profile!.AvatarMimeType;
 

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Net;
+using System.Net.Http.Headers;
 using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Contracts.Storage;
 using SocialTelemetry.Application.Exceptions;
@@ -115,6 +117,158 @@ public abstract class JournalApplicationTestsContract<TFixture>(TFixture fixture
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.Null(await database.UserProfiles.Where(profile => profile.Id == profileId)
             .Select(profile => profile.AvatarStorageKey).SingleAsync(Cancellation));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Forged_avatar_holder_uses_only_owned_identity_for_reads_and_real_writes(bool person)
+    {
+        var foreignProfile = await fixture.CreateUserProfileAsync();
+        Guid? foreignPerson = person ? await fixture.CreatePersonAsync(new() { UserProfileId = foreignProfile, DisplayName = "Foreign" }) : null;
+        var foreignRoute = person ? $"/people/{foreignPerson}/avatar" : "/user-profile/avatar";
+        byte[] foreignBytes = [137, 80, 78, 71, 13, 10, 26, 10, 21];
+        await UploadAvatarAsync(foreignRoute, foreignBytes);
+        var owner = await fixture.CreateUserProfileAsync();
+        Guid? ownPerson = person ? await fixture.CreatePersonAsync(new() { UserProfileId = owner, DisplayName = "Owned" }) : null;
+        var ownRoute = person ? $"/people/{ownPerson}/avatar" : "/user-profile/avatar";
+        byte[] ownBytes = [137, 80, 78, 71, 13, 10, 26, 10, 22];
+        await UploadAvatarAsync(ownRoute, ownBytes);
+        await using var scope = fixture.CreateAsyncScope();
+        await BindAsync(scope.ServiceProvider);
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var foreignKey = person
+            ? await database.People.AsNoTracking().Where(target => target.Id == foreignPerson).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation)
+            : await database.UserProfiles.AsNoTracking().Where(target => target.Id == foreignProfile).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation);
+        var forged = Holder(owner, ownPerson, foreignKey);
+        var avatars = scope.ServiceProvider.GetRequiredService<ProfileAvatarService>();
+        await AssertAvatarAsync(avatars, forged, ownBytes);
+        // An untracked holder still writes the actual owned row; its supplied key is never used.
+        byte[] replacement = [137, 80, 78, 71, 13, 10, 26, 10, 23];
+        await avatars.UploadAsync(forged, replacement, "image/png", Cancellation);
+        Assert.Equal(foreignKey, forged.StorageKey);
+        var storedKey = person
+            ? await database.People.AsNoTracking().Where(target => target.Id == ownPerson).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation)
+            : await database.UserProfiles.AsNoTracking().Where(target => target.Id == owner).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation);
+        Assert.NotNull(storedKey);
+        Assert.NotEqual(foreignKey, storedKey);
+        await AssertAvatarAsync(avatars, forged, replacement);
+        await avatars.DeleteAsync(forged, Cancellation);
+        var deletedKey = person
+            ? await database.People.AsNoTracking().Where(target => target.Id == ownPerson).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation)
+            : await database.UserProfiles.AsNoTracking().Where(target => target.Id == owner).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation);
+        Assert.Null(deletedKey);
+        await Assert.ThrowsAsync<NotFoundException>(() => avatars.OpenAsync(forged, Cancellation));
+        var remainingKey = person
+            ? await database.People.AsNoTracking().Where(target => target.Id == foreignPerson).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation)
+            : await database.UserProfiles.AsNoTracking().Where(target => target.Id == foreignProfile).Select(target => target.AvatarStorageKey).SingleAsync(Cancellation);
+        Assert.Equal(foreignKey, remainingKey);
+        await using var foreignContent = await scope.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars").OpenReadAsync(foreignKey!, Cancellation);
+        Assert.NotNull(foreignContent);
+        using var buffer = new MemoryStream();
+        await foreignContent.CopyToAsync(buffer, Cancellation);
+        Assert.Equal(foreignBytes, buffer.ToArray());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Avatar_reads_ignore_tampered_tracking_and_old_snapshots_but_stale_writes_conflict(bool person)
+    {
+        var owner = await fixture.CreateUserProfileAsync();
+        Guid? personId = person ? await fixture.CreatePersonAsync(new() { UserProfileId = owner, DisplayName = "Owned" }) : null;
+        var route = person ? $"/people/{personId}/avatar" : "/user-profile/avatar";
+        byte[] original = [137, 80, 78, 71, 13, 10, 26, 10, 31];
+        byte[] replacement = [137, 80, 78, 71, 13, 10, 26, 10, 32];
+        await UploadAvatarAsync(route, original);
+        await using var scope = fixture.CreateAsyncScope();
+        await BindAsync(scope.ServiceProvider);
+        var avatars = scope.ServiceProvider.GetRequiredService<ProfileAvatarService>();
+        var tracked = await avatars.FindOwnerAsync(personId, Cancellation);
+        var snapshot = await avatars.FindOwnerAsync(personId, Cancellation, readOnly: true);
+        var key = tracked.StorageKey;
+        tracked.SetAvatar(Guid.NewGuid().ToString("N"), "image/jpeg");
+        snapshot.SetAvatar(Guid.NewGuid().ToString("N"), "image/webp");
+        await AssertAvatarAsync(avatars, tracked, original);
+        await AssertAvatarAsync(avatars, snapshot, original);
+        await Assert.ThrowsAsync<ConflictException>(() => avatars.UploadAsync(tracked, replacement, "image/png", Cancellation));
+        await Assert.ThrowsAsync<ConflictException>(() => avatars.DeleteAsync(tracked, Cancellation));
+        Assert.NotEqual(key, tracked.StorageKey); // Rejection must not discard the caller's pending edits.
+        await UploadAvatarAsync(route, replacement);
+        await AssertAvatarAsync(avatars, tracked, replacement);
+        await AssertAvatarAsync(avatars, snapshot, replacement);
+        await Assert.ThrowsAsync<ConflictException>(() => avatars.UploadAsync(snapshot, original, "image/png", Cancellation));
+        await Assert.ThrowsAsync<ConflictException>(() => avatars.DeleteAsync(snapshot, Cancellation));
+        using var download = await fixture.Client.GetAsync(route, Cancellation);
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal(replacement, await download.Content.ReadAsByteArrayAsync(Cancellation));
+    }
+
+    [Fact]
+    public async Task Foreign_or_missing_avatar_targets_cannot_save_pending_work_or_touch_storage()
+    {
+        var foreign = await fixture.CreateUserProfileAsync();
+        var foreignPerson = await fixture.CreatePersonAsync(new() { UserProfileId = foreign, DisplayName = "Foreign" });
+        var owner = await fixture.CreateUserProfileAsync();
+        var ownPerson = await fixture.CreatePersonAsync(new() { UserProfileId = owner, DisplayName = "Original" });
+        await using var scope = fixture.CreateAsyncScope();
+        await BindAsync(scope.ServiceProvider);
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var pending = await database.People.SingleAsync(target => target.Id == ownPerson, Cancellation);
+        pending.DisplayName = "Unsaved";
+        var avatars = scope.ServiceProvider.GetRequiredService<ProfileAvatarService>();
+        var storage = scope.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars");
+        var files = storage.EnumerateFiles().Select(file => file.StorageKey).Order().ToArray();
+        var staged = storage.EnumerateStagedFiles().Select(file => file.StorageKey).Order().ToArray();
+        foreach (var target in new[] { Holder(owner, foreignPerson, null), Holder(owner, Guid.NewGuid(), null), Holder(foreign, null, null), Holder(Guid.NewGuid(), null, null) })
+        {
+            await Assert.ThrowsAsync<NotFoundException>(() => avatars.OpenAsync(target, Cancellation));
+            await Assert.ThrowsAsync<NotFoundException>(() => avatars.UploadAsync(target, [137, 80, 78, 71, 13, 10, 26, 10], "image/png", Cancellation));
+            await Assert.ThrowsAsync<NotFoundException>(() => avatars.DeleteAsync(target, Cancellation));
+        }
+        Assert.Equal("Unsaved", pending.DisplayName);
+        Assert.Equal(EntityState.Modified, database.Entry(pending).State);
+        Assert.Equal("Original", await database.People.AsNoTracking().Where(target => target.Id == ownPerson).Select(target => target.DisplayName).SingleAsync(Cancellation));
+        Assert.Equal(files, storage.EnumerateFiles().Select(file => file.StorageKey).Order().ToArray());
+        Assert.Equal(staged, storage.EnumerateStagedFiles().Select(file => file.StorageKey).Order().ToArray());
+    }
+
+    [Fact]
+    public async Task Avatar_holder_and_public_owner_binding_do_not_replace_real_admission()
+    {
+        var owner = await fixture.CreateUserProfileAsync();
+        await using var scope = fixture.CreateAsyncScope();
+        var selection = await scope.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+        scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().Bind(new(owner, selection.Version), CancellationToken.None);
+        var avatars = scope.ServiceProvider.GetRequiredService<ProfileAvatarService>();
+        var target = Holder(owner, null, Guid.NewGuid().ToString("N"));
+        await Assert.ThrowsAsync<LocalAccessException>(() => avatars.OpenAsync(target, Cancellation));
+        await Assert.ThrowsAsync<LocalAccessException>(() => avatars.UploadAsync(target, [137, 80, 78, 71, 13, 10, 26, 10], "image/png", Cancellation));
+        await Assert.ThrowsAsync<LocalAccessException>(() => avatars.DeleteAsync(target, Cancellation));
+    }
+
+    private static AvatarOwner Holder(Guid owner, Guid? person, string? key) => person is Guid personId
+        ? new AvatarOwner(new SocialTelemetry.Domain.People.Person { Id = personId, UserProfileId = owner, AvatarStorageKey = key, AvatarMimeType = "image/png" })
+        : new AvatarOwner(new SocialTelemetry.Domain.Users.UserProfile { Id = owner, AvatarStorageKey = key, AvatarMimeType = "image/png" });
+
+    private async Task UploadAvatarAsync(string route, byte[] bytes)
+    {
+        using var form = new MultipartFormDataContent();
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(content, "File", "synthetic.png");
+        using var response = await fixture.Client.PutAsync(route, form, Cancellation);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    private async Task AssertAvatarAsync(ProfileAvatarService avatars, AvatarOwner target, byte[] expected)
+    {
+        var avatar = await avatars.OpenAsync(target, Cancellation);
+        await using var content = avatar.Content;
+        Assert.Equal("image/png", avatar.MimeType);
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, Cancellation);
+        Assert.Equal(expected, buffer.ToArray());
     }
 
     private async Task BindAsync(IServiceProvider services)
