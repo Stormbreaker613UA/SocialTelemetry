@@ -21,6 +21,143 @@ public abstract class LocalProfileSelectionTestsContract<TFixture>(TFixture fixt
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
+    [Theory]
+    [InlineData("select")]
+    [InlineData("create")]
+    public async Task Retained_selector_rejects_old_CAS_before_noop_or_create_callback_without_canceling_current_owner(string action)
+    {
+        await ResetAsync();
+        var first = await fixture.CreateUserProfileAsync("First");
+        var second = await fixture.CreateUserProfileAsync("Second");
+        await using var retained = fixture.CreateAsyncScope();
+        var service = retained.ServiceProvider.GetRequiredService<LocalProfileSelectionService>();
+        var selected = await service.SelectAsync(first, (await CurrentAsync()).Version, Cancellation);
+        var originalVersion = selected.Version;
+        Assert.False(selected.LegacySingleProfileAccess);
+        var database = retained.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(EntityState.Unchanged, database.Entry(selected).State);
+        var pending = await database.UserProfiles.SingleAsync(profile => profile.Id == first, Cancellation);
+        pending.AboutMe = "Unsaved retained journal edit";
+        using var otherHost = fixture.WithServices(_ => { });
+        using var otherClient = otherHost.CreateClient();
+        await using var switching = otherHost.Services.CreateAsyncScope();
+        var next = await switching.ServiceProvider.GetRequiredService<LocalProfileSelectionService>()
+            .SelectAsync(second, originalVersion, Cancellation);
+        var nextVersion = next.Version;
+        // Refresh this host's registry without refreshing the retained context's identity map.
+        await using (var refreshing = fixture.CreateAsyncScope())
+            await refreshing.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().ResolveAsync(second, nextVersion, Cancellation);
+        var lifetimes = retained.ServiceProvider.GetRequiredService<LocalProfileLifetimes>();
+        var currentLifetime = lifetimes.Capture(nextVersion);
+        var called = false;
+        var createdId = Guid.NewGuid();
+        if (action == "select")
+            await AssertFailureAsync(LocalProfileFailure.SelectionChanged, () =>
+                new SocialTelemetry.Application.Features.LocalProfiles.Select.Scenario(service)
+                    .ExecuteAsync(first, originalVersion, Cancellation));
+        else
+            await AssertFailureAsync(LocalProfileFailure.SelectionChanged, () => service.CreateProfileAsync(originalVersion, () =>
+            {
+                called = true;
+                return new UserProfile { Id = createdId, DisplayName = "Must not be created" };
+            }, Cancellation));
+        Assert.False(called);
+        Assert.False(currentLifetime.IsCancellationRequested);
+        Assert.False(lifetimes.Capture(nextVersion).IsCancellationRequested);
+        Assert.Equal(second, selected.UserProfileId);
+        Assert.Equal(nextVersion, selected.Version);
+        Assert.Equal(nextVersion, database.Entry(selected).Property(row => row.Version).OriginalValue);
+        Assert.Equal(EntityState.Unchanged, database.Entry(selected).State);
+        Assert.Equal("Unsaved retained journal edit", pending.AboutMe);
+        Assert.Equal(EntityState.Modified, database.Entry(pending).State);
+        var durable = await CurrentAsync();
+        Assert.Equal(second, durable.UserProfileId);
+        Assert.Equal(nextVersion, durable.Version);
+        Assert.Null(durable.AccessGrantId);
+        await using var checking = fixture.CreateAsyncScope();
+        var check = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await check.UserProfiles.AnyAsync(profile => profile.Id == createdId, Cancellation));
+        Assert.Null(await check.UserProfiles.Where(profile => profile.Id == first).Select(profile => profile.AboutMe).SingleAsync(Cancellation));
+        // A valid fresh CAS still works; a same-owner no-op must retain the current lifetime/version.
+        if (action == "select")
+            Assert.Equal(nextVersion, (await service.SelectAsync(second, nextVersion, Cancellation)).Version);
+        else
+            await checking.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().CreateAsync("Valid new profile", nextVersion, Cancellation);
+        Assert.False(currentLifetime.IsCancellationRequested);
+        Assert.Equal(EntityState.Modified, database.Entry(pending).State);
+        Assert.Null(await check.UserProfiles.AsNoTracking().Where(profile => profile.Id == first).Select(profile => profile.AboutMe).SingleAsync(Cancellation));
+    }
+
+    [Theory]
+    [InlineData("select", false)]
+    [InlineData("create", true)]
+    public async Task Pending_selector_edits_are_refused_without_discarding_them_or_pending_journal(string action, bool disableDetection)
+    {
+        await ResetAsync();
+        var first = await fixture.CreateUserProfileAsync("First");
+        var second = await fixture.CreateUserProfileAsync("Second", select: false);
+        await using var retained = fixture.CreateAsyncScope();
+        var service = retained.ServiceProvider.GetRequiredService<LocalProfileSelectionService>();
+        var selected = await service.SelectAsync(first, (await CurrentAsync()).Version, Cancellation);
+        var version = selected.Version;
+        var database = retained.ServiceProvider.GetRequiredService<AppDbContext>();
+        var pending = await database.UserProfiles.SingleAsync(profile => profile.Id == first, Cancellation);
+        database.ChangeTracker.AutoDetectChangesEnabled = !disableDetection;
+        pending.AboutMe = "Keep pending journal";
+        selected.UserProfileId = second;
+        var called = false;
+        if (action == "select")
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.SelectAsync(first, version, Cancellation));
+        else
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateProfileAsync(version, () =>
+            {
+                called = true;
+                return new UserProfile { DisplayName = "Must not be created" };
+            }, Cancellation));
+        Assert.False(called);
+        Assert.Same(selected, Assert.Single(database.Set<LocalProfileSelection>().Local));
+        Assert.Equal(second, selected.UserProfileId);
+        Assert.Equal(first, database.Entry(selected).Property(row => row.UserProfileId).OriginalValue);
+        Assert.Equal(version, database.Entry(selected).Property(row => row.Version).OriginalValue);
+        Assert.Equal("Keep pending journal", pending.AboutMe);
+        Assert.False(retained.ServiceProvider.GetRequiredService<LocalProfileLifetimes>().Capture(version).IsCancellationRequested);
+        var durable = await CurrentAsync();
+        Assert.Equal(first, durable.UserProfileId);
+        Assert.Equal(version, durable.Version);
+        await using var checking = fixture.CreateAsyncScope();
+        Assert.Null(await checking.ServiceProvider.GetRequiredService<AppDbContext>().UserProfiles
+            .Where(profile => profile.Id == first).Select(profile => profile.AboutMe).SingleAsync(Cancellation));
+        database.ChangeTracker.AutoDetectChangesEnabled = true;
+        database.ChangeTracker.DetectChanges();
+        Assert.Equal(EntityState.Modified, database.Entry(pending).State);
+        Assert.Equal(EntityState.Modified, database.Entry(selected).State);
+    }
+
+    [Fact]
+    public async Task Slow_Get_refreshes_retained_selector_after_bootstrap_recreates_missing_row()
+    {
+        await ResetAsync();
+        var first = await fixture.CreateUserProfileAsync("First");
+        await fixture.CreateUserProfileAsync("Second", select: false);
+        await using var retained = fixture.CreateAsyncScope();
+        var service = retained.ServiceProvider.GetRequiredService<LocalProfileSelectionService>();
+        var selected = await service.SelectAsync(first, (await CurrentAsync()).Version, Cancellation);
+        var version = selected.Version;
+        await RemoveSelectionAsync();
+        var recreated = await service.GetAsync(Cancellation);
+        Assert.Same(selected, recreated);
+        Assert.Null(recreated.UserProfileId);
+        Assert.Null(recreated.AccessGrantId);
+        Assert.False(recreated.LegacySingleProfileAccess);
+        Assert.NotEqual(version, recreated.Version);
+        var database = retained.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(recreated.Version, database.Entry(recreated).Property(row => row.Version).OriginalValue);
+        Assert.Equal(EntityState.Unchanged, database.Entry(recreated).State);
+        Assert.Equal(recreated.Version, (await CurrentAsync()).Version);
+        Assert.Equal(2, await database.UserProfiles.CountAsync(Cancellation));
+        Assert.Equal(first, (await service.SelectAsync(first, recreated.Version, Cancellation)).UserProfileId);
+    }
+
     [Fact]
     public async Task Legacy_zero_one_and_multiple_profiles_never_choose_an_ambiguous_owner()
     {

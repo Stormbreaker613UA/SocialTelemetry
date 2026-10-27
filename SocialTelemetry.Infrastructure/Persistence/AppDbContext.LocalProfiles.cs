@@ -16,6 +16,20 @@ public sealed partial class AppDbContext
             VALUES (1, NULL, {initialVersion}, {false})
             ON CONFLICT ("Id") DO UPDATE SET "Id" = EXCLUDED."Id"
             """, cancellationToken);
+        await RefreshTrackedLocalProfileSelectionAsync(cancellationToken);
+    }
+
+    private async Task RefreshTrackedLocalProfileSelectionAsync(CancellationToken cancellationToken)
+    {
+        var tracked = ChangeTracker.Entries<LocalProfileSelection>().SingleOrDefault();
+        if (tracked is null) return;
+        if (tracked.State != EntityState.Unchanged ||
+            tracked.Properties.Any(property => !Equals(property.CurrentValue, property.OriginalValue)))
+            throw new InvalidOperationException("Local selection requires no pending selector changes.");
+
+        // The SQL lock serializes writers, not EF's identity map. Reload only this unchanged
+        // selector, including its original concurrency version, before any CAS/no-op decision.
+        await tracked.ReloadAsync(cancellationToken);
     }
 
     private async Task ProtectLocalProfileOperationAsync(CancellationToken cancellationToken)

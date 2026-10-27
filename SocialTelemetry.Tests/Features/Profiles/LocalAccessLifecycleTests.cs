@@ -21,6 +21,79 @@ public abstract class LocalAccessLifecycleTestsContract<TFixture>(TFixture fixtu
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Retained_remembered_resume_rejects_stale_selector_before_activation_and_preserves_current_lifetime(bool pendingJournal)
+    {
+        var first = await fixture.CreateUserProfileAsync();
+        var second = await fixture.CreateUserProfileAsync(select: false);
+        using var application = fixture.WithServices(_ => { });
+        using var client = application.CreateClient();
+        var login = await EnrollAsync(application.Services, first);
+        var signed = await SignInAsync(application.Services, first, login, true);
+        await using var retained = application.Services.CreateAsyncScope();
+        retained.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+        var database = retained.ServiceProvider.GetRequiredService<AppDbContext>();
+        var tracked = await database.Set<LocalProfileSelection>().SingleAsync(Cancellation);
+        var version = tracked.Version;
+        Assert.Equal(first, tracked.UserProfileId);
+        var grantId = Assert.IsType<Guid>(tracked.AccessGrantId);
+        var originalGrant = await database.Set<LocalProfileGrant>().AsNoTracking().SingleAsync(row => row.Id == grantId, Cancellation);
+        var pending = new SocialTelemetry.Domain.People.Person { Id = Guid.NewGuid(), UserProfileId = first, DisplayName = "Unsaved journal" };
+        if (pendingJournal) database.People.Add(pending);
+        using var otherHost = fixture.WithServices(_ => { });
+        using var otherClient = otherHost.CreateClient();
+        await using var switching = otherHost.Services.CreateAsyncScope();
+        var next = await switching.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().SelectAsync(second, version, Cancellation);
+        await using (var refreshing = application.Services.CreateAsyncScope())
+            await refreshing.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().ResolveAsync(second, next.Version, Cancellation);
+        var lifetimes = retained.ServiceProvider.GetRequiredService<LocalProfileLifetimes>();
+        var currentLifetime = lifetimes.Capture(next.Version);
+        var management = retained.ServiceProvider.GetRequiredService<ILocalAccessManagement>();
+        var denied = await Assert.ThrowsAsync<LocalProfileAccessException>(() => management.ResumeAsync(first, version, Cancellation));
+        Assert.Equal(LocalProfileFailure.SelectionChanged, denied.Failure);
+        Assert.False(currentLifetime.IsCancellationRequested);
+        Assert.False(lifetimes.Capture(next.Version).IsCancellationRequested);
+        if (pendingJournal)
+        {
+            Assert.Equal(EntityState.Added, database.Entry(pending).State);
+            Assert.Same(pending, Assert.Single(database.People.Local));
+        }
+        await using var checking = application.Services.CreateAsyncScope();
+        var check = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+        var durable = await check.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+        Assert.Equal(second, durable.UserProfileId);
+        Assert.Equal(next.Version, durable.Version);
+        Assert.Null(durable.AccessGrantId);
+        var unchanged = await check.Set<LocalProfileGrant>().AsNoTracking().SingleAsync(row => row.Id == grantId, Cancellation);
+        Assert.False(unchanged.Revoked);
+        Assert.True(unchanged.Remembered);
+        Assert.Equal(originalGrant.SecurityEpoch, unchanged.SecurityEpoch);
+        Assert.Equal(originalGrant.SecurityStamp, unchanged.SecurityStamp);
+        Assert.Equal(originalGrant.ExpiresAt, unchanged.ExpiresAt);
+        Assert.Equal(originalGrant.LastActivityAt, unchanged.LastActivityAt);
+        Assert.Equal(originalGrant.SignedInAt, unchanged.SignedInAt);
+        Assert.False(await check.People.AnyAsync(row => row.Id == pending.Id, Cancellation));
+        // The actual remembered proof, with fresh CAS, still admits A and legitimately replaces B.
+        checking.ServiceProvider.GetRequiredService<LocalAccessRequest>().SetEvidence(signed.DeviceEvidence!);
+        var freshManagement = checking.ServiceProvider.GetRequiredService<ILocalAccessManagement>();
+        var resumed = await freshManagement.ResumeAsync(first, next.Version, Cancellation);
+        Assert.Equal(first, resumed.Selection.UserProfileId);
+        Assert.NotEqual(next.Version, resumed.Selection.Version);
+        Assert.True(currentLifetime.IsCancellationRequested);
+        var resumedLifetime = lifetimes.Capture(resumed.Selection.Version);
+        Assert.False(resumedLifetime.IsCancellationRequested);
+        var noOp = await freshManagement.ResumeAsync(first, resumed.Selection.Version, Cancellation);
+        Assert.Equal(resumed.Selection.Version, noOp.Selection.Version);
+        Assert.False(resumedLifetime.IsCancellationRequested);
+        var after = await check.Set<LocalProfileGrant>().AsNoTracking().SingleAsync(row => row.Id == grantId, Cancellation);
+        Assert.False(after.Revoked);
+        Assert.Equal(originalGrant.ExpiresAt, after.ExpiresAt);
+        Assert.False(await check.People.AnyAsync(row => row.Id == pending.Id, Cancellation));
+        if (pendingJournal) Assert.Equal(EntityState.Added, database.Entry(pending).State);
+    }
+
+    [Theory]
     [InlineData("sign-in")]
     [InlineData("password-change")]
     [InlineData("recovery")]
