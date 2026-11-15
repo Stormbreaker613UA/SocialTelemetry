@@ -1,8 +1,14 @@
 # SocialTelemetry Current State
 
-Updated: 2026-11-15 (published baseline13664807; B6-01 independently CLOSED, scoped publication PENDING; eight findings review-CLOSED/seven published; four P2 open; LocalAI unpublished)
+Updated: 2026-11-15 (published baseline46ed2316; B2-01 independently CLOSED, scoped publication PENDING; nine findings review-CLOSED/eight published; three P2 open; LocalAI unpublished)
 
 ## Active review corrections (owner-approved 2026-10-26)
+
+Owner STOP boundary (2026-11-15): after the currently agreed review-remediation fixes, checks, independent closures and scoped publications are completed, Root must STOP and discuss further actions/decisions with the owner. No automatic next feature, LocalAI integration, broader publication, UI or release work beyond those agreed correction scopes. Current B2-01 scope/checks remain unchanged; workers report directly to Root and do not choose subsequent product stages.
+
+Root verified B6-01 publication46ed23168a19dea6be00c3bab0c73915166231e6, parent13664807536a5de234a3f719e2772c7a52e5dc77: exact3M/0A/0D via --no-renames, raw aggregateFFABA407C9BDC5BA84F2F300817DD663BFFB60F24C6FB00E14AA43B897DD38D5, all three normalized working blobs, fresh live origin/main and empty index. Eight findings are CLOSED/published; B2-01 is additionally independently CLOSED with scoped publication PENDING. Nine findings review-CLOSED, eight published; three remain open: B1-P2, B2-02 and B2-03. A5 remains separately deferred. LocalAI34, protected Planner Spec/.gitignore, tracker patch and five voice files remain outside the commit. Historical B6 publication-pending wording below is superseded; no whole-LocalAI/v1 acceptance follows.
+
+B2-01 implemented/tested on frozen build01 and independently CLOSED by SAME Astra actual FULL FINAL in assigned scope, no remaining REQUIRED findings for this correction. Three-path scoped publication PENDING; Backend SOURCE STOP. Three other P2 remain open B1-P2/B2-02/B2-03; A5 separately deferred. No publication/whole-LocalAI/v1 acceptance claim. Historical active assignment follows: a wrong, missing or superseded OAuth callback state must not consume another current authorization attempt. Under the existing credential-file lock, identify/match the pending state before consuming that one-use attempt; do not change credentials or invoke provider exchange for a mismatched callback. Preserve one-use matched callback behavior, expiry/denial/malformed matched-callback failure, original Begin owner/admission/selection-generation proof, post-wait and final publication checks, and the existing no-network-under-SQL/file-lock ordering. Verify deterministic Begin A -> Begin B -> stale/wrong callback A -> valid callback B success, replay refusal and unchanged credentials/selection on invalid callbacks on PostgreSQL/real-file SQLite with focused Windows/Linux current-DLL checks. No live OAuth/model/native calls, new services/schema/dependencies, unrelated B1/B2 fixes, optional cleanup or per-group broad run. Backend owns minimal callback source/tests and targeted CURRENT after this planning handoff; narrow independent review and scoped publication remain separate.
 
 Root verified B3B-01 publication13664807536a5de234a3f719e2772c7a52e5dc77, parent8119ee97b4e6205cda346ac86ef40970ca749c5a: exact9M/0A/0D via --no-renames, raw aggregate24F43A49D35C5CE59E20609734153E9CF9C551D8B3F7AF404DE1C546EEF4EEC5, all nine normalized working blobs, fresh live origin/main and empty index. Seven findings are CLOSED/published; B6-01 is additionally independently CLOSED with scoped publication PENDING. Eight findings are review-CLOSED, seven published; four remain open: B1-P2, B2-01, B2-02 and B2-03. Deferred A5 remains separate. LocalAI34, Planner Spec/.gitignore, tracker patch and five voice files are preserved outside this commit. Historical pending-publication wording below is superseded for B3B-01; no whole-LocalAI/v1 acceptance follows.
 
@@ -37,6 +43,92 @@ First group is B5A-01/B5A-02 only: refuse an Interaction deletion with foreign l
 Backend source editing is STOPPED after implementation/testing and the SAME Reviewer's final narrow closure of B5A-01/B5A-02. Owner explicitly authorized separately coordinated scoped publication of ONLY the five reviewed correction source/test paths plus CURRENT (six paths), which remains PENDING until Git succeeds. Unpublished LocalAI source, Planner Spec/.gitignore and the other ten P2 are excluded from that bounded publication. Do not claim LocalAI reviewed clear/published or whole-v1 acceptance. Existing test counts, setup failures, platform/keyring qualifications and logs remain unchanged; no reruns or additional model/native/live-provider work.
 
 Subsequent priority groups remain storage recovery/avatar/temp privacy; selector/journal classification/analysis pending writes; provider callbacks/SSE/locking/post-commit responses. Final publication requires the explicit corrected scope, review closure and preserved unrelated tracker/voice/ignored files. Future UI/Advisor/server work does not start here.
+
+### B2-01 final implementation/test/review checkpoint (Backend, 2026-11-15; SOURCE STOP)
+
+Group8 B2-01 independently CLOSED by SAME Astra actual FULL FINAL captured by Root, no remaining REQUIRED findings in assigned scope. Verified FixedEquals BEFORE consumption under the same file lock; mismatched state causes no Restore/registration/exchange/SQL publication; matched one-use expiry/lifetime/denial/client/code behavior and original Begin/admission/generation/post-wait/final-publication/no-SQL-network order preserved. Actual new HTTP assertions and related existing PKCE/privacy/invalid-identity/registration-retry cases reviewed without weakening; start/end correction3/CS2/LocalAI34/fiveDLL/protected freeze matched, no reviewer runs/writes. Baseline46ed23168a19dea6be00c3bab0c73915166231e6: nine findings review-CLOSED, eight published; ONLY this three-path scoped publication PENDING. Three other P2 remain open B1-P2/B2-02/B2-03; A5 separately deferred. Closure overrides historical pending-review wording below; supplied build01/Windows47/Linux47 results, failure history, keyring/platform/cleanup qualifications unchanged, no whole-LocalAI/v1 acceptance. Exact two existing C# files + CURRENT =3M/0A/0D; LocalAI34/RootSpec/.gitignore/unrelated patch/five voices preserved/excluded. No Git/Tracker/Memory/newagent/reviewer/reportfiles/nextscope. This final checkpoint overrides pending/active-run wording in recovery below; all historical failure/keyring/platform/SQL-file qualifications remain.
+
+- Production correction ONLY ChatGptConnection.Callback.TakeBoundCallbackAsync: under SAME existing store file lock, read current pending and match returnedState with existing constant-time FixedEquals BEFORE pending=null. Missing/wrong/superseded state throws existing InvalidCallback without consumption/registration/exchange/SQL selection change. Only exact matched one-use attempt is then removed BEFORE existing expiry/lifetime/error/denied/client/code checks; matched failure and replay semantics retained. No new store/service/queue/schema/options/dependency/API/error contract. Other legacy/core/catalog/SSE paths untouched (B1/B2-02/B2-03/A5 remain separate).
+- Original Begin owner/admission/generation restoration, pre-registration and post-exchange authoritative SQL checks, post-file-wait revalidation/deadline, provider exchange outside SQL/file locks, short guarded publication and post-release session retirement bodies unchanged. B3A/B3B/B6, prompts/model/capabilities/fingerprint unchanged.
+- EIGHT added deterministic cases across PG+fileSQLite (four/provider) in existing ProfileIsolationTests: BeginA then advance ONLY existing AuthorizationLifetime with TestClock (active ConnectionBusy policy remains), BeginB through actual endpoint; staleA/wrong/missing callback yields safe400 InvalidCallback with ZERO exchange/TokenRequests, byte-identical protected credential file/empty Accounts, identical SQL AI-selection provider/connection/model/generation/enabled and workspace owner/version/grant/legacy. ValidB then returns connected200/one owned account/one provider exchange and SQL publication; replay400 leaves one exchange/filebytes/generation unchanged. Separate actual fake-exchange gate: second matched callback while first awaits exchange is refused, first finishes200 with exactlyone owned token account/exchange. No sleep/private-pending mutation/fake persistence/real browser/provider or production hook.
+- THIRTY-NINE relevant existing cases preserve PKCE/protected credentials/privacy; matched denied/expiry/malformed/duplicate-query/identity/client/subject/replay failures; authorized registration retention on exchange failure; original protected Begin proof, stale callback host lifetime/cross-host revoke+expire including post-guard expiry, journal deletion before/during exchange; BeginBusy/switch refusal; original capture/Begin generation and cancellation publication order. Only precise13 method filters below, NOT entire ProfileIsolation/ChatGptConnection suites, broad or unrelated old green suites.
+
+| FINAL build01 evidence | Actual result / exit / duration | Existing ignored log |
+| --- | --- | --- |
+| dotnet build SocialTelemetry.slnx --no-restore |0warnings/0errors exit0;9.82s MSBuild/10.333s wrapper |.local-dev/logs/b2-01-build01.log|
+| Windows x64 PG+real-fileSQLite |47passed/0failed/0skipped exit0;36s606ms framework/36.946s wrapper |.local-dev/logs/b2-01-windows-focused01.log|
+| Linux SAME final fiveDLLs PG+real-fileSQLite |47passed/0failed/0skipped exit0;1m38s043ms framework/107.419s Docker wrapper |.local-dev/logs/b2-01-linux-focused01.log|
+
+Per OS PG16 +SQLite31:32 ProfileIsolation cases (16/provider, including8new+24existing) plus15 existing standalone ChatGptConnection SQLite cases. This is filter decomposition, not extra provider runs; counts overlap across OS, not summed into unique fullsuite proof. ONE build and ONE run/OS; no retries/green repeats/failures in this correction.
+
+Exact command: dotnet SocialTelemetry.Tests/bin/Debug/net10.0/SocialTelemetry.Tests.dll --filter-method <each of the exact13 suffixes in recovery below prefixed *> --parallel none --no-ansi --progress off. Linux /work/bin/SocialTelemetry.Tests.dll SAME filters/flags; full expanded command, all UTC/PID/DLL/summary/exit in logs. Source/test edits ALL preceded build01, no subsequent source/test edit/rebuild. Windows recorded fiveDLL hashes, Linux copied sha256sum matched final host snapshot. Only targeted CURRENT facts changed afterward.
+
+- UTC2026-11-15: build14:42:30.009855Z..14:42:40.342173Z; Windows14:43:46.271897Z..14:44:23.217727Z; Linux Docker14:45:19.465531Z..14:47:06.884146Z, child14:45:27Z..14:47:06Z. Docker read-only29.9.2 already ready; no duplicate startup/install/reset. Cached aspnet10 sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c +PG17-alpine. Linux Windows-built x64/glibc/root/--init/--rm/--pull=never, readonly input copied to F-bound /work, socket only for disposablePG. Existing fixtures explicitly isolate F app/temp/media/LocalAccess/provider/framework keys; standalone ChatGptTestApp uses real-fileSQLite +F-root credentials/framework/local-access dirs. Shared Docker/tool caches unchanged; no old/default C keys/data/ownerDB moved/deleted/reset. Historical default-keyring uncertainty remains, no global filesystem-write audit claim.
+- No Linux SDK/fullsuite/musl/nonroot/ARM64/native/liveOAuth/provider/model proof; no Qwen/Whisper/native/old144+74/broad/EF CLI/model/migration/upgrade/download runs. No public contract/dependency/model change warrants architecture/EF reruns for this private conditional correction. All earlier failure/interruption/provider/native/SQL-file qualifications retained; no timeout-rootcause/flake claim. Some exploratory read queries had nonexistent paths; no build/test/setup assertion failure resulted.
+- Owned buildPID33900/retainedexec91140, WindowsPID45960/exec19863 and DockerPID43392/exec1173 completedexit0; Linux child16 exit0. --rm socialtelemetry-b2-01 absent, all FOUR fixture-created container IDs from logs checked absent, recorded host PIDs absent. No owned runtime/container/cleanup retained, no shared Docker/Desktop/unrelated resource stopped; logs/bin copies kept in ignored F roots and ordinary owned fixture cleanup only.
+
+Final correction source2 raw SHA256:
+- SocialTelemetry.Infrastructure/AI/ChatGptConnection.Callback.cs 6840013FEFE9FDF7606BC83819EBDC5D3A3BAE6727573515090768C5C91FC28E
+- SocialTelemetry.Tests/Features/Profiles/ProfileIsolationTests.cs 42E373D29FE975A0F38E0DC4B64FA8A55DF239D9A2E3BE72F4AEA285638CF115
+
+Final tested build01 fiveDLL raw SHA256:
+- Api 820D9885370C38D5939424C2346247AC3396BF3E607226C57BFB3C6D5DF077E0
+- Application 4D98317E5EB76175237FD97F6148B97D7160ADFBD26A85C1EC1DD1EA2FD8D765
+- Domain 16D146620958F5A19640DD16A2FC1CFFF8261FD709C333548C327FEB5A912527
+- Infrastructure 1CEDE62DE94CEAD855CAF44931644C53866EB888B9013407759F22691594C1B9
+- Tests 00950F187F3488251A8C9AACEDB157600F13B9F8D033D71CAFE8BE44B1C313C1
+
+Existing log raw SHA256:
+- b2-01-build01.log 9DF3C8F62E33F01F814488BE0E5DA6F438F0525C009879B0757990EC7798ADCA
+- b2-01-windows-focused01.log A409A51311DCEF5DF135EA9D74DECCC1419C53F43591F321D890A1E4193118FD
+- b2-01-linux-focused01.log 5592F3ECA8A7ABEE23F455FD444A2F109BE3C1BAA621C144418149209CA525D0
+
+Final protected/LocalAI34 preservation, HEAD/index/full diffcheck, correction3/C#2 true ordinal manifest +CURRENT selfhash supplied in native final after this metadata write. SOURCE EDITING STOPPED; Root inspection then separately assigned SAME Astra narrow B2-01 closure, no Git/automaticnextscope.
+
+### B2-01 material implementation recovery checkpoint (Backend, 2026-11-15; verification PENDING)
+
+ONLY group8 B2-01, baseline46ed23168a19dea6be00c3bab0c73915166231e6. Two existing C# files + CURRENT =3M/0A/0D: ChatGptConnection.Callback.cs and ProfileIsolationTests.cs. Eight findings CLOSED/published; B2-01 and three other P2 remain open pending separate review/publication. Existing LocalAI34/RootSpec/.gitignore/unrelated patch/five voices preserved. No Git/Tracker/Memory/newagent/reportfiles.
+
+Smallest mechanism fix: under SAME existing credential-file lock, inspect pending + existing constant-time FixedEquals FIRST; reject wrong/missing/superseded state without consuming pending or touching credentials/SQL/provider. Only matched one-use attempt is then removed BEFORE the existing expiry/lifetime/denial/client/code checks, preserving matched-failure and replay semantics. Original Begin binding/admission/generation restore, authoritative pre-registration/final publication guards, file-wait deadline checks, exchange outside SQL/file protection and retirement after release unchanged. No B1/B2-02/B2-03/A5/legacy adapter cleanup, new framework/service/options/schema/dependencies or API/prompt change.
+
+New actual bound HTTP tests reuse BOTH-provider ProfileIsolation fixtures/FakeChatGptServer: BeginA -> clock advances only existing AuthorizationLifetime (legitimate current ConnectionBusy preserved) -> BeginB; staleA/wrong/missing callbacks must leave zero exchange/tokenrequests, identical protected credential bytes/empty Accounts, identical SQL selection fields/generation and workspace owner/version/grant. ValidB must create one owned connected account/SQL selection, and replay must leave one exchange/credential bytes/generation unchanged. Separate gated actual provider exchange verifies matched duplicate refusal while original completion is awaiting and one successful original publication. No sleeps/reflection/private-pending injection/liveOAuth. Existing selected denied/expired/malformed/identity/PKCE/registration-retry/original-proof/cross-host expiration/revocation/deletion/capture/cancellation cases retained.
+
+No build/tests run for this delta yet. Docker read-only ready29.9.2, no startup/install/reset. No active owned runner at this checkpoint. Pending dotnet build SocialTelemetry.slnx --no-restore -> .local-dev/logs/b2-01-build01.log; Windows/SAMEfinalDLLLinux MTP --filter-method <each suffix below prefixed *> --parallel none --no-ansi --progress off -> .local-dev/logs/b2-01-{windows,linux}-focused01.log. F-bound .local-dev/runs/b2-01-* process temp/home/cache + existing isolated App/media/LocalAccess/provider/framework rings, disposable PG17-alpine/fileSQLite. Linux cachedaspnet10/root/glibc/--init/--rm/--pull=never/readOnlyinput/F-bind/socket, no Linux SDK/fullsuite/native/provider proof. No broad/model/Whisper/Qwen/EF CLI/upgrades/newdownloads. Actual runner PID/creationidentity/retainedexec/fiveDLL/logs and summaries/exits will be retained at launch. All old failures/keyring/SQL-file/platform qualifications preserved.
+
+Exact13 method suffixes:
+- Mismatched_callback_cannot_consume_current_bound_attempt_or_mutate_selection
+- Matched_callback_is_consumed_once_while_original_exchange_is_awaiting
+- Bound_callback_checks_cross_host_admission_before_registration_and_after_exchange
+- Protected_OAuth_callback_cannot_replace_revoked_begin_admission_with_current_device_or_owner
+- Other_host_journal_deletion_blocks_original_callback_before_or_during_exchange
+- Begin_conflict_does_not_replace_pending_owner_and_switch_rejects_its_callback
+- Stale_capture_or_post_change_Begin_cannot_cancel_new_generation_analysis
+- Generation_cancellation_callbacks_run_after_publication_coordination_is_released
+- Connection_uses_documented_PKCE_contract_and_protects_credentials
+- Invalid_callback_never_exchanges_a_code
+- Invalid_ID_token_is_rejected
+- Callback_is_single_use_and_returning_account_identity_cannot_be_replaced
+- Code_exchange_failure_retains_registration_for_retry
+
+Frozen candidate source2 raw SHA256:
+- SocialTelemetry.Infrastructure/AI/ChatGptConnection.Callback.cs 6840013FEFE9FDF7606BC83819EBDC5D3A3BAE6727573515090768C5C91FC28E
+- SocialTelemetry.Tests/Features/Profiles/ProfileIsolationTests.cs 42E373D29FE975A0F38E0DC4B64FA8A55DF239D9A2E3BE72F4AEA285638CF115
+
+PRE-B2-01 historical fiveDLLs (NOT proof of this delta):
+- Api 085CBC62D85D60B72FECEF9F95ABE1B173AA49A57B26DCE9D5D9538DB97F9115
+- Application 8E1EB8CCD74350BFF6326DFAC401D84B16F33EC1A4154C4FE71F6E50815465B4
+- Domain 5EE35108ADFA18FD9E767FBBB3BB940821018C19840D7BBEDC16B02B36CBE3EF
+- Infrastructure 48306E36ACABE6BEE5122ADE49E6BE77ABAAFA0A03E6B30A4D8D30B55B16CCD2
+- Tests BFE9C45DFCFF5C285F645C0255D03BBFBE79140F8C4D3ABB240F7345919D8F37
+
+B2-01 BEFORE focused runs: build01 completed2026-11-15T14:42:40.342173Z, dotnet build SocialTelemetry.slnx --no-restore,0warnings/0errors exit0,9.82s MSBuild/10.333s wrapper; buildPID33900/retainedexec91140 completed. Source2 frozen BEFORE build01. No owned active runner at this moment. Pending Windows then SAME final DLL Linux exact13 method filters above, --parallel none --no-ansi --progress off; logs .local-dev/logs/b2-01-{windows,linux}-focused01.log. Actual PID/creationUTC/retainedexec/summary/exit retained as launched; no source edits/rebuild/duplicate green runs planned. Final candidate build01 fiveDLLs:
+- Api 820D9885370C38D5939424C2346247AC3396BF3E607226C57BFB3C6D5DF077E0
+- Application 4D98317E5EB76175237FD97F6148B97D7160ADFBD26A85C1EC1DD1EA2FD8D765
+- Domain 16D146620958F5A19640DD16A2FC1CFFF8261FD709C333548C327FEB5A912527
+- Infrastructure 1CEDE62DE94CEAD855CAF44931644C53866EB888B9013407759F22691594C1B9
+- Tests 00950F187F3488251A8C9AACEDB157600F13B9F8D033D71CAFE8BE44B1C313C1
+
+B2-01 Windows focused01 completed2026-11-15T14:44:23.217727Z:47passed/0failed/0skipped exit0,36.606s framework/36.946s wrapper, ownedPID45960/retainedexec19863 completed. Source2/fiveDLLs still build01 frozen, no edits/rebuild/greenrepeat. Linux SAME filter/SAME fiveDLL now launched in --rm socialtelemetry-b2-01, ownedDockerPID/creationUTC/childPID/retainedexec recorded in log .local-dev/logs/b2-01-linux-focused01.log and tool response. Await actual summary/exit; Linux NOT yet claimed green. No B2-01 failures observed so far.
 
 ### B6-01 final implementation/test/review checkpoint (Backend, 2026-11-15; SOURCE STOP)
 

@@ -17,6 +17,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.People;
@@ -763,6 +764,126 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
         var stored = verification.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.Equal("PRIVATE_JOURNAL foreign", (await stored.PersonExternalConnections.SingleAsync(link => link.Id == personLink, Cancellation)).Handle);
         Assert.Equal("Synthetic confirmed fact", (await stored.PersonFacts.SingleAsync(fact => fact.Id == foreign.Fact, Cancellation)).Value);
+    }
+
+    [Theory]
+    [InlineData("superseded")]
+    [InlineData("wrong")]
+    [InlineData("missing")]
+    public async Task Mismatched_callback_cannot_consume_current_bound_attempt_or_mutate_selection(string fault)
+    {
+        var data = await SeedAsync();
+        var clock = new TestClock();
+        using var host = Host(services => services.AddSingleton<TimeProvider>(clock));
+        using var client = host.Client();
+        using (var firstBegin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, firstBegin.StatusCode);
+        var firstCallback = host.Callback();
+        // Begin intentionally refuses an active attempt. Expire A without sleeping, then
+        // create B through the real endpoint rather than replacing private pending state.
+        clock.Advance(host.Application.Services.GetRequiredService<IOptions<ChatGptOptions>>().Value.AuthorizationLifetime);
+        using (var secondBegin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, secondBegin.StatusCode);
+        var currentCallback = host.Callback();
+        Assert.NotEqual(firstCallback, currentCallback);
+        var invalidCallback = firstCallback;
+        if (fault != "superseded")
+        {
+            var parameters = new Dictionary<string, string?> { ["code"] = "private-synthetic-code", ["client_id"] = "fixture-client" };
+            if (fault == "wrong") parameters["state"] = "wrong-state";
+            invalidCallback = QueryHelpers.AddQueryString(ChatGptOptions.CallbackPath, parameters);
+        }
+        var credentialFile = Path.Combine(host.CredentialDirectory, "chatgpt-state.bin");
+        var beforeBytes = await File.ReadAllBytesAsync(credentialFile, Cancellation);
+        ProfileAiSelection beforeSelection;
+        LocalProfileSelection beforeWorkspace;
+        await using (var reading = fixture.CreateAsyncScope())
+        {
+            var database = reading.ServiceProvider.GetRequiredService<AppDbContext>();
+            beforeSelection = await database.Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == data.Owner, Cancellation);
+            beforeWorkspace = await database.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+        }
+        using (var invalid = await client.GetAsync(invalidCallback, Cancellation))
+        {
+            await CodeAsync(invalid, HttpStatusCode.BadRequest, "InvalidCallback");
+            Assert.DoesNotContain("private-", await invalid.Content.ReadAsStringAsync(Cancellation));
+        }
+        Assert.Equal(0, host.Server.ExchangeCount);
+        Assert.Empty(host.Server.TokenRequests);
+        Assert.Equal(beforeBytes, await File.ReadAllBytesAsync(credentialFile, Cancellation));
+        var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+        using (await store.LockAsync(Cancellation)) Assert.Empty((await store.ReadAsync(Cancellation)).Accounts);
+        await using (var checking = fixture.CreateAsyncScope())
+        {
+            var database = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+            var current = await database.Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == data.Owner, Cancellation);
+            Assert.Equal((beforeSelection.ProviderId, beforeSelection.ConnectionId, beforeSelection.ModelId, beforeSelection.Generation, beforeSelection.Enabled),
+                (current.ProviderId, current.ConnectionId, current.ModelId, current.Generation, current.Enabled));
+            var workspace = await database.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+            Assert.Equal((beforeWorkspace.UserProfileId, beforeWorkspace.Version, beforeWorkspace.AccessGrantId, beforeWorkspace.LegacySingleProfileAccess),
+                (workspace.UserProfileId, workspace.Version, workspace.AccessGrantId, workspace.LegacySingleProfileAccess));
+        }
+        using var completed = await client.GetAsync(currentCallback, Cancellation);
+        Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+        var status = await completed.Content.ReadFromJsonAsync<ChatGptConnectionStatus>(Cancellation);
+        Assert.NotNull(status); Assert.True(status.Connected);
+        Assert.Equal(1, host.Server.ExchangeCount);
+        var exchange = Assert.Single(host.Server.TokenRequests);
+        Assert.Equal("fixture-client", exchange["client_id"]);
+        using (await store.LockAsync(Cancellation))
+        {
+            var account = Assert.Single((await store.ReadAsync(Cancellation)).Accounts);
+            Assert.Equal(data.Owner, account.UserProfileId);
+            Assert.Equal(status.ConnectionId, account.Id);
+            Assert.NotNull(account.Tokens);
+        }
+        var completedBytes = await File.ReadAllBytesAsync(credentialFile, Cancellation);
+        await using var verification = fixture.CreateAsyncScope();
+        var stored = verification.ServiceProvider.GetRequiredService<AppDbContext>();
+        var published = await stored.Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == data.Owner, Cancellation);
+        Assert.True(published.Enabled); Assert.Equal(status.ConnectionId, published.ConnectionId);
+        Assert.NotEqual(beforeSelection.Generation, published.Generation);
+        using var replay = await client.GetAsync(currentCallback, Cancellation);
+        await CodeAsync(replay, HttpStatusCode.BadRequest, "InvalidCallback");
+        Assert.Equal(1, host.Server.ExchangeCount);
+        Assert.Single(host.Server.TokenRequests);
+        Assert.Equal(completedBytes, await File.ReadAllBytesAsync(credentialFile, Cancellation));
+        Assert.Equal(published.Generation, await stored.Set<ProfileAiSelection>().AsNoTracking()
+            .Where(row => row.UserProfileId == data.Owner).Select(row => row.Generation).SingleAsync(Cancellation));
+    }
+
+    [Fact]
+    public async Task Matched_callback_is_consumed_once_while_original_exchange_is_awaiting()
+    {
+        var data = await SeedAsync();
+        using var host = Host();
+        using var client = host.Client();
+        using (var begin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, begin.StatusCode);
+        var callback = host.Callback();
+        host.Server.AuthorizationExchangeEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Server.ContinueAuthorizationExchange = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completing = client.GetAsync(callback, Cancellation);
+        try
+        {
+            await host.Server.AuthorizationExchangeEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), Cancellation);
+            using var duplicate = await client.GetAsync(callback, Cancellation);
+            await CodeAsync(duplicate, HttpStatusCode.BadRequest, "InvalidCallback");
+            Assert.Equal(1, host.Server.ExchangeCount);
+        }
+        finally { host.Server.ContinueAuthorizationExchange.TrySetResult(); }
+        using var completed = await completing;
+        Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+        Assert.True((await StatusAsync(client)).Connected);
+        Assert.Equal(1, host.Server.ExchangeCount);
+        Assert.Single(host.Server.TokenRequests);
+        var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+        using (await store.LockAsync(Cancellation))
+        {
+            var account = Assert.Single((await store.ReadAsync(Cancellation)).Accounts);
+            Assert.Equal(data.Owner, account.UserProfileId);
+            Assert.NotNull(account.Tokens);
+        }
     }
 
     [Fact]

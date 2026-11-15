@@ -24,9 +24,11 @@ public sealed partial class ChatGptConnection
         // checked after releasing this file lock, before registration or any provider call.
         using var storageLock = await store.LockAsync(cancellationToken);
         var attempt = pending;
+        if (attempt is null || !ChatGptHttpClient.FixedEquals(attempt.State, returnedState))
+            throw new AiProviderException(AiFailure.InvalidCallback);
+        // A different callback must not consume the current one-use attempt.
         pending = null;
-        if (attempt is null || attempt.ExpiresAt <= clock.GetUtcNow() ||
-            !ChatGptHttpClient.FixedEquals(attempt.State, returnedState))
+        if (attempt.ExpiresAt <= clock.GetUtcNow())
             throw new AiProviderException(AiFailure.InvalidCallback);
         CheckCallbackLifetime(attempt, cancellationToken);
         if (error is not null)
