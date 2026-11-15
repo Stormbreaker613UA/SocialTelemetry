@@ -908,6 +908,77 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     }
 
     [Theory]
+    [InlineData("refusal-event", AiFailure.ProviderRejected)]
+    [InlineData("tool-event", AiFailure.MalformedResponse)]
+    [InlineData("terminal-refusal", AiFailure.ProviderRejected)]
+    [InlineData("terminal-tool", AiFailure.MalformedResponse)]
+    public async Task Mixed_provider_output_cannot_persist_analysis_or_pending_and_preserves_history(string fault, AiFailure expected)
+    {
+        var data = await SeedAsync();
+        using var host = Host();
+        using var client = host.Client();
+        await AdoptAsync(client, await LegacyAsync(host));
+        var clean = CompletedResult(data.Person);
+        host.Server.StreamBody = clean;
+        using (var original = await client.PostAsJsonAsync($"/interactions/{data.Interaction}/analyze", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.Created, original.StatusCode);
+        InteractionAnalysis historical;
+        SocialTelemetry.Domain.People.SuggestedProfileUpdate pending;
+        Guid generation;
+        await using (var reading = fixture.CreateAsyncScope())
+        {
+            var database = reading.ServiceProvider.GetRequiredService<AppDbContext>();
+            historical = await database.InteractionAnalyses.AsNoTracking().SingleAsync(row => row.InteractionId == data.Interaction, Cancellation);
+            pending = await database.SuggestedProfileUpdates.AsNoTracking().SingleAsync(row => row.InteractionAnalysisId == historical.Id, Cancellation);
+            generation = await database.Set<ProfileAiSelection>().Where(row => row.UserProfileId == data.Owner).Select(row => row.Generation).SingleAsync(Cancellation);
+        }
+        var terminalIndex = clean.IndexOf("data: {\"type\":\"response.completed\"", StringComparison.Ordinal);
+        Assert.True(terminalIndex > 0);
+        var prefix = clean[..terminalIndex];
+        var contradiction = fault switch
+        {
+            "refusal-event" => """{"type":"response.refusal.done","refusal":"private-refusal"}""",
+            "tool-event" => """{"type":"response.output_item.done","item":{"type":"function_call","arguments":"private-tool"}}""",
+            "terminal-refusal" => """{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"private-refusal"}]}]}}""",
+            _ => """{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","arguments":"private-tool"}]}}"""
+        };
+        host.Server.StreamBody = prefix + "data: " + contradiction + "\n\n";
+        if (fault.EndsWith("-event", StringComparison.Ordinal)) host.Server.StreamBody += clean[terminalIndex..];
+        using (var rejected = await client.PostAsJsonAsync($"/interactions/{data.Interaction}/analyze", new { }, Cancellation))
+        {
+            await CodeAsync(rejected, HttpStatusCode.BadGateway, expected.ToString());
+            var problem = await rejected.Content.ReadAsStringAsync(Cancellation);
+            Assert.DoesNotContain("private-", problem);
+            Assert.DoesNotContain("PRIVATE_JOURNAL", problem);
+        }
+        Assert.Equal(2, host.Server.InferenceCount);
+        await using (var checking = fixture.CreateAsyncScope())
+        {
+            var database = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+            var retained = await database.InteractionAnalyses.AsNoTracking().SingleAsync(row => row.InteractionId == data.Interaction, Cancellation);
+            Assert.Equal((historical.Id, historical.Summary, historical.ResultJson, historical.ContextFingerprint),
+                (retained.Id, retained.Summary, retained.ResultJson, retained.ContextFingerprint));
+            var suggestion = await database.SuggestedProfileUpdates.AsNoTracking().SingleAsync(row => row.InteractionAnalysis.InteractionId == data.Interaction, Cancellation);
+            Assert.Equal((pending.Id, pending.SuggestedValue, pending.Status), (suggestion.Id, suggestion.SuggestedValue, suggestion.Status));
+            Assert.Equal(SuggestionStatus.Pending, suggestion.Status);
+            Assert.Equal(1, await database.PersonFacts.CountAsync(row => row.PersonId == data.Person, Cancellation));
+            Assert.Equal("Synthetic confirmed fact", await database.PersonFacts.Where(row => row.Id == data.Fact).Select(row => row.Value).SingleAsync(Cancellation));
+            Assert.Null(await database.People.Where(row => row.Id == data.Person).Select(row => row.Notes).SingleAsync(Cancellation));
+            Assert.Equal(generation, await database.Set<ProfileAiSelection>().Where(row => row.UserProfileId == data.Owner).Select(row => row.Generation).SingleAsync(Cancellation));
+        }
+        Assert.True((await StatusAsync(client)).Connected);
+        host.Server.StreamBody = clean;
+        using var retry = await client.PostAsJsonAsync($"/interactions/{data.Interaction}/analyze", new { }, Cancellation);
+        Assert.Equal(HttpStatusCode.Created, retry.StatusCode);
+        Assert.Equal(3, host.Server.InferenceCount);
+        await using var final = fixture.CreateAsyncScope();
+        var stored = final.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(2, await stored.InteractionAnalyses.CountAsync(row => row.InteractionId == data.Interaction, Cancellation));
+        Assert.Equal(2, await stored.SuggestedProfileUpdates.CountAsync(row => row.InteractionAnalysis.InteractionId == data.Interaction && row.Status == SuggestionStatus.Pending, Cancellation));
+        Assert.Equal(1, await stored.PersonFacts.CountAsync(row => row.PersonId == data.Person, Cancellation));
+    }
+
+    [Theory]
     [InlineData("switch")]
     [InlineData("model")]
     [InlineData("connection")]

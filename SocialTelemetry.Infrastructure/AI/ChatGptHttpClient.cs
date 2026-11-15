@@ -212,14 +212,29 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
         if (data == "[DONE]") throw new AiProviderException(AiFailure.IncompleteResponse);
         var body = ParseJson(data);
         var type = RequiredString(body, "type");
-        if (type == "response.output_text.delta")
+        if (type is "response.refusal.delta" or "response.refusal.done")
+            throw new AiProviderException(AiFailure.ProviderRejected);
+        if (IsToolOutputEvent(type)) throw new AiProviderException(AiFailure.MalformedResponse);
+        if (type is "response.output_item.added" or "response.output_item.done")
+        {
+            if (!body.TryGetProperty("item", out var item)) throw new AiProviderException(AiFailure.MalformedResponse);
+            ValidateOutputItem(item);
+        }
+        else if (type is "response.content_part.added" or "response.content_part.done")
+        {
+            if (!body.TryGetProperty("part", out var part)) throw new AiProviderException(AiFailure.MalformedResponse);
+            ValidateOutputPart(part);
+        }
+        else if (type == "response.output_text.delta")
             output.Append(OptionalString(body, "delta") ?? throw new AiProviderException(AiFailure.MalformedResponse));
         else if (type == "response.completed")
         {
-            if (!body.TryGetProperty("response", out var response) || OptionalString(response, "status") != "completed" || output.Length == 0)
+            var hasResponse = body.TryGetProperty("response", out var response);
+            if (hasResponse) ValidateCompletedOutput(response);
+            if (!hasResponse || OptionalString(response, "status") != "completed" || output.Length == 0)
             {
                 logger.LogWarning("AI completion rejected; has response {HasResponse}, has output {HasOutput}",
-                    body.TryGetProperty("response", out _), output.Length > 0);
+                    hasResponse, output.Length > 0);
                 throw new AiProviderException(AiFailure.MalformedResponse);
             }
             return (true, OptionalString(response, "model"));
@@ -231,6 +246,63 @@ public sealed class ChatGptHttpClient(HttpClient httpClient, TimeProvider timePr
             ThrowProviderError(HttpStatusCode.BadRequest, ErrorCode(error));
         }
         return (false, null);
+    }
+
+    private static bool IsToolOutputEvent(string type) =>
+        type.StartsWith("response.function_call_arguments.", StringComparison.Ordinal) ||
+        type.StartsWith("response.custom_tool_call_input.", StringComparison.Ordinal) ||
+        type.StartsWith("response.file_search_call.", StringComparison.Ordinal) ||
+        type.StartsWith("response.web_search_call.", StringComparison.Ordinal) ||
+        type.StartsWith("response.computer_call.", StringComparison.Ordinal) ||
+        type.StartsWith("response.code_interpreter_call.", StringComparison.Ordinal) ||
+        type.StartsWith("response.code_interpreter_call_code.", StringComparison.Ordinal) ||
+        type.StartsWith("response.image_generation_call.", StringComparison.Ordinal) ||
+        type.StartsWith("response.mcp_call.", StringComparison.Ordinal) ||
+        type.StartsWith("response.mcp_call_arguments.", StringComparison.Ordinal);
+
+    private static void ValidateCompletedOutput(JsonElement response)
+    {
+        if (response.ValueKind != JsonValueKind.Object) throw new AiProviderException(AiFailure.MalformedResponse);
+        RejectRefusal(response);
+        if (response.TryGetProperty("output", out var items) && items.ValueKind != JsonValueKind.Null)
+        {
+            if (items.ValueKind != JsonValueKind.Array) throw new AiProviderException(AiFailure.MalformedResponse);
+            foreach (var item in items.EnumerateArray()) ValidateOutputItem(item);
+        }
+        if (response.TryGetProperty("content", out var content)) ValidateOutputContent(content);
+    }
+
+    private static void ValidateOutputItem(JsonElement item)
+    {
+        RejectRefusal(item);
+        var type = RequiredString(item, "type");
+        // Reasoning is metadata here, never answer text or persisted/logged reasoning content.
+        if (type == "reasoning") return;
+        if (type == "refusal") throw new AiProviderException(AiFailure.ProviderRejected);
+        if (type != "message") throw new AiProviderException(AiFailure.MalformedResponse);
+        if (item.TryGetProperty("content", out var content)) ValidateOutputContent(content);
+    }
+
+    private static void ValidateOutputContent(JsonElement content)
+    {
+        if (content.ValueKind == JsonValueKind.Null) return;
+        if (content.ValueKind != JsonValueKind.Array) throw new AiProviderException(AiFailure.MalformedResponse);
+        foreach (var part in content.EnumerateArray()) ValidateOutputPart(part);
+    }
+
+    private static void ValidateOutputPart(JsonElement part)
+    {
+        RejectRefusal(part);
+        var type = RequiredString(part, "type");
+        if (type == "refusal") throw new AiProviderException(AiFailure.ProviderRejected);
+        if (type != "output_text") throw new AiProviderException(AiFailure.MalformedResponse);
+    }
+
+    private static void RejectRefusal(JsonElement body)
+    {
+        if (body.ValueKind != JsonValueKind.Object) throw new AiProviderException(AiFailure.MalformedResponse);
+        if (body.TryGetProperty("refusal", out var refusal) && refusal.ValueKind != JsonValueKind.Null)
+            throw new AiProviderException(AiFailure.ProviderRejected);
     }
 
     private async Task<JsonElement> GetDiscoveryAsync(CancellationToken cancellationToken)

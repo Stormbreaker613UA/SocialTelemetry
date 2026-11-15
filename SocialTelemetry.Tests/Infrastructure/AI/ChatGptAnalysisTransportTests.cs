@@ -1,3 +1,4 @@
+using SocialTelemetry.Application.Features.Analysis;
 using AnalysisContract = SocialTelemetry.Application.Features.Analysis.AnalyzeInteraction.AnalysisContract;
 using SocialTelemetry.Application.Contracts.AI;
 using System.Net;
@@ -74,6 +75,91 @@ public sealed class ChatGptAnalysisTransportTests
             client.GenerateTextAsync(new AiTextRequest("Instructions", "Input"), Cancellation));
         Assert.Equal(expected, exception.Failure);
         Assert.DoesNotContain("private-output", app.Logs.Text);
+    }
+
+    [Theory]
+    [InlineData("refusal-delta", true, AiFailure.ProviderRejected)]
+    [InlineData("refusal-done", false, AiFailure.ProviderRejected)]
+    [InlineData("item-added", true, AiFailure.MalformedResponse)]
+    [InlineData("item-done", false, AiFailure.MalformedResponse)]
+    [InlineData("part-refusal", false, AiFailure.ProviderRejected)]
+    [InlineData("part-tool", false, AiFailure.MalformedResponse)]
+    [InlineData("tool-arguments", false, AiFailure.MalformedResponse)]
+    [InlineData("tool-progress", true, AiFailure.MalformedResponse)]
+    [InlineData("terminal-refusal", false, AiFailure.ProviderRejected)]
+    [InlineData("terminal-tool", false, AiFailure.MalformedResponse)]
+    [InlineData("terminal-content", false, AiFailure.MalformedResponse)]
+    [InlineData("terminal-direct-content", false, AiFailure.ProviderRejected)]
+    public async Task Structured_text_cannot_hide_explicit_refusal_or_unsupported_output(string fault, bool beforeText, AiFailure expected)
+    {
+        using var app = new ChatGptTestApp();
+        await ConnectAnalysisModelAsync(app);
+        var text = JsonSerializer.Serialize(new InteractionAnalysisResult("private-answer"), AiContextBuilder.JsonOptions);
+        var textEvent = "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta = text }) + "\n\n";
+        var contradiction = fault switch
+        {
+            "refusal-delta" => """{"type":"response.refusal.delta","delta":"private-refusal"}""",
+            "refusal-done" => """{"type":"response.refusal.done","refusal":"private-refusal"}""",
+            "item-added" => """{"type":"response.output_item.added","item":{"type":"function_call","arguments":"private-tool"}}""",
+            "item-done" => """{"type":"response.output_item.done","item":{"type":"function_call","arguments":"private-tool"}}""",
+            "part-refusal" => """{"type":"response.content_part.added","part":{"type":"refusal","refusal":"private-refusal"}}""",
+            "part-tool" => """{"type":"response.content_part.done","part":{"type":"output_audio","audio":"private-tool"}}""",
+            "tool-arguments" => """{"type":"response.function_call_arguments.delta","delta":"private-tool"}""",
+            "tool-progress" => """{"type":"response.web_search_call.in_progress","item_id":"private-tool"}""",
+            _ => null
+        };
+        var terminal = fault switch
+        {
+            "terminal-refusal" => """{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"private-refusal"}]}]}}""",
+            "terminal-tool" => """{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","arguments":"private-tool"}]}}""",
+            "terminal-content" => """{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"output_audio","audio":"private-tool"}]}]}}""",
+            "terminal-direct-content" => """{"type":"response.completed","response":{"status":"completed","content":[{"type":"refusal","refusal":"private-refusal"}]}}""",
+            _ => """{"type":"response.completed","response":{"status":"completed"}}"""
+        };
+        var contradictionEvent = contradiction is null ? string.Empty : "data: " + contradiction + "\n\n";
+        app.Server.StreamBody = (beforeText ? contradictionEvent + textEvent : textEvent + contradictionEvent) + "data: " + terminal + "\n\n";
+        await using var scope = app.Services.CreateAsyncScope();
+        var client = scope.ServiceProvider.GetRequiredService<IAiClient>();
+        var error = await Assert.ThrowsAsync<AiProviderException>(() => client.GenerateTextAsync(new AiTextRequest("Instructions", "Input")
+        {
+            StructuredOutput = AnalysisContract.OutputContract()
+        }, Cancellation));
+        Assert.Equal(expected, error.Failure);
+        Assert.Equal(1, app.Server.InferenceCount);
+        Assert.DoesNotContain("private-", error.Message);
+        Assert.DoesNotContain("private-", app.Logs.Text);
+        Assert.True((await app.OwnedConnection.GetStatusAsync(Cancellation)).Connected);
+    }
+
+    [Fact]
+    public async Task Text_with_harmless_metadata_reasoning_and_terminal_text_remains_valid_and_private()
+    {
+        using var app = new ChatGptTestApp();
+        await ConnectAnalysisModelAsync(app);
+        var text = JsonSerializer.Serialize(new InteractionAnalysisResult("private-answer"), AiContextBuilder.JsonOptions);
+        app.Server.StreamBody =
+            "data: " + JsonSerializer.Serialize(new { type = "response.created", response = new { status = "in_progress" } }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.future_metadata", metadata = "private-metadata" }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.reasoning_summary_text.delta", delta = "private-reasoning" }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.output_item.added", item = new { type = "reasoning", summary = Array.Empty<object>() } }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.content_part.added", part = new { type = "output_text", text = "" } }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta = text }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.output_item.done", item = new { type = "message", content = new[] { new { type = "output_text", text } } } }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.completed", response = new { status = "completed", model = "returned-model", output = new object[]
+            {
+                new { type = "reasoning", summary = new[] { new { type = "summary_text", text = "private-reasoning" } } },
+                new { type = "message", content = new[] { new { type = "output_text", text } } }
+            } } }) + "\n\n";
+        await using var scope = app.Services.CreateAsyncScope();
+        var result = await scope.ServiceProvider.GetRequiredService<IAiClient>().GenerateTextAsync(new AiTextRequest("Instructions", "Input")
+        {
+            StructuredOutput = AnalysisContract.OutputContract()
+        }, Cancellation);
+        Assert.Equal(text, result.Text);
+        Assert.Equal("gpt-5.6-sol", result.RequestedModel);
+        Assert.Equal("returned-model", result.ReturnedModel);
+        Assert.DoesNotContain("private-reasoning", result.Text);
+        Assert.DoesNotContain("private-", app.Logs.Text);
     }
 
     [Fact]
