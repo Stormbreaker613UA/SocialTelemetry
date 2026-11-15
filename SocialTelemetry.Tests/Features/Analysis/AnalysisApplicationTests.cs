@@ -47,6 +47,116 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
     }
 
     [Theory]
+    [InlineData("modified")]
+    [InlineData("added")]
+    [InlineData("deleted")]
+    public async Task Direct_analysis_refuses_existing_caller_changes_before_snapshot_or_provider(string change)
+    {
+        var data = await SeedAsync();
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer)));
+        await using var scope = application.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        await BindAsync(services, data.Owner);
+        var database = services.GetRequiredService<AppDbContext>();
+        observer.Target = database;
+        var person = await database.People.SingleAsync(person => person.Id == data.PersonId, Cancellation);
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry pending;
+        if (change == "added")
+            pending = database.PersonFacts.Add(new PersonFact { Id = Guid.NewGuid(), PersonId = data.PersonId, Value = "Unsaved caller fact" });
+        else if (change == "deleted")
+            pending = database.People.Remove(person);
+        else
+        {
+            person.Notes = "Unsaved caller notes";
+            pending = database.Entry(person);
+        }
+        var provider = new ProbeProvider(database, observer);
+        await Assert.ThrowsAsync<ConflictException>(() => CreateScenario(services, provider)
+            .ExecuteAsync(new(data.InteractionId, null, []), Cancellation));
+        Assert.Equal(0, provider.Calls);
+        Assert.Equal(0, provider.Leases);
+        Assert.False(observer.SnapshotCommitted);
+        Assert.False(observer.FinalCommitted);
+        Assert.Null(database.Database.CurrentTransaction);
+        var expectedState = change switch
+        {
+            "added" => EntityState.Added,
+            "deleted" => EntityState.Deleted,
+            _ => EntityState.Modified
+        };
+        Assert.Equal(expectedState, pending.State);
+        if (change == "modified") Assert.Equal("Unsaved caller notes", person.Notes);
+        if (change == "added") Assert.Equal("Unsaved caller fact", Assert.IsType<PersonFact>(pending.Entity).Value);
+        Assert.Equal("Original notes", database.Entry(person).Property(person => person.Notes).OriginalValue);
+        await AssertHistoricalOnlyAsync(data);
+        await using var checking = fixture.CreateAsyncScope();
+        Assert.Equal("Original notes", await checking.ServiceProvider.GetRequiredService<AppDbContext>().People
+            .Where(person => person.Id == data.PersonId).Select(person => person.Notes).SingleAsync(Cancellation));
+    }
+
+    [Theory]
+    [InlineData("snapshot")]
+    [InlineData("inference")]
+    [InlineData("lease")]
+    public async Task Direct_analysis_refuses_caller_changes_introduced_during_awaited_work(string phase)
+    {
+        var data = await SeedAsync();
+        var observer = new CommitObserver();
+        using var application = fixture.WithServices(services => services.AddDbContext<AppDbContext>(options => options.AddInterceptors(observer)));
+        await using var scope = application.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        await BindAsync(services, data.Owner);
+        var database = services.GetRequiredService<AppDbContext>();
+        observer.Target = database;
+        var person = await database.People.SingleAsync(person => person.Id == data.PersonId, Cancellation);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task PauseAsync()
+        {
+            entered.TrySetResult();
+            await resume.Task.WaitAsync(deadline.Token);
+        }
+        var persistence = new BoundaryPersistence(services.GetRequiredService<IAnalysisPersistence>())
+        {
+            AfterBuild = phase == "snapshot" ? PauseAsync : null
+        };
+        var provider = new ProbeProvider(database, observer)
+        {
+            DuringInference = phase == "inference" ? PauseAsync : null,
+            DuringLease = phase == "lease" ? PauseAsync : null
+        };
+        var execution = CreateScenario(services, provider, persistence).ExecuteAsync(new(data.InteractionId, null, []), deadline.Token);
+        try
+        {
+            await entered.Task.WaitAsync(deadline.Token);
+            Assert.Equal(phase != "inference", database.Database.CurrentTransaction is not null);
+            person.Notes = "Unsupplied notes introduced while awaiting";
+            resume.TrySetResult();
+            await Assert.ThrowsAsync<ConflictException>(() => execution);
+        }
+        finally { resume.TrySetResult(); }
+        Assert.Equal(phase == "snapshot" ? 0 : 1, provider.Calls);
+        Assert.Equal(phase == "lease" ? 1 : 0, provider.Leases);
+        Assert.Equal(provider.Leases, provider.DisposedLeases);
+        Assert.False(observer.LeaseActive);
+        Assert.False(observer.FinalCommitted);
+        Assert.False(provider.ValidatedAfterSqlSave);
+        Assert.Null(database.Database.CurrentTransaction);
+        Assert.Equal(EntityState.Modified, database.Entry(person).State);
+        Assert.Equal("Unsupplied notes introduced while awaiting", person.Notes);
+        Assert.Equal("Original notes", database.Entry(person).Property(person => person.Notes).OriginalValue);
+        Assert.DoesNotContain(database.ChangeTracker.Entries<InteractionAnalysis>(), entry => entry.State == EntityState.Added);
+        Assert.DoesNotContain(database.ChangeTracker.Entries<SocialTelemetry.Domain.People.SuggestedProfileUpdate>(), entry => entry.State == EntityState.Added);
+        await AssertHistoricalOnlyAsync(data);
+        await using var checking = fixture.CreateAsyncScope();
+        Assert.Equal("Original notes", await checking.ServiceProvider.GetRequiredService<AppDbContext>().People
+            .Where(person => person.Id == data.PersonId).Select(person => person.Notes).SingleAsync(Cancellation));
+    }
+
+    [Theory]
     [InlineData("none")]
     [InlineData("lease")]
     [InlineData("commit")]
@@ -472,6 +582,7 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
 
     private sealed class BoundaryPersistence(IAnalysisPersistence inner) : IAnalysisPersistence
     {
+        public Func<Task>? AfterBuild { get; init; }
         public Func<Task>? AfterSnapshot { get; init; }
         public Func<Task>? AfterCommit { get; init; }
         public CancellationToken SnapshotToken { get; private set; }
@@ -479,7 +590,12 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         public async Task<BuiltAnalysisContext> SnapshotAsync(Func<CancellationToken, Task<BuiltAnalysisContext>> build, CancellationToken cancellationToken)
         {
             SnapshotToken = cancellationToken;
-            var result = await inner.SnapshotAsync(build, cancellationToken);
+            var result = await inner.SnapshotAsync(async token =>
+            {
+                var built = await build(token);
+                if (AfterBuild is not null) await AfterBuild();
+                return built;
+            }, cancellationToken);
             if (AfterSnapshot is not null) await AfterSnapshot();
             return result;
         }
@@ -534,6 +650,7 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
         public bool FailLease { get; init; }
         public Func<Task>? DuringModel { get; init; }
         public Func<Task>? DuringInference { get; init; }
+        public Func<Task>? DuringLease { get; init; }
         public CancellationToken ModelCancellation { get; private set; }
         public CancellationToken InferenceCancellation { get; private set; }
         public CancellationToken LifetimeToken { get; init; }
@@ -574,12 +691,13 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
             return Task.CompletedTask;
         }
 
-        public Task<IAiExecutionLease> AcquireExecutionLeaseAsync(AiTextResponse result, CancellationToken cancellationToken)
+        public async Task<IAiExecutionLease> AcquireExecutionLeaseAsync(AiTextResponse result, CancellationToken cancellationToken)
         {
             Assert.NotNull(database.Database.CurrentTransaction);
+            if (DuringLease is not null) await DuringLease();
             Leases++;
             observer.LeaseActive = true;
-            return Task.FromResult<IAiExecutionLease>(new Lease(this));
+            return new Lease(this);
         }
 
         private sealed class Lease(ProbeProvider provider) : IAiExecutionLease

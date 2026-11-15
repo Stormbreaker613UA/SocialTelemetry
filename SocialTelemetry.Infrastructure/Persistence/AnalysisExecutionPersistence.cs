@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SocialTelemetry.Application.Contracts.AI;
 using SocialTelemetry.Application.Contracts.AI.Models;
 using SocialTelemetry.Application.Features.Analysis;
+using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Observability;
 using SocialTelemetry.Domain.Interactions;
 
@@ -13,9 +14,11 @@ public sealed class AnalysisExecutionPersistence(AppDbContext database) : IAnaly
     public async Task<BuiltAnalysisContext> SnapshotAsync(Func<CancellationToken, Task<BuiltAnalysisContext>> build,
         CancellationToken cancellationToken)
     {
+        RequireCleanContext();
         await using var snapshot = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         using var contextOperation = SocialTelemetryTelemetry.Start("analysis.build_context", cancellationToken);
         var built = await build(cancellationToken);
+        RequireCleanContext();
         await snapshot.CommitAsync(cancellationToken);
         contextOperation.Complete();
         return built;
@@ -27,6 +30,7 @@ public sealed class AnalysisExecutionPersistence(AppDbContext database) : IAnaly
         Func<AnalysisMutation> create,
         CancellationToken cancellationToken)
     {
+        RequireCleanContext();
         try
         {
             await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
@@ -35,6 +39,7 @@ public sealed class AnalysisExecutionPersistence(AppDbContext database) : IAnaly
             await verifyContext(cancellationToken);
             // The lease starts after the DB wait and freshness check and lives through commit.
             using var lease = await acquireExecutionLease(cancellationToken);
+            RequireCleanContext();
             var mutation = create();
             database.InteractionAnalyses.Add(mutation.Analysis);
             database.SuggestedProfileUpdates.AddRange(mutation.Suggestions);
@@ -47,5 +52,11 @@ public sealed class AnalysisExecutionPersistence(AppDbContext database) : IAnaly
         {
             throw new AiProviderException(AiFailure.StaleContext);
         }
+    }
+
+    private void RequireCleanContext()
+    {
+        // Analysis may persist only its validated mutation, never unsupplied caller edits.
+        if (database.ChangeTracker.HasChanges()) throw new ConflictException();
     }
 }
