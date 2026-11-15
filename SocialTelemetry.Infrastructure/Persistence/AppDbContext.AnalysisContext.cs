@@ -14,18 +14,18 @@ public sealed partial class AppDbContext
                 attachment.Id == attachmentId && attachment.InteractionId == interaction.Id))
             .Select(interaction => interaction.UserProfileId).ToListAsync(token)).ToHashSet(), cancellationToken);
 
-    private Task LockAnalysisSourceChangesAsync(EntityEntry[] changes, CancellationToken cancellationToken) =>
-        LockResolvedProfilesAsync(token => ResolveAnalysisProfilesAsync(changes, token), cancellationToken);
+    private Task LockJournalChangesAsync(EntityEntry[] changes, CancellationToken cancellationToken) =>
+        LockResolvedProfilesAsync(token => ResolveJournalProfilesAsync(changes, token), cancellationToken);
 
     internal async Task LockInteractionDeletionAsync(Interaction interaction, CancellationToken cancellationToken)
     {
         await ProtectLocalProfileOperationAsync(cancellationToken);
-        var changes = AnalysisSourceChanges().Union(OrganizationChanges())
+        var changes = JournalChanges()
             .Append(Entry(interaction)).Union(interaction.Attachments.Select(attachment => (EntityEntry)Entry(attachment)))
             .ToArray();
         // Protect the impending cascade before committing Deleting or removing any bytes.
         // Use the same ordered, re-resolved owner set as the final coordinated delete.
-        await LockResolvedProfilesAsync(token => ResolveAnalysisProfilesAsync(changes, token, interaction.Id), cancellationToken);
+        await LockResolvedProfilesAsync(token => ResolveJournalProfilesAsync(changes, token, interaction.Id), cancellationToken);
     }
 
     private async Task LockResolvedProfilesAsync(Func<CancellationToken, Task<HashSet<Guid>>> resolveProfiles,
@@ -63,13 +63,15 @@ public sealed partial class AppDbContext
         }
     }
 
-    private async Task<HashSet<Guid>> ResolveAnalysisProfilesAsync(EntityEntry[] changes, CancellationToken cancellationToken,
+    private async Task<HashSet<Guid>> ResolveJournalProfilesAsync(EntityEntry[] changes, CancellationToken cancellationToken,
         Guid? impendingInteractionDeletion = null)
     {
         var profiles = new HashSet<Guid>();
         var personIds = new HashSet<Guid>();
         var interactionIds = new HashSet<Guid>();
         var transcriptAttachmentIds = new HashSet<Guid>();
+        var analysisIds = new HashSet<Guid>();
+        var deletedAnalyses = new HashSet<Guid>();
         var deletedProfiles = new HashSet<Guid>();
         var deletedPeople = new HashSet<Guid>();
         var deletedInteractions = new HashSet<Guid>();
@@ -95,6 +97,12 @@ public sealed partial class AppDbContext
                 case PersonFact:
                     AddScopeValues(entry, nameof(PersonFact.PersonId), personIds);
                     break;
+                case PersonExternalConnection:
+                    AddScopeValues(entry, nameof(PersonExternalConnection.PersonId), personIds);
+                    break;
+                case UserProfileExternalConnection:
+                    AddScopeValues(entry, nameof(UserProfileExternalConnection.UserProfileId), profiles);
+                    break;
                 case PersonInference:
                     AddScopeValues(entry, nameof(PersonInference.PersonId), personIds);
                     AddScopeValues(entry, nameof(PersonInference.SourceInteractionId), interactionIds);
@@ -109,10 +117,49 @@ public sealed partial class AppDbContext
                 case AttachmentTranscript:
                     AddScopeValues(entry, nameof(AttachmentTranscript.AttachmentId), transcriptAttachmentIds);
                     break;
+                case InteractionAnalysis analysis:
+                    analysisIds.Add(analysis.Id);
+                    AddScopeValues(entry, nameof(InteractionAnalysis.InteractionId), interactionIds);
+                    if (entry.State == EntityState.Deleted) deletedAnalyses.Add(analysis.Id);
+                    break;
+                case AnalysisConversationMessage:
+                    AddScopeValues(entry, nameof(AnalysisConversationMessage.InteractionAnalysisId), analysisIds);
+                    break;
+                case SuggestedProfileUpdate:
+                    AddScopeValues(entry, nameof(SuggestedProfileUpdate.PersonId), personIds);
+                    AddScopeValues(entry, nameof(SuggestedProfileUpdate.InteractionAnalysisId), analysisIds);
+                    break;
             }
         }
 
         // Detached deletes and stale tracked children may not hold their current database parent.
+        var personConnectionIds = changes.Where(entry => entry.State != EntityState.Added).Select(entry => entry.Entity)
+            .OfType<PersonExternalConnection>().Select(connection => connection.Id).ToArray();
+        if (personConnectionIds.Length > 0)
+            personIds.UnionWith(await PersonExternalConnections.AsNoTracking().Where(connection => personConnectionIds.Contains(connection.Id))
+                .Select(connection => connection.PersonId).ToListAsync(cancellationToken));
+        var profileConnectionIds = changes.Where(entry => entry.State != EntityState.Added).Select(entry => entry.Entity)
+            .OfType<UserProfileExternalConnection>().Select(connection => connection.Id).ToArray();
+        if (profileConnectionIds.Length > 0)
+            profiles.UnionWith(await UserProfileExternalConnections.AsNoTracking().Where(connection => profileConnectionIds.Contains(connection.Id))
+                .Select(connection => connection.UserProfileId).ToListAsync(cancellationToken));
+        var messageIds = changes.Where(entry => entry.State != EntityState.Added).Select(entry => entry.Entity)
+            .OfType<AnalysisConversationMessage>().Select(message => message.Id).ToArray();
+        if (messageIds.Length > 0)
+            analysisIds.UnionWith(await AnalysisConversationMessages.AsNoTracking().Where(message => messageIds.Contains(message.Id))
+                .Select(message => message.InteractionAnalysisId).ToListAsync(cancellationToken));
+        var suggestionIds = changes.Where(entry => entry.State != EntityState.Added).Select(entry => entry.Entity)
+            .OfType<SuggestedProfileUpdate>().Select(suggestion => suggestion.Id).ToArray();
+        if (suggestionIds.Length > 0)
+        {
+            var parents = await SuggestedProfileUpdates.AsNoTracking().Where(suggestion => suggestionIds.Contains(suggestion.Id))
+                .Select(suggestion => new { suggestion.PersonId, suggestion.InteractionAnalysisId }).ToListAsync(cancellationToken);
+            foreach (var parent in parents)
+            {
+                personIds.Add(parent.PersonId);
+                analysisIds.Add(parent.InteractionAnalysisId);
+            }
+        }
         if (transcriptAttachmentIds.Count > 0)
         {
             interactionIds.UnionWith(await InteractionAttachments.AsNoTracking()
@@ -158,9 +205,21 @@ public sealed partial class AppDbContext
         var sourcePersonIds = deletedPeople.ToArray();
         var sourceInteractionIds = deletedInteractions.ToArray();
         if (sourcePersonIds.Length > 0)
+        {
             interactionIds.UnionWith(await InteractionParticipants.AsNoTracking()
                 .Where(participant => sourcePersonIds.Contains(participant.PersonId))
                 .Select(participant => participant.InteractionId).ToListAsync(cancellationToken));
+            interactionIds.UnionWith(await PersonInferences.AsNoTracking()
+                .Where(inference => sourcePersonIds.Contains(inference.PersonId) && inference.SourceInteractionId != null)
+                .Select(inference => inference.SourceInteractionId!.Value).ToListAsync(cancellationToken));
+            analysisIds.UnionWith(await SuggestedProfileUpdates.AsNoTracking()
+                .Where(suggestion => sourcePersonIds.Contains(suggestion.PersonId))
+                .Select(suggestion => suggestion.InteractionAnalysisId).ToListAsync(cancellationToken));
+        }
+        if (deletedAnalyses.Count > 0)
+            personIds.UnionWith(await SuggestedProfileUpdates.AsNoTracking()
+                .Where(suggestion => deletedAnalyses.Contains(suggestion.InteractionAnalysisId))
+                .Select(suggestion => suggestion.PersonId).ToListAsync(cancellationToken));
         if (sourceInteractionIds.Length > 0)
         {
             personIds.UnionWith(await PersonInferences.AsNoTracking()
@@ -171,6 +230,13 @@ public sealed partial class AppDbContext
                 .Select(suggestion => suggestion.PersonId).ToListAsync(cancellationToken));
         }
 
+        if (analysisIds.Count > 0)
+        {
+            interactionIds.UnionWith(await InteractionAnalyses.AsNoTracking().Where(analysis => analysisIds.Contains(analysis.Id))
+                .Select(analysis => analysis.InteractionId).ToListAsync(cancellationToken));
+            foreach (var analysis in ChangeTracker.Entries<InteractionAnalysis>().Where(entry => analysisIds.Contains(entry.Entity.Id)))
+                AddScopeValues(analysis, nameof(InteractionAnalysis.InteractionId), interactionIds);
+        }
         if (personIds.Count > 0)
         {
             profiles.UnionWith(await People.AsNoTracking().Where(person => personIds.Contains(person.Id))

@@ -1,5 +1,7 @@
 using SocialTelemetry.Application.Contracts.Profiles;
 using SocialTelemetry.Application.Features.Analysis;
+using SocialTelemetry.Application.Features.LocalAccess;
+using SocialTelemetry.Application.Contracts.Storage;
 using System.Data.Common;
 using System.Data;
 using System.Net;
@@ -18,9 +20,11 @@ using OpenIddict.Abstractions;
 using OpenIddict.EntityFrameworkCore.Models;
 using SocialTelemetry.Domain.Interactions;
 using SocialTelemetry.Domain.Users;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Infrastructure.AI;
 using SocialTelemetry.Infrastructure.Identity;
 using SocialTelemetry.Infrastructure.Persistence;
+using SocialTelemetry.Infrastructure.Profiles;
 using SocialTelemetry.Tests.Features.People;
 
 namespace SocialTelemetry.Tests.Infrastructure.Identity;
@@ -29,6 +33,169 @@ public abstract class IdentityFoundationTestsContract<TFixture>(TFixture fixture
     where TFixture : PeopleApiFixture
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    [Theory]
+    [InlineData("archive", false)]
+    [InlineData("person-avatar", true)]
+    [InlineData("profile-avatar", false)]
+    [InlineData("person-external", false)]
+    [InlineData("profile-external", true)]
+    public async Task Real_Identity_security_save_refuses_pending_journal_metadata_before_any_side_effect(string mutation, bool password)
+    {
+        var owner = await fixture.CreateUserProfileAsync();
+        using var application = fixture.WithServices(_ => { });
+        using var client = application.CreateClient();
+        var accountId = await EnrollProtectedAsync(application.Services, owner);
+        var personId = Guid.NewGuid();
+        var personConnectionId = Guid.NewGuid();
+        var profileConnectionId = Guid.NewGuid();
+        string oldKey;
+        string newKey;
+        await using (var seed = application.Services.CreateAsyncScope())
+        {
+            var database = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            var storage = seed.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars");
+            using var bytes = new MemoryStream([137, 80, 78, 71, 13, 10, 26, 10]);
+            oldKey = await storage.SaveAsync(bytes, Cancellation);
+            Assert.True(await storage.CompleteUploadAsync(oldKey, Cancellation));
+            bytes.Position = 0;
+            newKey = await storage.SaveAsync(bytes, Cancellation);
+            Assert.True(await storage.CompleteUploadAsync(newKey, Cancellation));
+            database.People.Add(new() { Id = personId, UserProfileId = owner, DisplayName = "Owned", AvatarStorageKey = oldKey, AvatarMimeType = "image/png" });
+            var profile = await database.UserProfiles.SingleAsync(profile => profile.Id == owner, Cancellation);
+            profile.AvatarStorageKey = oldKey; profile.AvatarMimeType = "image/png";
+            database.PersonExternalConnections.Add(new() { Id = personConnectionId, PersonId = personId, Platform = "Discord", DisplayName = "Original" });
+            database.UserProfileExternalConnections.Add(new() { Id = profileConnectionId, UserProfileId = owner, Platform = "Discord", DisplayName = "Original" });
+            await database.SaveChangesAsync(Cancellation);
+        }
+        await using var retained = application.Services.CreateAsyncScope();
+        var context = retained.ServiceProvider.GetRequiredService<AppDbContext>();
+        var manager = retained.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var account = await context.Users.SingleAsync(account => account.Id == accountId, Cancellation);
+        var before = (account.PasswordHash, account.SecurityStamp, account.AccessEpoch, account.ConcurrencyStamp);
+        var selector = await context.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+        var grant = await context.Set<LocalProfileGrant>().AsNoTracking().SingleAsync(row => row.Id == selector.AccessGrantId, Cancellation);
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry pending;
+        switch (mutation)
+        {
+            case "archive":
+            case "person-avatar":
+                var person = await context.People.SingleAsync(person => person.Id == personId && person.UserProfileId == owner, Cancellation);
+                if (mutation == "archive") person.ArchivedAt = DateTimeOffset.UtcNow;
+                else person.AvatarStorageKey = newKey;
+                pending = context.Entry(person);
+                break;
+            case "profile-avatar":
+                var profile = await context.UserProfiles.SingleAsync(profile => profile.Id == owner, Cancellation);
+                profile.AvatarStorageKey = newKey; pending = context.Entry(profile);
+                break;
+            case "person-external":
+                var personConnection = await context.PersonExternalConnections.SingleAsync(connection => connection.Id == personConnectionId, Cancellation);
+                personConnection.DisplayName = "Unsaved"; pending = context.Entry(personConnection);
+                break;
+            default:
+                var profileConnection = await context.UserProfileExternalConnections.SingleAsync(connection => connection.Id == profileConnectionId, Cancellation);
+                profileConnection.DisplayName = "Unsaved"; pending = context.Entry(profileConnection);
+                break;
+        }
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            if (password) await manager.ChangePasswordAsync(account, "Synthetic-Metadata9!", "Synthetic-NewMetadata9!");
+            else await manager.UpdateSecurityStampAsync(account);
+        });
+        Assert.Equal("Account security and journal mutations require separate operations.", error.Message);
+        Assert.Equal(EntityState.Modified, pending.State);
+        Assert.Equal(EntityState.Modified, context.Entry(account).State);
+        Assert.Equal(before.AccessEpoch, account.AccessEpoch);
+        Assert.NotEqual(before.SecurityStamp, account.SecurityStamp);
+        await using var checking = application.Services.CreateAsyncScope();
+        var check = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+        var stored = await check.Users.AsNoTracking().SingleAsync(row => row.Id == accountId, Cancellation);
+        Assert.Equal(before, (stored.PasswordHash, stored.SecurityStamp, stored.AccessEpoch, stored.ConcurrencyStamp));
+        var selected = await check.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+        Assert.Equal((selector.UserProfileId, selector.Version, selector.AccessGrantId), (selected.UserProfileId, selected.Version, selected.AccessGrantId));
+        var currentGrant = await check.Set<LocalProfileGrant>().AsNoTracking().SingleAsync(row => row.Id == grant.Id, Cancellation);
+        Assert.False(currentGrant.Revoked);
+        Assert.Equal((grant.SecurityEpoch, grant.ExpiresAt, grant.LastActivityAt), (currentGrant.SecurityEpoch, currentGrant.ExpiresAt, currentGrant.LastActivityAt));
+        Assert.Null(await check.People.Where(row => row.Id == personId).Select(row => row.ArchivedAt).SingleAsync(Cancellation));
+        Assert.Equal(oldKey, await check.People.Where(row => row.Id == personId).Select(row => row.AvatarStorageKey).SingleAsync(Cancellation));
+        Assert.Equal(oldKey, await check.UserProfiles.Where(row => row.Id == owner).Select(row => row.AvatarStorageKey).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.PersonExternalConnections.Where(row => row.Id == personConnectionId).Select(row => row.DisplayName).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.UserProfileExternalConnections.Where(row => row.Id == profileConnectionId).Select(row => row.DisplayName).SingleAsync(Cancellation));
+        var files = checking.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars");
+        Assert.True(await files.ExistsAsync(oldKey, Cancellation)); Assert.True(await files.ExistsAsync(newKey, Cancellation));
+    }
+
+    [Fact]
+    public async Task Every_mapped_domain_mutation_is_refused_before_real_Identity_security_side_effects()
+    {
+        var owner = await fixture.CreateUserProfileAsync();
+        using var application = fixture.WithServices(_ => { });
+        using var client = application.CreateClient();
+        var accountId = await EnrollProtectedAsync(application.Services, owner);
+        await using var metadata = application.Services.CreateAsyncScope();
+        var model = metadata.ServiceProvider.GetRequiredService<AppDbContext>().Model;
+        var journalTypes = model.GetEntityTypes().Where(entity => entity.ClrType.Assembly == typeof(UserProfile).Assembly).ToArray();
+        Assert.NotEmpty(journalTypes);
+        foreach (var journalType in journalTypes)
+        {
+            await using var scope = application.Services.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var account = await database.Users.SingleAsync(row => row.Id == accountId, Cancellation);
+            var epoch = account.AccessEpoch;
+            // A model-derived canary catches future mapped journal types omitted from the closed policy.
+            // It must refuse before any row lookup/constraint/base save, even for an ID-only mutation.
+            var journal = Activator.CreateInstance(journalType.ClrType);
+            Assert.NotNull(journal);
+            var entry = database.Entry(journal);
+            var primaryKey = journalType.FindPrimaryKey();
+            Assert.NotNull(primaryKey);
+            foreach (var key in primaryKey.Properties)
+                entry.Property(key.Name).CurrentValue = Guid.NewGuid();
+            entry.State = EntityState.Modified;
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().UpdateSecurityStampAsync(account));
+            Assert.Equal("Account security and journal mutations require separate operations.", error.Message);
+            Assert.Equal(epoch, account.AccessEpoch);
+            Assert.Equal(EntityState.Modified, entry.State);
+            Assert.Equal(EntityState.Modified, database.Entry(account).State);
+            await using var check = application.Services.CreateAsyncScope();
+            Assert.Equal(epoch, await check.ServiceProvider.GetRequiredService<AppDbContext>().Users
+                .Where(row => row.Id == accountId).Select(row => row.AccessEpoch).SingleAsync(Cancellation));
+        }
+        await using var securityOnly = application.Services.CreateAsyncScope();
+        var finalDatabase = securityOnly.ServiceProvider.GetRequiredService<AppDbContext>();
+        var selectedBefore = await finalDatabase.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+        var finalAccount = await finalDatabase.Users.SingleAsync(row => row.Id == accountId, Cancellation);
+        var previousEpoch = finalAccount.AccessEpoch;
+        Assert.True((await securityOnly.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>()
+            .UpdateSecurityStampAsync(finalAccount)).Succeeded);
+        Assert.NotEqual(previousEpoch, finalAccount.AccessEpoch);
+        Assert.True(await finalDatabase.Set<LocalProfileGrant>().AsNoTracking()
+            .Where(row => row.Id == selectedBefore.AccessGrantId).Select(row => row.Revoked).SingleAsync(Cancellation));
+        var selectedAfter = await finalDatabase.Set<LocalProfileSelection>().AsNoTracking().SingleAsync(Cancellation);
+        Assert.Equal(owner, selectedAfter.UserProfileId);
+        Assert.NotEqual(selectedBefore.Version, selectedAfter.Version);
+        Assert.Null(selectedAfter.AccessGrantId);
+    }
+
+    private async Task<Guid> EnrollProtectedAsync(IServiceProvider services, Guid owner)
+    {
+        var login = "metadata-" + Guid.NewGuid().ToString("N");
+        await using (var enrolling = services.CreateAsyncScope())
+        {
+            var selection = await enrolling.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+            await enrolling.ServiceProvider.GetRequiredService<SocialTelemetry.Application.Features.ProfileAccess.Resolve.Scenario>()
+                .ExecuteAsync(owner, selection.Version, Cancellation);
+            await enrolling.ServiceProvider.GetRequiredService<ILocalAccessManagement>().EnableAsync(new(login, "Synthetic-Metadata9!"), Cancellation);
+        }
+        await using var signing = services.CreateAsyncScope();
+        var selector = await signing.ServiceProvider.GetRequiredService<LocalProfileSelectionService>().GetAsync(Cancellation);
+        await signing.ServiceProvider.GetRequiredService<ILocalAccessManagement>()
+            .SignInAsync(new(login, "Synthetic-Metadata9!", owner, selector.Version, true), Cancellation);
+        return await signing.ServiceProvider.GetRequiredService<AppDbContext>().Users.Where(row => row.UserProfileId == owner)
+            .Select(row => row.Id).SingleAsync(Cancellation);
+    }
 
     [Fact]
     public async Task Identity_and_Core_stores_share_the_scoped_context_and_rollback_together()

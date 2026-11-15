@@ -8,6 +8,8 @@ using SocialTelemetry.Application.Contracts.Storage;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.ProfileAvatars;
 using SocialTelemetry.Application.Options;
+using SocialTelemetry.Domain.Interactions;
+using SocialTelemetry.Domain.People;
 using SocialTelemetry.Infrastructure.Persistence;
 using SocialTelemetry.Infrastructure.Profiles;
 using SocialTelemetry.Tests.Features.People;
@@ -245,6 +247,128 @@ public abstract class JournalApplicationTestsContract<TFixture>(TFixture fixture
         await Assert.ThrowsAsync<LocalAccessException>(() => avatars.OpenAsync(target, Cancellation));
         await Assert.ThrowsAsync<LocalAccessException>(() => avatars.UploadAsync(target, [137, 80, 78, 71, 13, 10, 26, 10], "image/png", Cancellation));
         await Assert.ThrowsAsync<LocalAccessException>(() => avatars.DeleteAsync(target, Cancellation));
+    }
+
+    [Theory]
+    [InlineData("archive")]
+    [InlineData("person-avatar")]
+    [InlineData("person-external-person")]
+    [InlineData("person-external-link")]
+    [InlineData("person-external-stub")]
+    [InlineData("profile-external")]
+    [InlineData("analysis")]
+    [InlineData("message")]
+    [InlineData("suggestion-person")]
+    [InlineData("suggestion-analysis")]
+    public async Task Journal_metadata_save_rechecks_durable_parents_after_owned_lookup(string mutation)
+    {
+        var owner = await fixture.CreateUserProfileAsync();
+        var foreign = await fixture.CreateUserProfileAsync(select: false);
+        var personId = Guid.NewGuid(); var foreignPerson = Guid.NewGuid();
+        var interactionId = Guid.NewGuid(); var foreignInteraction = Guid.NewGuid();
+        var analysisId = Guid.NewGuid(); var foreignAnalysis = Guid.NewGuid();
+        var messageId = Guid.NewGuid(); var suggestionId = Guid.NewGuid();
+        var personConnectionId = Guid.NewGuid(); var profileConnectionId = Guid.NewGuid();
+        string key;
+        await using (var seed = fixture.CreateAsyncScope())
+        {
+            var database = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            var storage = seed.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars");
+            using var bytes = new MemoryStream([137, 80, 78, 71, 13, 10, 26, 10]);
+            key = await storage.SaveAsync(bytes, Cancellation);
+            Assert.True(await storage.CompleteUploadAsync(key, Cancellation));
+            database.People.AddRange(new Person { Id = personId, UserProfileId = owner, DisplayName = "Owned", AvatarStorageKey = key, AvatarMimeType = "image/png" },
+                new Person { Id = foreignPerson, UserProfileId = foreign, DisplayName = "Foreign" });
+            database.Interactions.AddRange(new Interaction { Id = interactionId, UserProfileId = owner }, new Interaction { Id = foreignInteraction, UserProfileId = foreign });
+            database.InteractionAnalyses.AddRange(new InteractionAnalysis { Id = analysisId, InteractionId = interactionId, Summary = "Original" },
+                new InteractionAnalysis { Id = foreignAnalysis, InteractionId = foreignInteraction, Summary = "Foreign" });
+            database.AnalysisConversationMessages.Add(new() { Id = messageId, InteractionAnalysisId = analysisId, Role = "user", Content = "Original" });
+            database.SuggestedProfileUpdates.Add(new() { Id = suggestionId, InteractionAnalysisId = analysisId, PersonId = personId, Field = "Notes", SuggestedValue = "Original" });
+            database.PersonExternalConnections.Add(new() { Id = personConnectionId, PersonId = personId, Platform = "Discord", DisplayName = "Original" });
+            database.UserProfileExternalConnections.Add(new() { Id = profileConnectionId, UserProfileId = owner, Platform = "Discord", DisplayName = "Original" });
+            await database.SaveChangesAsync(Cancellation);
+        }
+        await using var scope = fixture.CreateAsyncScope();
+        await BindAsync(scope.ServiceProvider);
+        using var admission = await scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().EnterAsync(Cancellation, userMutation: true);
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry pending;
+        if (mutation is "archive" or "person-avatar")
+        {
+            var person = await scope.ServiceProvider.GetRequiredService<AppFeatures.People.IPeoplePersistence>()
+                .FindPersonAsync(owner, personId, readOnly: false, Cancellation);
+            Assert.NotNull(person);
+            if (mutation == "archive") person.ArchivedAt = DateTimeOffset.UtcNow;
+            else person.AvatarMimeType = "image/jpeg";
+            pending = context.Entry(person);
+        }
+        else if (mutation.StartsWith("person-external", StringComparison.Ordinal))
+        {
+            var connection = await context.PersonExternalConnections
+                .SingleAsync(row => row.Id == personConnectionId && context.People.Any(person => person.Id == row.PersonId && person.UserProfileId == owner), Cancellation);
+            if (mutation == "person-external-stub")
+            {
+                context.Entry(connection).State = EntityState.Detached;
+                connection = new PersonExternalConnection { Id = personConnectionId, DisplayName = "Unsaved" };
+                context.PersonExternalConnections.Attach(connection);
+                context.Entry(connection).Property(row => row.DisplayName).IsModified = true;
+            }
+            else connection.DisplayName = "Unsaved";
+            pending = context.Entry(connection);
+        }
+        else if (mutation == "profile-external")
+        {
+            var connection = await context.UserProfileExternalConnections.SingleAsync(row => row.Id == profileConnectionId && row.UserProfileId == owner, Cancellation);
+            connection.DisplayName = "Unsaved"; pending = context.Entry(connection);
+        }
+        else if (mutation == "analysis")
+        {
+            var analysis = await context.InteractionAnalyses.SingleAsync(row => row.Id == analysisId && row.Interaction.UserProfileId == owner, Cancellation);
+            analysis.Summary = "Unsaved"; pending = context.Entry(analysis);
+        }
+        else if (mutation == "message")
+        {
+            var message = await context.AnalysisConversationMessages.SingleAsync(row => row.Id == messageId && row.InteractionAnalysis.Interaction.UserProfileId == owner, Cancellation);
+            message.Content = "Unsaved"; pending = context.Entry(message);
+        }
+        else
+        {
+            var suggestion = await context.SuggestedProfileUpdates.SingleAsync(row => row.Id == suggestionId && row.Person.UserProfileId == owner && row.InteractionAnalysis.Interaction.UserProfileId == owner, Cancellation);
+            suggestion.SuggestedValue = "Unsaved"; pending = context.Entry(suggestion);
+        }
+        await using (var moving = fixture.CreateAsyncScope())
+        {
+            var database = moving.ServiceProvider.GetRequiredService<AppDbContext>();
+            // A fixture-only legacy persistence writer commits after the owned lookup. No product reparent API.
+            if (mutation is "archive" or "person-avatar" or "person-external-person")
+                await database.People.Where(row => row.Id == personId).ExecuteUpdateAsync(update => update.SetProperty(row => row.UserProfileId, foreign), Cancellation);
+            else if (mutation is "person-external-link" or "person-external-stub")
+                await database.PersonExternalConnections.Where(row => row.Id == personConnectionId).ExecuteUpdateAsync(update => update.SetProperty(row => row.PersonId, foreignPerson), Cancellation);
+            else if (mutation == "profile-external")
+                await database.UserProfileExternalConnections.Where(row => row.Id == profileConnectionId).ExecuteUpdateAsync(update => update.SetProperty(row => row.UserProfileId, foreign), Cancellation);
+            else if (mutation == "analysis")
+                await database.InteractionAnalyses.Where(row => row.Id == analysisId).ExecuteUpdateAsync(update => update.SetProperty(row => row.InteractionId, foreignInteraction), Cancellation);
+            else if (mutation == "message")
+                await database.AnalysisConversationMessages.Where(row => row.Id == messageId).ExecuteUpdateAsync(update => update.SetProperty(row => row.InteractionAnalysisId, foreignAnalysis), Cancellation);
+            else if (mutation == "suggestion-person")
+                await database.SuggestedProfileUpdates.Where(row => row.Id == suggestionId).ExecuteUpdateAsync(update => update.SetProperty(row => row.PersonId, foreignPerson), Cancellation);
+            else
+                await database.SuggestedProfileUpdates.Where(row => row.Id == suggestionId).ExecuteUpdateAsync(update => update.SetProperty(row => row.InteractionAnalysisId, foreignAnalysis), Cancellation);
+        }
+        await Assert.ThrowsAsync<NotFoundException>(() => context.SaveChangesAsync(Cancellation));
+        Assert.Equal(EntityState.Modified, pending.State);
+        Assert.Equal(owner, scope.ServiceProvider.GetRequiredService<LocalProfileOperation>().RequireOwner());
+        await using var checking = fixture.CreateAsyncScope();
+        var check = checking.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Null(await check.People.Where(row => row.Id == personId).Select(row => row.ArchivedAt).SingleAsync(Cancellation));
+        Assert.Equal("image/png", await check.People.Where(row => row.Id == personId).Select(row => row.AvatarMimeType).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.PersonExternalConnections.Where(row => row.Id == personConnectionId).Select(row => row.DisplayName).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.UserProfileExternalConnections.Where(row => row.Id == profileConnectionId).Select(row => row.DisplayName).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.InteractionAnalyses.Where(row => row.Id == analysisId).Select(row => row.Summary).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.AnalysisConversationMessages.Where(row => row.Id == messageId).Select(row => row.Content).SingleAsync(Cancellation));
+        Assert.Equal("Original", await check.SuggestedProfileUpdates.Where(row => row.Id == suggestionId).Select(row => row.SuggestedValue).SingleAsync(Cancellation));
+        Assert.Equal("Foreign", await check.InteractionAnalyses.Where(row => row.Id == foreignAnalysis).Select(row => row.Summary).SingleAsync(Cancellation));
+        Assert.True(await checking.ServiceProvider.GetRequiredKeyedService<IFileStorage>("avatars").ExistsAsync(key, Cancellation));
     }
 
     private static AvatarOwner Holder(Guid owner, Guid? person, string? key) => person is Guid personId

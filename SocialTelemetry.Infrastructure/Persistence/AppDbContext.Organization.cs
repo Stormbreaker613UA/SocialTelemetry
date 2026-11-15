@@ -7,13 +7,6 @@ namespace SocialTelemetry.Infrastructure.Persistence;
 
 public sealed partial class AppDbContext
 {
-    // These changes require journal ownership protection but are not AI context sources.
-    private EntityEntry[] OrganizationChanges() => ChangeTracker.Entries().Where(entry =>
-        entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted &&
-        (entry.Entity is PersonGroup or PersonGroupMembership ||
-         entry.Entity is Person && entry.State == EntityState.Modified && entry.Property(nameof(Person.IsFavorite)).IsModified))
-        .ToArray();
-
     private async Task<HashSet<Guid>> ResolveOrganizationProfilesAsync(EntityEntry[] changes,
         HashSet<Guid> deletedProfiles, HashSet<Guid> deletedPeople, CancellationToken cancellationToken)
     {

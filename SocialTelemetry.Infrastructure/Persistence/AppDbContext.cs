@@ -85,8 +85,8 @@ public sealed partial class AppDbContext(
             ? []
             : await avatarCleanup.FindObsoleteKeysAsync(this, cancellationToken);
         var hasExternalTransaction = Database.CurrentTransaction is not null;
-        var sourceChanges = AnalysisSourceChanges().Union(OrganizationChanges()).ToArray();
-        if (sourceChanges.Length == 0 && profileOperation?.Binding is null)
+        var journalChanges = JournalChanges();
+        if (journalChanges.Length == 0 && profileOperation?.Binding is null)
         {
             var savedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             if (!hasExternalTransaction && avatarCleanup is not null)
@@ -97,16 +97,16 @@ public sealed partial class AppDbContext(
         if (Database.CurrentTransaction is not null)
         {
             await ProtectLocalProfileOperationAsync(cancellationToken);
-            await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
-            await ValidateOrganizationChangesAsync(sourceChanges, cancellationToken);
+            await LockJournalChangesAsync(journalChanges, cancellationToken);
+            await ValidateOrganizationChangesAsync(journalChanges, cancellationToken);
             await RecordCommittedActivityAsync(cancellationToken);
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
         await ProtectLocalProfileOperationAsync(cancellationToken);
-        await LockAnalysisSourceChangesAsync(sourceChanges, cancellationToken);
-        await ValidateOrganizationChangesAsync(sourceChanges, cancellationToken);
+        await LockJournalChangesAsync(journalChanges, cancellationToken);
+        await ValidateOrganizationChangesAsync(journalChanges, cancellationToken);
         await RecordCommittedActivityAsync(cancellationToken);
         var affectedRows = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -115,40 +115,13 @@ public sealed partial class AppDbContext(
         return affectedRows;
     }
 
-    private EntityEntry[] AnalysisSourceChanges()
-    {
-        var changes = new List<EntityEntry>();
-        foreach (var entry in ChangeTracker.Entries())
-        {
-            string[] contextProperties = entry.Entity switch
-            {
-                UserProfile => [nameof(UserProfile.DisplayName), nameof(UserProfile.AboutMe), nameof(UserProfile.CommunicationStyle),
-                    nameof(UserProfile.Goals), nameof(UserProfile.Preferences), nameof(UserProfile.Boundaries), nameof(UserProfile.AiInstructions)],
-                Person => [nameof(Person.UserProfileId), nameof(Person.DisplayName), nameof(Person.Age), nameof(Person.Gender),
-                    nameof(Person.Description), nameof(Person.RelationshipContext), nameof(Person.HowWeMet), nameof(Person.Notes)],
-                PersonFact => [nameof(PersonFact.PersonId), nameof(PersonFact.Value), nameof(PersonFact.Source), nameof(PersonFact.CreatedAt)],
-                PersonInference => [nameof(PersonInference.PersonId), nameof(PersonInference.Value), nameof(PersonInference.Confidence),
-                    nameof(PersonInference.SourceInteractionId), nameof(PersonInference.CreatedAt)],
-                Interaction => [nameof(Interaction.UserProfileId), nameof(Interaction.Title), nameof(Interaction.Description),
-                    nameof(Interaction.UserThoughts), nameof(Interaction.OccurredAt)],
-                InteractionParticipant => [nameof(InteractionParticipant.InteractionId), nameof(InteractionParticipant.PersonId)],
-                InteractionAttachment => [nameof(InteractionAttachment.InteractionId), nameof(InteractionAttachment.Type),
-                    nameof(InteractionAttachment.Status), nameof(InteractionAttachment.TextContent),
-                    nameof(InteractionAttachment.StorageKey), nameof(InteractionAttachment.MimeType)],
-                AttachmentTranscript => [nameof(AttachmentTranscript.AttachmentId), nameof(AttachmentTranscript.GeneratedText),
-                    nameof(AttachmentTranscript.CorrectedText), nameof(AttachmentTranscript.ReviewStatus), nameof(AttachmentTranscript.ReviewedAt),
-                    nameof(AttachmentTranscript.Version), nameof(AttachmentTranscript.SourceStorageKey), nameof(AttachmentTranscript.SourceSha256),
-                    nameof(AttachmentTranscript.Provider), nameof(AttachmentTranscript.Model), nameof(AttachmentTranscript.TranscriptionVersion)],
-                _ => []
-            };
-
-            if (contextProperties.Length == 0) continue;
-            if (entry.State is EntityState.Added or EntityState.Deleted ||
-                (entry.State == EntityState.Modified && contextProperties.Any(property => entry.Property(property).IsModified)))
-                changes.Add(entry);
-        }
-        return changes.ToArray();
-    }
+    // Ownership applies to every journal mutation, independently of the fields supplied to AI.
+    private EntityEntry[] JournalChanges() => ChangeTracker.Entries().Where(entry =>
+        entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted &&
+        entry.Entity is UserProfile or UserProfileExternalConnection or Person or PersonExternalConnection or
+            PersonGroup or PersonGroupMembership or PersonFact or PersonInference or Interaction or
+            InteractionParticipant or InteractionAttachment or AttachmentTranscript or InteractionAnalysis or
+            AnalysisConversationMessage or SuggestedProfileUpdate).ToArray();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

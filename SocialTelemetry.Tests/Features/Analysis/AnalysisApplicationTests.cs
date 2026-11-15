@@ -392,7 +392,7 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
     }
 
     [Fact]
-    public async Task Organization_during_inference_preserves_context_fingerprint_and_valid_analysis()
+    public async Task Organization_and_metadata_during_inference_preserve_context_fingerprint_and_valid_analysis()
     {
         var data = await SeedAsync();
         var observer = new CommitObserver();
@@ -415,6 +415,18 @@ public abstract class AnalysisApplicationTestsContract<TFixture>(TFixture fixtur
                     .ExecuteAsync("Not AI context", Cancellation);
                 await writing.GetRequiredService<SocialTelemetry.Application.Features.PersonGroups.AddMember.Scenario>()
                     .ExecuteAsync(group.Id, data.PersonId, Cancellation);
+                var people = writing.GetRequiredService<SocialTelemetry.Application.Features.People.IPeoplePersistence>();
+                var person = await people.FindPersonAsync(data.Owner, data.PersonId, readOnly: false, Cancellation);
+                Assert.NotNull(person);
+                person.ArchivedAt = DateTimeOffset.UtcNow;
+                await people.SavePersonAsync(person, Cancellation);
+                var avatars = writing.GetRequiredService<SocialTelemetry.Application.Features.ProfileAvatars.ProfileAvatarService>();
+                var avatar = await avatars.FindOwnerAsync(data.PersonId, Cancellation);
+                await avatars.UploadAsync(avatar, [137, 80, 78, 71, 13, 10, 26, 10], "image/png", Cancellation);
+                await writing.GetRequiredService<SocialTelemetry.Application.Features.People.AddExternalConnection.Scenario>()
+                    .ExecuteAsync(new() { PersonId = data.PersonId, Platform = "Discord", ExternalUserId = Guid.NewGuid().ToString("N") }, Cancellation);
+                await writing.GetRequiredService<SocialTelemetry.Application.Features.UserProfile.AddExternalConnection.Scenario>()
+                    .ExecuteAsync(new() { Platform = "Discord", ExternalUserId = Guid.NewGuid().ToString("N") }, Cancellation);
                 var after = await writing.GetRequiredService<AiContextBuilder>().BuildAsync(data.InteractionId, null, [], Cancellation);
                 Assert.Equal(before.InputJson, after.InputJson);
                 Assert.Equal(before.Fingerprint, after.Fingerprint);

@@ -556,7 +556,7 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
     }
 
     [Fact]
-    public async Task Person_timestamp_outside_analysis_context_does_not_acquire_the_guard()
+    public async Task Person_timestamp_outside_analysis_context_still_requires_owner_protection()
     {
         var data = await SeedAsync();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
@@ -565,11 +565,18 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         var guardContext = guardScope.ServiceProvider.GetRequiredService<AppDbContext>();
         await using var guardTransaction = await guardContext.Database.BeginTransactionAsync(deadline.Token);
         await guardContext.LockAnalysisContextAsync(data.UserId, deadline.Token);
+        var guardPid = ((NpgsqlConnection)guardContext.Database.GetDbConnection()).ProcessID;
         await using var sourceScope = fixture.CreateAsyncScope();
         var sourceContext = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var person = await sourceContext.People.SingleAsync(person => person.Id == data.PersonId, deadline.Token);
         person.UpdatedAt = DateTimeOffset.UtcNow;
-        await sourceContext.SaveChangesAsync(deadline.Token);
+        await sourceContext.Database.OpenConnectionAsync(deadline.Token);
+        var sourcePid = ((NpgsqlConnection)sourceContext.Database.GetDbConnection()).ProcessID;
+        var save = sourceContext.SaveChangesAsync(deadline.Token);
+        await WaitForGuardWaiterAsync(guardPid, sourcePid, deadline.Token);
+        Assert.False(save.IsCompleted);
+        await guardTransaction.CommitAsync(deadline.Token);
+        await save;
     }
 
     [Fact]
@@ -762,10 +769,20 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         await save;
     }
 
-    [Fact]
-    public async Task Waiting_child_write_rechecks_ownership_after_parent_moves_to_another_profile()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Waiting_child_write_rechecks_ownership_after_parent_moves_to_another_profile(bool externalMetadata)
     {
         var data = await SeedAsync();
+        var connectionId = Guid.NewGuid();
+        if (externalMetadata)
+        {
+            await using var seed = fixture.CreateAsyncScope();
+            var database = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.PersonExternalConnections.Add(new() { Id = connectionId, PersonId = data.PersonId, Platform = "Discord", DisplayName = "Original" });
+            await database.SaveChangesAsync(Cancellation);
+        }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(20));
         await using var moverScope = fixture.CreateAsyncScope();
@@ -775,7 +792,10 @@ public sealed class AnalyzeInteractionTests(PeopleApiFixture fixture) : IClassFi
         var moverPid = ((NpgsqlConnection)mover.Database.GetDbConnection()).ProcessID;
         await using var sourceScope = fixture.CreateAsyncScope();
         var source = sourceScope.ServiceProvider.GetRequiredService<AppDbContext>();
-        (await source.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, deadline.Token)).Value = "Changed after ownership move";
+        if (externalMetadata)
+            (await source.PersonExternalConnections.SingleAsync(connection => connection.Id == connectionId, deadline.Token)).DisplayName = "Changed after ownership move";
+        else
+            (await source.PersonFacts.SingleAsync(fact => fact.PersonId == data.PersonId, deadline.Token)).Value = "Changed after ownership move";
         await source.Database.OpenConnectionAsync(deadline.Token);
         var sourcePid = ((NpgsqlConnection)source.Database.GetDbConnection()).ProcessID;
         var save = source.SaveChangesAsync(deadline.Token);

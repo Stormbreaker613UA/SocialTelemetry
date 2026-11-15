@@ -1,8 +1,12 @@
 # SocialTelemetry Current State
 
-Updated: 2026-10-27 (published baseline0a7681f7; B5A-01/B5A-02/B5B-01/B5B-02/B4-01 CLOSED and published; B3A-01 independently CLOSED, scoped publication pending; six P2 open; LocalAI unpublished)
+Updated: 2026-11-15 (published baseline8119ee97; B3B-01 independently CLOSED, scoped publication PENDING; seven findings review-closed/six published; five P2 open; LocalAI unpublished)
 
 ## Active review corrections (owner-approved 2026-10-26)
+
+Root verified B3A-01 publication8119ee97b4e6205cda346ac86ef40970ca749c5a, parent0a7681f7: exact4M/0A/0D, approved raw aggregate1BDC02C3795692BCA48DF865B2586CFFA8414188D528B09F80C2F8D1E2CF99B3, normalized blobs, fresh live origin/main and empty index. Six findings are CLOSED/published. B3B-01 is additionally independently CLOSED with scoped publication PENDING: seven review-closed findings, six published. Still open: B1-P2, B2-01, B2-02, B2-03 and B6-01; deferred A5 remains separate. Historical publication-pending wording below is superseded only for published corrections.
+
+B3B-01 is implemented/tested and independently CLOSED by SAME Astra actual FULL FINAL in its assigned scope, no remaining REQUIRED findings for this correction; scoped nine-path publication PENDING. Backend SOURCE STOP. Five P2 remain open (B1-P2, B2-01, B2-02, B2-03, B6-01). No Git/publication/LocalAI clearance/whole-v1 acceptance claim. Historical assignment follows: use complete journal-mutation/ownership classification for ordinary security mixed-save refusal and normal guarded journal saves, independent of the narrower AI-context source-field classification. Archive/avatar/external-identity metadata must retain original/current/durable parent protection and the same ordered re-resolved lock set. Do not add organizational metadata to AI context/fingerprint or change generation merely to obtain owner locks. Preserve the existing stricter LocalAccess security whitelist, atomic failures, pending caller tracking, legitimate security-only saves, one context and all final-commit guards. Verify real UserManager mixed-save refusal and durable-parent races on PostgreSQL/real-file SQLite with focused Windows/Linux checks, then narrow review. No schema/framework/provider/UI change or expansion into B6-01; Backend owns targeted source/CURRENT after this planning checkpoint.
 
 Root verified B4-01 publication 0a7681f74938fcf4b8c431f0a545e66a872e23b0, parentb8fee305: exact5M/0A/0D, approved raw aggregate0CD0A51B0B86407166CF788D243A042E5AEA923735567BA56552B008AADFFC19, all normalized blobs, fresh live origin/main and empty index. Five findings are CLOSED/published; B3A-01 is now independently CLOSED with scoped publication PENDING. Other SIX remain open. Historical pending-publication wording below is superseded for the published corrections; no LocalAI clearance/publication follows.
 
@@ -29,6 +33,108 @@ First group is B5A-01/B5A-02 only: refuse an Interaction deletion with foreign l
 Backend source editing is STOPPED after implementation/testing and the SAME Reviewer's final narrow closure of B5A-01/B5A-02. Owner explicitly authorized separately coordinated scoped publication of ONLY the five reviewed correction source/test paths plus CURRENT (six paths), which remains PENDING until Git succeeds. Unpublished LocalAI source, Planner Spec/.gitignore and the other ten P2 are excluded from that bounded publication. Do not claim LocalAI reviewed clear/published or whole-v1 acceptance. Existing test counts, setup failures, platform/keyring qualifications and logs remain unchanged; no reruns or additional model/native/live-provider work.
 
 Subsequent priority groups remain storage recovery/avatar/temp privacy; selector/journal classification/analysis pending writes; provider callbacks/SSE/locking/post-commit responses. Final publication requires the explicit corrected scope, review closure and preserved unrelated tracker/voice/ignored files. Future UI/Advisor/server work does not start here.
+
+### B3B-01 final implementation/test/review checkpoint (Backend, closure 2026-11-15; SOURCE STOP)
+
+B3B-01 independently CLOSED by SAME Astra actual FULL FINAL captured by Root: four production diffs, four test diffs + CURRENT and necessary unchanged guards inspected; no remaining REQUIRED findings for this correction. Source/log/freeze inspection only, no reruns. Review confirmed the fifteen-type JournalChanges policy, ordinary UserManager mixed-save refusal BEFORE transaction/epoch/grants/selector/baseSave, strict LocalAccess whitelist, original/current/durable parent union/order/reread, B3A preservation, retained pending tracking and AI InputJson/fingerprint invariance; the timestamp test proves a real PostgreSQL owner-lock wait. Publication of ONLY these nine modified paths remains PENDING; seven findings independently review-closed, six published, five open including separate B6-01. No whole LocalAI/v1 acceptance or future prompt-polish implementation. This closure overrides earlier pending-review wording below; supplied build01/results/failure/keyring/platform qualifications remain unchanged. Baseline8119ee97b4e6205cda346ac86ef40970ca749c5a (B3A independently CLOSED/published); other five open findings unchanged. Final checkpoint supersedes active-run/pending-verification wording in recovery history below. Correction ownership: eight existing C# files + CURRENT =9M/0A/0D. Existing unpublished LocalAI34 raw hashes ALL match its saved final manifest; Backend combined43=23M20A0D/C#41, RootSpec/.gitignore separately owned/excluded. No Tracker/Memory/Git/report/index/newagent activity.
+
+- One closed JournalChanges policy covers every mapped Domain journal type in Added/Modified/Deleted state: UserProfile, UserProfileExternalConnection, Person, PersonExternalConnection, PersonGroup, PersonGroupMembership, PersonFact, PersonInference, Interaction, InteractionParticipant, InteractionAttachment, AttachmentTranscript, InteractionAnalysis, AnalysisConversationMessage, SuggestedProfileUpdate. Separate former narrow AnalysisSourceChanges/OrganizationChanges selectors are replaced, not duplicated. The model-derived test enumerates all15 mapped Domain types to detect omissions in this explicit policy; test reflection stays in Tests, no production discovery framework.
+- Real Identity SaveAccountSecurityChanges refuses mixed journal writes BEFORE transaction/selector/epoch/grant/baseSave side effects; caller Identity and journal entries remain Modified/unsaved, tracked epoch unchanged. Existing narrow LocalAccessMutation whitelist unchanged. Legitimate security-only real UserManager stamp update rotates epoch/revokes real grant/rotates selector version and retains owner.
+- Ordinary coordinated saves use this complete policy with existing same-context selector/admission -> original/current/durable ordered owner lock union -> reread/retry-whole-set -> relationship validation -> activity -> baseSave -> commit. Existing lock-order/savepoint algorithm unchanged; no extra context/tracker.Clear/discard/generic framework. Resolver now includes both external-connection durable parents, analysis->Interaction, message->Analysis, suggestion->Person AND Analysis, plus applicable dependent cascade owners. Changed relationships and ID-only stubs use durable parent IDs independently of tracked FK defaults. B5A impending Interaction delete continues using SAME resolver before destructive status/file phase and final revalidation.
+- New meaningful cases on BOTH providers: five real UserManager stamp/password mixed archive/person-avatar/profile-avatar/person-external/profile-external refusal outcomes; model-derived all15-type canary + valid security-only revocation; ten real durable-parent changes AFTER owned lookup (archive/avatar/person-external parent move/link move/ID-only stub, profile-external, analysis, message, suggestion Person/Analysis). Assert durable account/stamp/hash/epoch/grants/selector/journal/files unchanged after refusal and caller pending states preserved. No public reparent endpoint, fake persistence, weakened security limits or sleeps.
+- PG-specific existing lock-wait test now also covers external metadata and proves parent move DURING actual guard wait forces the whole ordered destination owner protection. Timestamp-only Person write now explicitly MUST wait for ownership protection, replacing the obsolete no-guard expectation. Existing child/cascade guard and B5A HTTP/direct/save foreign graph refusal retained.
+- Expanded BOTH-provider analysis-during-inference test performs favorite/group/membership/archive/real avatar/external-person/external-profile mutations through actual services. Before/after context JSON and fingerprint equal; valid analysis + ALL Pending commit still succeeds. Metadata is not added to AI input/prompt/schema/fingerprint/generation; no provider/native changes or inference under DB protection. Existing direct source-change refusal, lease/save/commit rollback and committed-winner tests pass.
+
+| FINAL build01 evidence | Actual result / exit / framework duration | Existing ignored log |
+| --- | --- | --- |
+| dotnet build SocialTelemetry.slnx --no-restore |0warnings/0errors exit0;11.29s MSBuild/12.177s wrapper |.local-dev/logs/b3b-01-build01.log|
+| Windows focused, PG+fileSQLite |144passed/0failed/0skipped exit0;49s296ms/49.659s wrapper |.local-dev/logs/b3b-01-windows-focused01.log|
+| Windows supplemental, PG+fileSQLite + PG-only SQL-wait cases |74passed/0failed/0skipped exit0;1m55s709ms/116.042s wrapper |.local-dev/logs/b3b-01-windows-supplemental01.log|
+| SAME DLL Linux focused, PG+fileSQLite |144passed/0failed/0skipped exit0;1m51s136ms |.local-dev/logs/b3b-01-linux-focused01.log Phase=focused|
+| SAME DLL Linux supplemental |74passed/0failed/0skipped exit0;1m35s307ms |same log Phase=supplemental|
+
+Focused filters contain72 cases/provider (144 aggregate); supplemental34 common cases/provider plus6 PG-only guard-wait cases (PG40/SQLite34,74 aggregate). Thus per OS PG112/SQLite106; these are one filtered matrix, not separate provider-run summaries or summed unique cross-OS coverage. Thirty-three added cases across bothDBs (20durable-parent+12Identity+1PG external-wait variant) plus185 existing/expanded cases per OS. Model-derived canary loops15 types INSIDE one Fact/provider, not15 separately reported tests. No rerun of unchanged green runs.
+
+Exact focused command: dotnet SocialTelemetry.Tests/bin/Debug/net10.0/SocialTelemetry.Tests.dll --filter-class '*JournalApplicationTests' '*ProfileAvatarTests' '*ExternalConnectionTests' '*PersonArchiveTests' '*PeopleCrudTests' --parallel none --no-ansi --progress off.
+Supplemental uses --filter-method with the following19 exact method-name suffixes (each prefixed *), same trailing flags; Linux runs /work/bin/SocialTelemetry.Tests.dll. BOTH logs contain full expanded command:
+- Real_Identity_security_save_refuses_pending_journal_metadata_before_any_side_effect
+- Every_mapped_domain_mutation_is_refused_before_real_Identity_security_side_effects
+- Identity_and_Core_stores_share_the_scoped_context_and_rollback_together
+- Account_changes_do_not_enter_context_or_acquire_social_guards
+- Organization_and_metadata_during_inference_preserve_context_fingerprint_and_valid_analysis
+- Direct_analysis_keeps_snapshot_inference_save_lease_commit_order_and_atomic_rollback
+- Direct_source_change_during_inference_rejects_before_lease_and_preserves_old_analysis
+- Direct_commit_winner_returns_success_and_keeps_original_owner_after_later_profile_switch
+- Person_timestamp_outside_analysis_context_still_requires_owner_protection
+- Waiting_child_write_rechecks_ownership_after_parent_moves_to_another_profile
+- Untracked_cascade_deletes_coordinate_affected_linked_profiles
+- Foreign_interaction_cascade_is_refused_before_evidence_or_metadata_changes
+- Http_favorite_multigroups_full_update_archive_and_combined_filters_preserve_journal
+- Account_security_save_refuses_organizational_writes
+- Legacy_foreign_membership_refuses_affected_cascade_and_preserves_both_sides
+- Save_or_commit_failure_rolls_back_organization
+- Two_hosts_add_add_or_add_remove_are_serialized_without_changing_metadata
+- Owned_profile_cascade_removes_groups_and_memberships_without_touching_other_journal
+- Detached_id_only_parent_delete_uses_durable_owner_and_removes_only_owned_membership
+
+- Build14:10:20.711139Z..14:10:32.888232Z; Windows focused14:10:57.554723Z..14:11:47.212962Z; supplemental14:12:00.300949Z..14:13:56.342587Z. Linux Docker14:14:29.141953Z..14:18:05.565287Z (216.424s wrapper), focused14:14:37Z..14:16:29Z, supplemental14:16:29Z..14:18:05Z. Source/test edits ALL preceded build01; no subsequent source/test edit/rebuild. FiveDLL snapshot logged at Windows starts, copied Linux sha256sum matched and final host snapshot matched; only targeted CURRENT facts edited afterward.
+- No B3B build/test/setup failures or retries. One preliminary read-only rg query used unsupported PowerShell brace path syntax and failed BEFORE reading/running tests; corrected explicit paths, no source/test effect. All previous FAILED/interrupted logs, unknown media-timeout cause, Qwen limitations, native exclusions, default-keyring created-vs-preexisting uncertainty and SQL/file nonatomicity remain historical and unchanged. No claim previous whole-package tests prove this correction.
+- Linux cached aspnet10 image sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c, cached PG17-alpine/Testcontainers, Windows-built x64/glibc/root/--init with readonly input copy + F-bind /work; Docker socket/TESTCONTAINERS_HOST_OVERRIDE for disposable PG only. All new app/temp/keys/media/SQLite/test stores under F .local-dev through existing isolated fixtures, including added hosts inheriting those paths; no old/default C key/data relocation/deletion, shared installed tools untouched. NOT Linux SDK/fullsuite/nonroot/musl/ARM64/native/liveprovider/model proof.
+- No schema/model/entity/migration/prompt/contracts/options/API/dependency/package changes, so no EF CLI/upgrades/architecture rerun (private Infra save policy and test-only wiring; existing external signatures/dependencies unchanged). No broad per this group; consolidated final broad remains a separately coordinated later gate. No Qwen/Whisper/native/OAuth/download/real provider runs.
+- Owned buildPID49620/exec54758, WindowsPID50828/exec90832, WindowsPID44728/exec48664, DockerPID4100/exec24749 all completed exit0. Linux children16/80 completed exit0, --rm socialtelemetry-b3b-01 absent. All24 fixture-container IDs created in these logs checked absent, recorded host PIDs absent. No owned resource retained/cleanup pending; no shared Docker/Desktop/unrelated workload stopped, no global cleanup. Logs/copies retained in ignored F roots, fixtures perform their normal owned cleanup.
+
+Final correction C#8 raw SHA256:
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.AnalysisContext.cs B1DCD60C40BD01108890A134D29D76F158A8C23AB01DF86E309822418CB49801
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.LocalAccess.cs AB015D9EE0FA7DCE8A8AB52CB20F19A2FFCCE28B34B4CBD401F401EEB13328DD
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.Organization.cs 973462A84F022B81F5056AE49139842FF5D6765780DC9EB4F8C331373BCDA303
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.cs 89D3213E05180A48E26BDD455AD78DE336DAB9849ADA39741E7E04399971259F
+- SocialTelemetry.Tests/Features/Analysis/AnalysisApplicationTests.cs 177FFF7DCE4C6ED9CA8F403A68B36982FD8760983C0363D0915ED2A65F9C4BB8
+- SocialTelemetry.Tests/Features/Analysis/AnalyzeInteractionTests.cs 3D94E75FA3709153C969FAB0B8904B20EA48BB0674D61AC399BE1E812D17C5DA
+- SocialTelemetry.Tests/Features/Profiles/JournalApplicationTests.cs 126D77CF31CF5154A7C66FACD2C100174DDD42E7374FCB09AE48E341295533C0
+- SocialTelemetry.Tests/Infrastructure/Identity/IdentityFoundationTests.cs E8014F4C813479A8AFF6ABE963A64F1E7EDC8995A2177E8464FD86568E2E67D1
+
+Final tested build01 fiveDLL raw SHA256:
+- Api E331F818041E20F78B1E9200E53FAB2A3D418BBD12D0051DFA087087ADA42BE1
+- Application FDAC7048416C393E35A1A146FED44560D5F638BEFC4593264C44C866C1D3D4D4
+- Domain 0F0657A6D680AD13FD2DF06CB80FDDE0349CFD9A77A34B62AC3570FB837AA275
+- Infrastructure B65D1977B5959C5197E2AD59539C3EDDDC4D013EAE19F12B205530B35CC5F7E5
+- Tests 555442BF24AEB6F9A0C52D7D8016CE03A03BBC6018ABC216205DFDE38C158C4D
+
+Protected SpecD862EF7838974AA868AC45624FF01DA696089A235805C7F61DC5D5B6592B373A/.gitignoreBA0D571FB619AA9B73EAF69840E6FF45CC40FF6A99F9F3F300831B5B59857B99/AGENTS/README/trackerpatch/five voices checked unchanged. HEAD8119ee97/indexempty/full working diff --check exit0; no deletions. Exact final correction9 and Backend43 raw ordinal aggregates/C#8+C#41 plus CURRENT self hash supplied in native final after this metadata write (no recursive self hash). SOURCE EDITING STOPPED; awaiting Root inspection then separately assigned SAME Astra narrow B3B-01 review; no Git/next correction.
+
+### B3B-01 material implementation recovery checkpoint (Backend, 2026-10-27; verification PENDING)
+
+Owner-authorized B3B-01 ONLY, baseline8119ee97b4e6205cda346ac86ef40970ca749c5a. Eight existing C# files + CURRENT (9M/0A/0D); existing unpublished LocalAI34/PlannerSpec/.gitignore untouched. Six required P2 remain open; no independent closure/publication/acceptance claim. Earlier SOURCE STOP statements are historical; implementation resumed ONLY for B3B.
+
+Implemented a closed classifier for ALL 15 mapped Domain journal types and every Added/Modified/Deleted entry, independent of AI-context fields. Both ordinary coordinated journal Save and real Identity account-security mixed-save refusal use this classifier; strict LocalAccess whitelist remains unchanged. Existing ordered original/current/durable owner resolver now covers external connections, analyses, messages and suggestions and dependent cascade ownership. Whole ordered union is re-resolved after waits; no second context, tracker.Clear, SQL across IO/inference, model/schema/options/contract/dependency changes. AI context/prompt/fingerprint/generation policy untouched. New both-provider tests exercise real UserManager stamp/password atomic refusal with pending metadata and model-derived 15-type coverage; actual durable-parent moves/ID-only stub; PG guard-wait ownership re-resolution; successful analysis through organization/archive/avatar/external changes with equal context JSON/fingerprint.
+
+Build/tests NOT RUN for this delta yet; old B3A/B4/LocalAI evidence is historical. No active owned runner/retained handle at checkpoint. Pending: dotnet build SocialTelemetry.slnx --no-restore, then bounded Journal/Avatar/External/Archive/People and exact security/analysis/organization guard methods Windows BOTH PG+real SQLite, SAME final DLL Linux cached aspnet10/root/--init/F-bind/socket. No broad/model/native/provider/EF CLI. Logs .local-dev/logs/b3b-01-build01.log and b3b-01-{windows,linux}-{focused,supplemental}01.log; application artifacts/temp/key/data roots .local-dev/runs/b3b-01-*; Docker29.9.2 already available, no startup/reset/install. Actual runner PID/creation identity, UTC/commands/exits and final fiveDLLs will be retained in logs and final checkpoint. Preserve all earlier failures/default-keyring uncertainty/platform/SQL-file limitations; do not delete old/default keys or existing assets.
+
+Correction C# source raw SHA256 before build:
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.AnalysisContext.cs B1DCD60C40BD01108890A134D29D76F158A8C23AB01DF86E309822418CB49801
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.LocalAccess.cs AB015D9EE0FA7DCE8A8AB52CB20F19A2FFCCE28B34B4CBD401F401EEB13328DD
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.Organization.cs 973462A84F022B81F5056AE49139842FF5D6765780DC9EB4F8C331373BCDA303
+- SocialTelemetry.Infrastructure/Persistence/AppDbContext.cs 89D3213E05180A48E26BDD455AD78DE336DAB9849ADA39741E7E04399971259F
+- SocialTelemetry.Tests/Features/Analysis/AnalysisApplicationTests.cs 177FFF7DCE4C6ED9CA8F403A68B36982FD8760983C0363D0915ED2A65F9C4BB8
+- SocialTelemetry.Tests/Features/Analysis/AnalyzeInteractionTests.cs 3D94E75FA3709153C969FAB0B8904B20EA48BB0674D61AC399BE1E812D17C5DA
+- SocialTelemetry.Tests/Features/Profiles/JournalApplicationTests.cs 126D77CF31CF5154A7C66FACD2C100174DDD42E7374FCB09AE48E341295533C0
+- SocialTelemetry.Tests/Infrastructure/Identity/IdentityFoundationTests.cs E8014F4C813479A8AFF6ABE963A64F1E7EDC8995A2177E8464FD86568E2E67D1
+
+PRE-B3B historical fiveDLLs (NOT proof of this delta):
+- Api 612E99D80D1E131AEEECF611B84866B823A8BD7F3E5C0132627642CDB7C6D03B
+- Application A2D8213B55C0CF511DA109E753974F7C359C3A144794325718BB5B323FAC5195
+- Domain 269FA6513FABEA5F4C2F08F7087C49B5287E7FC581AE41C8BFF8357583AC97C1
+- Infrastructure AB558505B62E4CABF37DF70280A1CCE798EA5C878D27A932FD6FD6B476E8B95C
+- Tests B2920C78CC4746E1B2C7BD11B973C66741A8326B7CA558A69B97FD854E6CC69C
+
+B3B build01 completed 2026-10-27T14:10:32.888232Z: dotnet build SocialTelemetry.slnx --no-restore, 0warnings/0errors, exit0,11.29s MSBuild/12.177s wrapper; log .local-dev/logs/b3b-01-build01.log, ownedPID49620/exec54758 completed. Windows focused01 completed14:11:47.212962Z:144passed/0failed/0skipped,exit0,49.296s framework/49.659s wrapper, ownedPID50828/exec90832 completed; log .local-dev/logs/b3b-01-windows-focused01.log. Supplemental01 completed2026-10-27T14:13:56.342587Z:74passed/0failed/0skipped,exit0,115.709s framework/116.042s wrapper; ownedPID44728/exec48664 (creation14:12:00.311032Z) finished. Exact19 method filters in log. SAME final build01 DLL Linux focused+supplemental now running ownedDockerPID4100/retainedexec24749, --rm container socialtelemetry-b3b-01, started14:14:37Z; childPID16 focused, later supplemental child recorded in log .local-dev/logs/b3b-01-linux-focused01.log. Readonly input copied to F-bound /work/bin, app/temp/home/cache + fixture keys/data isolated, cached aspnet10/root/glibc/--init/socket. No duplicate runner/rebuild/source changes. Await actual Linux summaries/exits; no final Linux claim yet. Existing unpublished LocalAI34 raw hashes independently match saved final manifest; no B3B build/test failure so far.
+
+Final build01 DLL snapshot (all source/test edits preceded this build):
+- Api E331F818041E20F78B1E9200E53FAB2A3D418BBD12D0051DFA087087ADA42BE1
+- Application FDAC7048416C393E35A1A146FED44560D5F638BEFC4593264C44C866C1D3D4D4
+- Domain 0F0657A6D680AD13FD2DF06CB80FDDE0349CFD9A77A34B62AC3570FB837AA275
+- Infrastructure B65D1977B5959C5197E2AD59539C3EDDDC4D013EAE19F12B205530B35CC5F7E5
+- Tests 555442BF24AEB6F9A0C52D7D8016CE03A03BBC6018ABC216205DFDE38C158C4D
 
 ### B3A-01 final implementation/test/review checkpoint (Backend, 2026-10-27; SOURCE STOP)
 
