@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.Interactions.DeleteAttachment;
@@ -17,7 +18,8 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
         try
         {
             var attachmentId = await scenario.ExecuteAsync(request.InteractionId, request.AttachmentId, cancellationToken);
-            await Send.OkAsync(new Response(attachmentId), cancellationToken);
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+            await Send.OkAsync(new Response(attachmentId), transport);
         }
         catch (FeatureValidationException exception)
         {

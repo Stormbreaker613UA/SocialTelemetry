@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.People.DeleteExternalConnection;
@@ -22,7 +23,8 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request>
                 PersonId = request.PersonId,
                 ConnectionId = request.ConnectionId
             }, cancellationToken);
-            await Send.NoContentAsync(cancellationToken);
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+            await Send.NoContentAsync(transport);
         }
         catch (FeatureValidationException exception)
         {

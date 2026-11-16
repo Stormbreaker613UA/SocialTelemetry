@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using SocialTelemetry.Application.Features.ProfileAvatars;
 using SocialTelemetry.Application.Options;
 using Microsoft.Extensions.Options;
@@ -47,6 +48,7 @@ public sealed class Endpoint(ProfileAvatarService avatars, IOptions<UploadOption
             return;
         }
         await avatars.UploadAsync(owner, bytes, mimeType, cancellationToken);
-        await Send.NoContentAsync(cancellationToken);
+        var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+        await Send.NoContentAsync(transport);
     }
 }

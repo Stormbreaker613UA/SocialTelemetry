@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Features.LocalProfiles;
 using Scenario = SocialTelemetry.Application.Features.LocalProfiles.Rename.Scenario;
@@ -13,6 +14,7 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, RenamedProfi
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
         var result = await scenario.ExecuteAsync(request.Id, request.DisplayName, request.ExpectedVersion, cancellationToken);
-        await Send.OkAsync(result, cancellationToken);
+        var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+        await Send.OkAsync(result, transport);
     }
 }

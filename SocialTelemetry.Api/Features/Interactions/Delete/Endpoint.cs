@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.Interactions.Delete;
@@ -20,7 +21,8 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
             {
                 Id = request.Id
             }, cancellationToken);
-            await Send.OkAsync(new Response(interaction.Id), cancellationToken);
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+            await Send.OkAsync(new Response(interaction.Id), transport);
         }
         catch (FeatureValidationException exception)
         {

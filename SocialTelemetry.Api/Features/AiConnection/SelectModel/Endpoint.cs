@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using Scenario = SocialTelemetry.Application.Features.AiConnection.SelectModel.Scenario;
 
@@ -17,6 +18,7 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
     public override async Task HandleAsync(Request request, CancellationToken cancellationToken)
     {
         await scenario.ExecuteAsync(request.ModelId, cancellationToken);
-        await Send.OkAsync(new Response(request.ModelId), cancellationToken);
+        var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+        await Send.OkAsync(new Response(request.ModelId), transport);
     }
 }

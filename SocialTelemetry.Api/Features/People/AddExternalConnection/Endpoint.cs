@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.People.AddExternalConnection;
@@ -29,7 +30,8 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, ExternalConn
             var response = new ExternalConnectionResponse(connection.Id, connection.PersonId,
                 connection.Platform, connection.ExternalUserId, connection.Handle, connection.DisplayName,
                 connection.ProfileUrl, connection.CreatedAt, connection.UpdatedAt);
-            await Send.ResponseAsync(response, 201, cancellationToken);
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+            await Send.ResponseAsync(response, 201, transport);
         }
         catch (FeatureValidationException exception)
         {

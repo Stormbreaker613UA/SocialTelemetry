@@ -1,10 +1,14 @@
 # SocialTelemetry Current State
 
-Updated: 2026-11-16 (published baselinea952555a; eleven findings independently review-CLOSED, ten published; B1-P2 scoped publication PENDING; only B2-02 OPEN; Backend SOURCE STOP; LocalAI unpublished)
+Updated: 2026-11-16 (published baseline914e17d; all twelve required findings independently CLOSED, eleven published; final B2-02 scoped publication PENDING; Backend SOURCE STOP; LocalAI unpublished)
 
 ## Active review corrections (owner-approved 2026-10-26)
 
 Owner STOP boundary (2026-11-15): after the currently agreed review-remediation fixes, checks, independent closures and scoped publications are completed, Root must STOP and discuss further actions/decisions with the owner. No automatic next feature, LocalAI integration, broader publication, UI or release work beyond those agreed correction scopes. Current B2-01 scope/checks remain unchanged; workers report directly to Root and do not choose subsequent product stages.
+
+Root verified B1-P2 publication914e17d168af6be2f0ade5dc009a9bada4124a79, parenta952555a5da325c48f652e4e5ad1061913cde108: exact4M/0A/0D via --no-renames, approved raw aggregate31E2146F2428C58419B17EAE2385017343566D072D770F4E5B9E163AFEA585E3, all four normalized working blobs, fresh live origin/main and empty index. Eleven findings are CLOSED/published; only B2-02 remains OPEN, A5 separately deferred. Power-outage recovery source/DLL/log checks matched; protected10 and unpublished LocalAI34 remained unchanged. Earlier B1 publication-pending wording below is historical. No whole-LocalAI/v1 acceptance follows.
+
+B2-02 implemented/tested on frozen build01 Windows/Linux and independently CLOSED by SAME Astra actual FULL FINAL, no remaining REQUIRED finding in assigned scope. Final33-path scoped publication PENDING; Backend SOURCE STOP. All twelve required findings independently CLOSED, eleven published; A5 separately deferred. No whole-LocalAI/v1 acceptance. Historical bounded assignment follows: preserve successful committed mutation HTTP responses using the existing LocalProfileRequestTransport original-caller token after successful Application completion. Current owner-linked cancellation still governs the scenario, private reads, pre-commit checks, persistence/lease and failures; do not ignore real client cancellation or turn an uncommitted failure into success. Inventory actual affected ChatGPT connection mutations, opened-profile rename, UserProfile/People/PersonFacts and Interaction/attachment/transcript mutations. Reuse existing endpoint patterns without a new response framework, business change or blanket read/download-token replacement; distinguish already-correct LocalAccess/Favorites/Groups/Analyze/neutral selection routes and unbound picker paths. Verify deterministic barriers after actual durable commit and protection disposal but before response, same/cooperating-host owner invalidation, returned original result and durable state, true client cancellation and pre-commit refusal on PostgreSQL/real-file SQLite with bounded Windows/Linux current-DLL checks. Backend owns minimal existing endpoints/tests and targeted CURRENT after this Planner handoff; independent narrow review and scoped publication remain separate. No schema/dependencies/services/optional cleanup/model/native/EF/per-group broad reruns. After this final agreed correction and required checks/review/publication, Root performs final exact-scope/committed-blob/evidence/protected10/LocalAI34/HEAD-origin/index preservation validation, saves the durable checkpoint and reports STOP for owner discussion. No automatic next product stage.
 
 Root verified B2-03 publicationa952555a5da325c48f652e4e5ad1061913cde108, parent3b986cad4ee85fef87f54e56ef6302d43eb1d01d: exact4M/0A/0D via --no-renames, raw aggregateF5610D3D04BA70840D1A5512036BB6CBEFB8F23B85161CABC3D28E02001586F8, all four normalized working blobs, fresh live origin/main and empty index. Ten findings are CLOSED/published; B1-P2 and B2-02 remain open, A5 separately deferred. LocalAI34/protected10 remain preserved outside this commit. Historical B2-03 publication-pending wording below is superseded; no whole-LocalAI/v1 acceptance follows.
 
@@ -51,6 +55,129 @@ First group is B5A-01/B5A-02 only: refuse an Interaction deletion with foreign l
 Backend source editing is STOPPED after implementation/testing and the SAME Reviewer's final narrow closure of B5A-01/B5A-02. Owner explicitly authorized separately coordinated scoped publication of ONLY the five reviewed correction source/test paths plus CURRENT (six paths), which remains PENDING until Git succeeds. Unpublished LocalAI source, Planner Spec/.gitignore and the other ten P2 are excluded from that bounded publication. Do not claim LocalAI reviewed clear/published or whole-v1 acceptance. Existing test counts, setup failures, platform/keyring qualifications and logs remain unchanged; no reruns or additional model/native/live-provider work.
 
 Subsequent priority groups remain storage recovery/avatar/temp privacy; selector/journal classification/analysis pending writes; provider callbacks/SSE/locking/post-commit responses. Final publication requires the explicit corrected scope, review closure and preserved unrelated tracker/voice/ignored files. Future UI/Advisor/server work does not start here.
+
+### B2-02 final implementation/test/review checkpoint (Backend, 2026-11-16; SOURCE STOP)
+
+ONLY31 existing Api endpoints +existing ProfileIsolationTests +CURRENT =33M/0A/0D, baseline914e17d168af6be2f0ade5dc009a9bada4124a79. Implemented/tested and independently CLOSED by SAME Astra actual FULL FINAL captured by Root, no remaining REQUIRED finding in assigned scope. All31 production endpoints, independent inverse31/31, new assertions/wrappers, supplied evidence and exclusions reviewed; start/end freeze matched, reviewer no writes/runs. No further source changes or checks required by this scoped review. All twelve required findings independently CLOSED, eleven published; ONLY final B2-02 scoped33-path publication PENDING, A5 separately deferred. Supplied build01/Windows73/Linux73 results, failure history and qualifications unchanged; no whole-LocalAI/v1 acceptance. RootSpec/ignore/protected10/LocalAI34/patch/five voices preserved/excluded. OWNER STOP paragraph EXACT unchanged; after agreed review/scoped publication Root must perform final committed-scope/raw+normalized blobs/protected10/LocalAI34/CURRENT/logs/HEADparenttree/liveorigin/index/remainingdirty integrity validation, durable checkpoint/finalreport then STOP/discuss. No automatic LocalAIintegration/broaderpublication/UI/features/release. No Git/Reviewer/Tracker/Memory/newagents/reportfiles/nextstage activated. This final checkpoint supersedes pending/active-run wording below; all historical failures/keyring/SQL-file/platform qualifications remain.
+
+Production change ONLY successful post-scenario/service Send uses LocalProfileRequestTransport.OriginalCancellation ?? cancellationToken (existing Api import +local variable). Actual31/31 endpoint inverse comparison reconstructed baseline EXACT after removing those additions: scenario/payload/catch/error/read/stream/precommit code unchanged. No global RequestAborted change or fallback owner/lifetime extension. Concrete inventory:
+- AiConnection: Begin, Disconnect, SelectConnection, SelectModel (4).
+- LocalProfiles: Rename (1).
+- UserProfile: Update, UploadAvatar, DeleteAvatar, AddExternalConnection, UpdateExternalConnection, DeleteExternalConnection (6).
+- People: Create, Update, Delete, Archive, Unarchive, UploadAvatar, DeleteAvatar, AddExternalConnection, UpdateExternalConnection, DeleteExternalConnection (10).
+- PersonFacts: Add, Update, Delete (3).
+- Interactions: Create, Update, Delete, AddAttachment, DeleteAttachment, PutTranscript, TranscribeAttachment (7).
+
+Exclusions inspected: LocalAccess AccessResponse already restores original transport; existing Favorite/PersonGroups/Analyze/AiSelection/LocalProfilesDelete original-token controls unchanged. Private GET/catalog/status/download stay owner-linked. Callback is unbound in request middleware (no selected-owner lifetime linked), retaining its original Begin-proof lifecycle; LocalProfilesCreate/Select likewise unbound, no blanket token replacement. All failure responses remain owner-linked. Inventory is not a claim that every route received a forced-invalidation runtime case.
+
+New42 BOTH-provider deterministic cases in existing ProfileIsolationTests: real People/UserProfile persistence and real ProfileAiManagement decorators pause AFTER returned committed operation and assert CurrentTransaction null, independent durable reads BEFORE invalidation, then same/cooperating-host switch or confirmed deletion before 201/200/204 delivery. Original response identity/body/owner+version headers/no extra writes asserted; renamed profile returns original UserProfileId/displayName. ChatGPT Begin/model/connection/disconnect verify changed durable generation, selected ID/enabled state and accessible credential-file lock BEFORE switch; self-invalidating generation remains committed. True caller cancel after201/204 commit still throws cancellation with durable row preserved; owner cancellation before save still409/no row. Cooperating-host lifetime refresh explicitly invokes real ExpireAsync rather than timers/sleeps/IPC assumptions. All actual HTTP/App/real mechanisms, fake HTTP/browser only, no fake IAiClient/no production hook/architecture framework/business change. Existing strict analysis commitwinner/deletion/caller/precommit AI+STT refusal plus PersonFactsCRUD/error and all11 architecture guards retained.
+
+| Check | Actual result | Ignored log |
+|---|---|---|
+| one ordinary DockerDesktop startup after missing pipe |exit0,8.522s; engine29.9.2 ready |.local-dev/logs/b202-docker-start01.log|
+| dotnet build SocialTelemetry.slnx --no-restore |0warnings/0errors exit0;14.45s MSBuild/15.063s wrapper |.local-dev/logs/b202-build01.log|
+| Windows focused01 PG+real-fileSQLite+architecture |73passed/0failed/0skipped exit0;32.842s framework/33.245s wrapper |.local-dev/logs/b202-windows-focused01.log|
+| Linux SAMEfiveDLL focused01 PG+real-fileSQLite+architecture |73passed/0failed/0skipped exit0;1m49s685ms framework/120.193s Docker wrapper |.local-dev/logs/b202-linux-focused01.log|
+
+Per OS PG31 +SQLite31 +11 standalone architecture =73;42 new +31 existing. Decomposition is not extra runs; OS overlap is not summed unique. Windows dotnet SocialTelemetry.Tests/bin/Debug/net10.0/SocialTelemetry.Tests.dll --filter-method <exact20 patterns below, each prefixed*> --parallel none --no-ansi --progress off; Linux /work/bin/SocialTelemetry.Tests.dll SAME filters/flags. Full expanded command/environment/PID/creationUTC/DLL/summary/exit in logs; source32 frozen BEFORE build01, no source/test edit/rebuild/duplicate green run. Windows hashes, Linux copied sha256sum and final host hashes ALL match candidate build01 fiveDLL list below; only CURRENT facts changed afterward.
+
+No build/test failure or retry. Initial read-only Docker version check found engine pipe absent, one authorized ordinary installed startup restored it; no fixtures launched into unavailable engine/no install/reset/sharedconfig. Initial read-only inverse-comparison script AssertionError came from its whitespace removal; corrected checker passed31/31 without source/test edit, not a product/test failure. Earlier package failed logs and keyring created-vs-preexisting uncertainty retained; no flake/rootcause invention.
+
+Log UTC ranges/raw SHA256:
+- docker-start01 2026-11-16T13:09:17.630004+00:00..2026-11-16T13:09:26.152227+00:00 SHA256 CC5990417965F24ECB341D62C345EDFF05930368690D9C11D0C2B77FE8CF5702
+- build01 2026-11-16T13:10:49.390708+00:00..2026-11-16T13:11:04.453496+00:00 SHA256 3BBA2F668EF70C13AA7CC66B90535BAD2B20086CA659288FA690E38EADA4E00D
+- windows-focused01 2026-11-16T13:12:29.786437+00:00..2026-11-16T13:13:03.031540+00:00 SHA256 9469BA05871F3CB0D6DE969B27B0531A3968E011C62DC51974D96726BCA94FA9
+- linux-focused01 2026-11-16T13:14:13.686074+00:00..2026-11-16T13:16:13.878716+00:00 SHA256 46C3FCD6D2FC2129FAF8D20A39724956B97746F922220D4FF1A5B457282E5F5C
+
+Owned startupPID27900 completedinline, buildPID40792/exec79107, WindowsPID42332/exec16360, DockerPID17192/exec58589 all completedexit0. Linux child16 exit0; --rm socialtelemetry-b202 absent, all SIX fixture containers8a58230b29fa/d96caac465bc/9c8ed0c08a94/65a8e8510737/d3bb86d04931/dc044e584786 checked absent; all four host PIDs absent. No owned runner/runtime/container/cleanup retained; shared Docker/Desktop/IDE/unrelated workloads NOT stopped. Normal fixture-owned cleanup only; ignored logs/input copies retained.
+
+Linux cachedaspnet10 x64/glibc/root/--init/--rm/--pull=never, readonly Windows-built test input copied into F-bind /work; Docker socket for disposablePG17-alpine +real-fileSQLite. Explicit F process/app/media/LocalAccess/provider/framework/temp/home/cache roots, no old/default keys/data moved/deleted. Historical default-keyring created-vs-preexisting uncertainty unchanged; no global filesystem-write audit claim. NOT LinuxSDK/fullsuite/musl/nonroot/ARM64/native/liveOAuth/provider/model/quality proof. SQL/file nonatomicity unchanged. No broad/model/Qwen/Whisper/native/EF/schema/model-upgrade/downloads; no Domain/Application/Infrastructure/business/persistence/schema change. B1 production partial hashes still EXACT published2F8A3223...89E662F/73FD249F...786F0E6CE. Protected10aggregate8DAE668FF143A524B963E33400E27725A9567276D55CF9BD45F662582DF8FD96/LocalAI34aggregate46CEC389CE85E166C8C94536B327E7FD755E420E386A26F62329BD2343CA8B4B unchanged. HEAD914e17d168af6be2f0ade5dc009a9bada4124a79/indexempty/diffcheck0 at final validation; Root separately inspects and assigns SAME reviewer narrow closure, Backend does not activate it.
+
+### B2-02 material implementation recovery (Backend, 2026-11-16; verification PENDING)
+
+ONLY group11 B2-02, baseline914e17d168af6be2f0ade5dc009a9bada4124a79. Actual inventory31 existing mutation endpoints +existing ProfileIsolationTests +CURRENT =33M/0A/0D. Eleven findings CLOSED/published; B2-02 OPEN until independent review, A5 separately deferred. RootSpec/ignore/protected10/LocalAI34/patch/five voices preserved. OWNER STOP paragraph exact, Root final committed/raw/normalized/evidence/HEADorigin/index/dirty integrity check remains required before final report/STOP/discuss. No Git/Reviewer/Tracker/Memory/newagents/reportfiles/nextstage.
+
+Changed ONLY successful Send tokens after normal scenario/service return to LocalProfileRequestTransport.OriginalCancellation ?? cancellationToken; added existing Api transport namespace import and local transport variable. Scenario/owner/precommit/persistence/admission/failure/catch/read/stream handling unchanged; no middleware/global RequestAborted replacement. Inventory: AiConnection Begin/Disconnect/SelectConnection/SelectModel4; LocalProfiles Rename1; UserProfile Update/UploadAvatar/DeleteAvatar/AddExternalConnection/UpdateExternalConnection/DeleteExternalConnection6; People Create/Update/Delete/Archive/Unarchive/UploadAvatar/DeleteAvatar/AddExternalConnection/UpdateExternalConnection/DeleteExternalConnection10; PersonFacts Add/Update/Delete3; Interactions Create/Update/Delete/AddAttachment/DeleteAttachment/PutTranscript/TranscribeAttachment7. No missing PersonFacts or success multipart branch.
+
+Exclusions from actual middleware/scenarios: LocalAccess AccessResponse already restores original transport; Favorite/PersonGroups/Analyze/AiSelection and LocalProfilesDelete already correct. Private GET/catalog/status/download remain owner-linked. Callback and LocalProfilesCreate/Select are unbound in LocalProfileMiddleware (no selected-owner lifetime linked); callback original Begin/admission/claim protections unchanged, no OAuth redesign. Failure responses remain owner-linked. Existing original status/body/headers/results and fallback for contexts without middleware retained.
+
+New deterministic BOTH-provider tests in existing ProfileIsolationTests use narrow test-only neutral persistence/management decorators around REAL implementations: pause AFTER real SQL/selection/security/credential operation returned, assert CurrentTransaction null, verify durable state independently, then same/cooperating-host switch or explicit journaldelete before delivery. Original identity/headers/201/200/204/result/no second writes asserted; explicit local lifetime refresh for cooperatinghost, no sleeps/instant IPC assumption. Covers journalCreate/Update/Archive, rename, Create+Delete, ChatGPTBegin/model/select/disconnect and true client cancellation201/204 plus pre-save owner rejection. File lock independently acquired after AI mechanism return to prove release. No fake IAiClient/provider bypass/new production hook/framework/port/business changes; existing fake HTTP/browser only.
+
+No build/tests for this delta yet. Read-only Docker pipe absent after outage; ONE ordinary docker desktop start --timeout60 completedexit0/8.522s,PID27900 creation2026-11-16T13:09:17.635324Z, .local-dev/logs/b202-docker-start01.log retained. Engine now29.9.2 ready, no install/reset/sharedconfig/cleanup. No owned active runner at this save. Pending dotnet build SocialTelemetry.slnx --no-restore -> .local-dev/logs/b202-build01.log; exact20 method suffixes below Windows ->SAMEfinalfiveDLL Linux focused01. F .local-dev/runs/b202-* process temp/home/cache +explicit App/media/LocalAccess/provider/framework isolated fixture roots, disposablePG17-alpine +fileSQLite. Linux cachedaspnet10/root/x64/glibc/--init/--rm/--pull=never/readonlyinput/F-bind/socket, NOT SDK/fullsuite/native/liveprovider proof. No broad/Qwen/Whisper/EF/schema/model/downloads. UTC/PIDcreation/retainedexec/sourcefiveDLL/summary/exit logged as launched, no green claim before summary. Old failures/keyring/SQL-file qualifications retained.
+
+Source32 raw SHA256 before build:
+- SocialTelemetry.Api/Features/AiConnection/Begin/Endpoint.cs 50463ADDCE1B37F39C7D886C38200C68CD33219EBA779919904916A3DB9E63BC
+- SocialTelemetry.Api/Features/AiConnection/Disconnect/Endpoint.cs D800AA713A5ABE53BEFCFE8C4A16059CD4901B926E71E1FA170EEA629FE20A6B
+- SocialTelemetry.Api/Features/AiConnection/SelectConnection/Endpoint.cs 3931F6B2689DC6BE58D044BC6FE2B0BB9F955B3F0B0EFCE1E222E31586ED49A8
+- SocialTelemetry.Api/Features/AiConnection/SelectModel/Endpoint.cs F997B8B09235A6B262E49F37E3065467995DDC99C48C6B4B88B4DFD3EA743BC0
+- SocialTelemetry.Api/Features/Interactions/AddAttachment/Endpoint.cs BE56F3840AED5E30F5B111291C018E1CF32FA5CFBAC8CE36E975FEC61A059EB7
+- SocialTelemetry.Api/Features/Interactions/Create/Endpoint.cs EDBEFD159CF30F0E39D127784746B31EF39A89A124661E914CF863695CD9C18B
+- SocialTelemetry.Api/Features/Interactions/Delete/Endpoint.cs 27BBDFB6BCD650031114A676893B4A272D36698501000D3973E5751492140463
+- SocialTelemetry.Api/Features/Interactions/DeleteAttachment/Endpoint.cs 4FE4AAE831873418E1711D531BFA44FC1E6BEB9C0D49807780DC8B068F8E57E7
+- SocialTelemetry.Api/Features/Interactions/PutTranscript/Endpoint.cs 295691E5BA01AFC4903C595503AD1163CC2E03AA1932014A05CEA4B6BFCE28DD
+- SocialTelemetry.Api/Features/Interactions/TranscribeAttachment/Endpoint.cs 1173A7AA7A8217143182DAE2168961ACB23787F45C78652C5906BE12EC35EA26
+- SocialTelemetry.Api/Features/Interactions/Update/Endpoint.cs B143C99A76FB8BE6EC1FCB060DD4D7F88EC3C9EE01F831BF3F604B87FFFC3471
+- SocialTelemetry.Api/Features/LocalProfiles/Rename/Endpoint.cs FE5B72036B3B965EE69D60F7EE8D1FB38A6204D019B4FC9A46FAFED8A5C32EAD
+- SocialTelemetry.Api/Features/People/AddExternalConnection/Endpoint.cs A24BFBD1551B85536E20FBBE9F93BEB76163B3FF95086D53807918E7C8F815BD
+- SocialTelemetry.Api/Features/People/Archive/Endpoint.cs D213BA2A9369C3C6181E83F74813F09D04E9288684E48FE296E884EA88A069F5
+- SocialTelemetry.Api/Features/People/Create/Endpoint.cs E26F6E9CB011ED2D2036E5850ED147924093A75892EFD946184E03F2A958B969
+- SocialTelemetry.Api/Features/People/Delete/Endpoint.cs 56A9D0A5F125ED94F74740D2BE9BC2092C39AFF1979926B06F3805106A7E59A5
+- SocialTelemetry.Api/Features/People/DeleteAvatar/Endpoint.cs 0ABFE4963F46BE283420BBD12F44829E85A30C0CED59D1CFF09DCC0677DF7101
+- SocialTelemetry.Api/Features/People/DeleteExternalConnection/Endpoint.cs 4D98ED75EF70DA797F78B5BEA0B025B110BA75FBFCF044D5FEC060D4A9569139
+- SocialTelemetry.Api/Features/People/Unarchive/Endpoint.cs 18C66587370D05DA75AD54C6E7C804A23BE9B8EF2FA53E1BEE4C7F7F5465328D
+- SocialTelemetry.Api/Features/People/Update/Endpoint.cs 3708021F7849870B514B40B28B8ECDE5CB0D3CFBB1E15388D2C5181CBD0DCF6D
+- SocialTelemetry.Api/Features/People/UpdateExternalConnection/Endpoint.cs 916BE099B4D475F935D0F6774DF7A0BD38B571F4E4C4CDBA64C42022CFE27025
+- SocialTelemetry.Api/Features/People/UploadAvatar/Endpoint.cs 1FB1C622E5763893047843F463A3B468F74120349E24CBAFB9B726F04E002715
+- SocialTelemetry.Api/Features/PersonFacts/Add/Endpoint.cs 44D3CC9070F0BE3B8B01490A089797361B44AA69E5AFFDB6F2BB866B6F8B285B
+- SocialTelemetry.Api/Features/PersonFacts/Delete/Endpoint.cs F1986FFF5A8A4BCE87E5A957B6A65AF63AE177BE72BE29792171D0F46B9446B6
+- SocialTelemetry.Api/Features/PersonFacts/Update/Endpoint.cs A4903113FCFE637AF1BBA3241D8297D3E6ABB8E263D329369EDD68396339F2E1
+- SocialTelemetry.Api/Features/UserProfile/AddExternalConnection/Endpoint.cs E934FD9EB4E68EE4272DB46B05D7FB5EC8AF8EE73EE6DEF3BB34822CC4C32661
+- SocialTelemetry.Api/Features/UserProfile/DeleteAvatar/Endpoint.cs 81B100682EE16845179C49A8A894DC5EAE76E880951A112A5041FC135F05CEB8
+- SocialTelemetry.Api/Features/UserProfile/DeleteExternalConnection/Endpoint.cs 480B891313F1EC42E4A97A1675E0E0B953608D83D917B1BDEF0E8E54808BF3F8
+- SocialTelemetry.Api/Features/UserProfile/Update/Endpoint.cs 5A33A75C0439A8460F9E654FA95C863E6DCEEDB3C986D3453855C333DAB0435D
+- SocialTelemetry.Api/Features/UserProfile/UpdateExternalConnection/Endpoint.cs AF5D085F3F32A50D1A8D970B7A746ADF8F544C1A2BA8523192AD23D5C9288156
+- SocialTelemetry.Api/Features/UserProfile/UploadAvatar/Endpoint.cs 608EC8AC6D3753504001D38136A5DE12178C54982D494ADBA6AEFAC026520445
+- SocialTelemetry.Tests/Features/Profiles/ProfileIsolationTests.cs 60968CC0CF11ED2FB7DAD98C485DFD9C150BF4E3B44F03BCEC1052DB607C6FA2
+
+PRE-B2-02 fiveDLLs (historical, NOT this source proof):
+- Api 8AEEA4507F1E213D50BA6D94A6E7F2B538DBBA91C212E3BE36148FFCC802C387
+- Application 19143FCF5AD92495B4F39127805A71FFA07816D7AEE55E6C18ECD0312295736F
+- Domain 6FF4B651A597C7C092FDC683ECB00FC74C1B51EEE35C945E60109EDD7C7D8879
+- Infrastructure 7DEBCB2B8E954737311F567D5A5AF63964AE07011237D4B10DBAF19096B94E41
+- Tests 20375515EA27C0CFEC87BFC281FDD89C04E424EF59D9C8A9D77A2C9D99D417D1
+
+Exact20 focused method suffixes (each prefixed*, --parallel none --no-ansi --progress off; full command headers in logs):
+- Committed_journal_mutation_delivers_original_response_after_owner_invalidation
+- Committed_ChatGPT_control_response_survives_later_owner_invalidation
+- True_client_cancellation_after_journal_commit_is_not_forged_into_success
+- Owner_invalidation_before_journal_save_still_refuses_the_mutation
+- Valid_analysis_commit_wins_before_waiting_journal_deletion
+- Caller_cancellation_after_analysis_commit_is_not_replaced_by_a_success_response
+- Journal_deletion_cancels_unfinished_AI_or_STT_and_ignored_late_output_cannot_restore_the_graph
+- Add_adds_fact_to_existing_person
+- Update_changes_existing_fact
+- Delete_removes_existing_fact
+- Add_returns_not_found_for_missing_person
+- Update_returns_not_found_for_missing_fact
+- Existing_entities_share_a_separate_BCL_only_domain_assembly
+- Existing_contracts_belong_to_Application_with_only_Domain_and_BCL_dependencies
+- Public_contract_type_graph_contains_only_Application_Domain_and_BCL_types
+- Infrastructure_owns_mechanisms_without_an_Api_reverse_reference
+- Api_has_no_runtime_EF_reference_or_direct_EF_package_except_private_startup_tooling
+- Migrated_HTTP_features_cannot_reach_concrete_mechanisms_or_service_location
+- Guard_rejects_real_forbidden_member_calls
+- Guard_accepts_exception_identity_metadata_without_reflection_lookup_or_invocation
+
+
+B2-02 BEFORE focused runs: build01 completed2026-11-16T13:11:04.453496Z, dotnet build SocialTelemetry.slnx --no-restore,0warnings/0errors exit0,14.45s MSBuild/15.063s wrapper; PID40792/retainedexec79107 completed. Source32 frozen BEFORE build01; no owned active runner at this save. Pending Windows then SAMEfinalfiveDLL Linux exact20methods above --parallel none --no-ansi --progress off, .local-dev/logs/b202-{windows,linux}-focused01.log; real bothDB +architecture. Actual PIDcreation/handles/UTC/summary/exits logged as launched, no source edits/rebuild/greenrepeat planned. Candidate final build01 fiveDLLs:
+- Api DAF921971CD17DF0E2C1F80E2E5ADBC90A470B771EAE975CC2C9D226877A87C8
+- Application 8C28EBAEB2D9516CF4D56666A5AFC36AA5F21F3DAA8C397F76A6883F7D78CB41
+- Domain 20BCCD6B174E9B6F0A6BA6364A5833454B979B4DE488937E563295357D878967
+- Infrastructure F4D0EF51AA1BDDE3B48AAA5EF2639EC0B432923DB956FC7C77B5F3C81A449A65
+- Tests E035A7B5BF6E8F65FDE1498C3EFD81A3115DB1D4C593818054D644A9534D2D5B
+
+
+B2-02 Windows focused01 completed2026-11-16T13:13:03.031540Z:73passed/0failed/0skipped exit0,32.842s framework/33.245s wrapper; PID42332/creationUTC13:12:29.797249Z/retainedexec16360 complete. Source32/build01 fiveDLL frozen; no source/test edits/rebuild/retry. Exact31/31 endpoint inverse comparison matched baseline after removing ONLY import/local transport declaration/success Send token; all scenario/catches/payloads unchanged. Initial read-only comparison script AssertionError was its whitespace removal, corrected checker without source/test edit; no product/test failure. Pending Linux SAME20methods/SAMEfiveDLL .local-dev/logs/b202-linux-focused01.log --rm socialtelemetry-b202; ownedDockerPID/creationUTC/childPID/retainedexec recorded at launch. No Linuxgreenclaim yet; no owned active runner at this save. Root final integrity/OWNER STOP boundary retained.
 
 ### B1-P2 final implementation/test/review checkpoint (Backend, 2026-11-15; review closure 2026-11-16; SOURCE STOP)
 

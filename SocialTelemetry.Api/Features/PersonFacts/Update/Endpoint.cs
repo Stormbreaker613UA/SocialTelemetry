@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.PersonFacts.Update;
@@ -23,7 +24,8 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
                 Value = request.Value,
                 Source = request.Source
             }, cancellationToken);
-            await Send.OkAsync(new Response(fact.Id, fact.PersonId, fact.Value, fact.Source, fact.CreatedAt), cancellationToken);
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+            await Send.OkAsync(new Response(fact.Id, fact.PersonId, fact.Value, fact.Source, fact.CreatedAt), transport);
         }
         catch (FeatureValidationException exception)
         {

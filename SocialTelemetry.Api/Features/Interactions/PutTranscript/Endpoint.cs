@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using FastEndpoints;
 using SocialTelemetry.Application.Exceptions;
 using SocialTelemetry.Application.Features.Interactions.PutTranscript;
@@ -29,7 +30,8 @@ public sealed class Endpoint(Scenario scenario) : Endpoint<Request, Response>
                 transcript.CorrectedText ?? transcript.GeneratedText ?? string.Empty, transcript.ReviewStatus, transcript.ReviewedAt,
                 transcript.Version, transcript.SourceSha256, transcript.Provider, transcript.Model, transcript.TranscriptionVersion,
                 transcript.CreatedAt, transcript.UpdatedAt);
-            await Send.ResponseAsync(response, result.Created ? 201 : 200, cancellationToken);
+            var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+            await Send.ResponseAsync(response, result.Created ? 201 : 200, transport);
         }
         catch (FeatureValidationException exception)
         {

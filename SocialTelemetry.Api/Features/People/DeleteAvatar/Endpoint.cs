@@ -1,3 +1,4 @@
+using SocialTelemetry.Api.Common.Profiles;
 using SocialTelemetry.Application.Features.ProfileAvatars;
 using FastEndpoints;
 
@@ -16,6 +17,7 @@ public sealed class Endpoint(ProfileAvatarService avatars) : Endpoint<Request>
     {
         var owner = await avatars.FindOwnerAsync(request.Id, cancellationToken);
         await avatars.DeleteAsync(owner, cancellationToken);
-        await Send.NoContentAsync(cancellationToken);
+        var transport = HttpContext.Features.Get<LocalProfileRequestTransport>()?.OriginalCancellation ?? cancellationToken;
+        await Send.NoContentAsync(transport);
     }
 }

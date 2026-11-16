@@ -1,3 +1,6 @@
+using SocialTelemetry.Application.Features.People;
+using SocialTelemetry.Application.Features.UserProfile;
+using SocialTelemetry.Application.Features.AiConnection;
 using SocialTelemetry.Api.Common.Profiles;
 using SocialTelemetry.Application.Features.Analysis;
 using SocialTelemetry.Application.Contracts.Profiles;
@@ -252,6 +255,364 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
             await AssertStoredAsync(first, 1);
         }
         finally { response.Continue.TrySetResult(); }
+    }
+
+    [Theory]
+    [InlineData("create", false)]
+    [InlineData("create", true)]
+    [InlineData("update", false)]
+    [InlineData("update", true)]
+    [InlineData("archive", false)]
+    [InlineData("archive", true)]
+    [InlineData("rename", false)]
+    [InlineData("rename", true)]
+    [InlineData("create-delete", false)]
+    [InlineData("create-delete", true)]
+    public async Task Committed_journal_mutation_delivers_original_response_after_owner_invalidation(string mutation, bool otherHost)
+    {
+        var first = await SeedAsync();
+        var second = await SeedAsync();
+        await fixture.SelectProfileAsync(first.Owner);
+        var gate = new MutationDeliveryGate();
+        using var host = Host(services => ConfigureMutationDelivery(services, gate));
+        using var remote = otherHost ? Host(RemoveExpirationTimer, host.CredentialDirectory) : null;
+        using var client = host.Client();
+        using var changingClient = (remote ?? host).Client();
+        var before = await CurrentAsync(client);
+        SetOwner(client, first.Owner, before.Version);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        gate.Arm();
+        var running = SendJournalMutationAsync(client, first, before.Version, mutation, deadline.Token);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            Assert.True(gate.Committed);
+            Assert.Equal(first.Owner, gate.Owner);
+            Assert.False(gate.OwnerLifetime.IsCancellationRequested);
+            await AssertJournalMutationStoredAsync(first, gate.Target, mutation);
+            if (mutation == "create-delete") await DeleteOpenedAsync(remote ?? host, first.Owner);
+            else await SwitchAsync(changingClient, second.Owner);
+            if (otherHost)
+            {
+                Assert.False(gate.OwnerLifetime.IsCancellationRequested);
+                await using var refresh = host.Application.Services.CreateAsyncScope();
+                await refresh.ServiceProvider.GetRequiredService<LocalAccessManagement>().ExpireAsync(deadline.Token);
+            }
+            Assert.True(gate.OwnerLifetime.IsCancellationRequested);
+            gate.Continue.TrySetResult();
+            using var response = await running;
+            var expected = mutation == "archive" ? HttpStatusCode.NoContent :
+                mutation.StartsWith("create", StringComparison.Ordinal) ? HttpStatusCode.Created : HttpStatusCode.OK;
+            Assert.Equal(expected, response.StatusCode);
+            Assert.Equal(first.Owner.ToString(), Assert.Single(response.Headers.GetValues(LocalProfileMiddleware.OwnerHeader)));
+            Assert.Equal(before.Version.ToString(), Assert.Single(response.Headers.GetValues(LocalProfileMiddleware.VersionHeader)));
+            if (mutation == "rename")
+            {
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>(deadline.Token);
+                Assert.Equal(first.Owner, result.GetProperty("userProfileId").GetGuid());
+                Assert.Equal("Committed profile", result.GetProperty("displayName").GetString());
+            }
+            else if (mutation != "archive")
+            {
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>(deadline.Token);
+                Assert.Equal(gate.Target, result.GetProperty("id").GetGuid());
+            }
+            Assert.Equal(1, gate.Pauses);
+            if (mutation != "create-delete") await AssertJournalMutationStoredAsync(first, gate.Target, mutation);
+            else
+            {
+                await using var checking = fixture.CreateAsyncScope();
+                Assert.False(await checking.ServiceProvider.GetRequiredService<AppDbContext>().People.AnyAsync(person => person.Id == gate.Target, deadline.Token));
+            }
+            await using var untouched = fixture.CreateAsyncScope();
+            var database = untouched.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.False(await database.People.AnyAsync(person => person.UserProfileId == second.Owner && person.DisplayName == "Committed person", deadline.Token));
+        }
+        finally { gate.Continue.TrySetResult(); using (await running) { } }
+    }
+
+    [Theory]
+    [InlineData("begin", false)]
+    [InlineData("begin", true)]
+    [InlineData("connection", false)]
+    [InlineData("connection", true)]
+    [InlineData("model", false)]
+    [InlineData("model", true)]
+    [InlineData("disconnect", false)]
+    [InlineData("disconnect", true)]
+    public async Task Committed_ChatGPT_control_response_survives_later_owner_invalidation(string mutation, bool otherHost)
+    {
+        var first = await SeedAsync();
+        var second = await SeedAsync();
+        await fixture.SelectProfileAsync(first.Owner);
+        var gate = new MutationDeliveryGate();
+        using var host = Host(services => ConfigureMutationDelivery(services, gate));
+        using var remote = otherHost ? Host(RemoveExpirationTimer, host.CredentialDirectory) : null;
+        using var client = host.Client();
+        using var changingClient = (remote ?? host).Client();
+        var original = await LegacyAsync(host);
+        await AdoptAsync(client, original);
+        var alternative = await LegacyAsync(host);
+        ProfileAiSelection initial;
+        await using (var checking = fixture.CreateAsyncScope())
+            initial = await checking.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == first.Owner, Cancellation);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        gate.Arm();
+        var running = mutation switch
+        {
+            "begin" => client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, deadline.Token),
+            "connection" => client.PutAsJsonAsync("/ai-connection/chatgpt/connection", new { ConnectionId = alternative, AdoptUnassigned = true }, deadline.Token),
+            "model" => client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = "gpt-5.6" }, deadline.Token),
+            "disconnect" => client.DeleteAsync("/ai-connection/chatgpt", deadline.Token),
+            _ => throw new InvalidOperationException()
+        };
+        try
+        {
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            Assert.True(gate.Committed);
+            ProfileAiSelection committed;
+            await using (var checking = fixture.CreateAsyncScope())
+                committed = await checking.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == first.Owner, deadline.Token);
+            Assert.NotEqual(initial.Generation, committed.Generation);
+            Assert.Equal(mutation == "connection" ? alternative : original, committed.ConnectionId);
+            Assert.Equal(mutation != "disconnect", committed.Enabled);
+            Assert.Equal(mutation == "model" ? "gpt-5.6" : initial.ModelId, committed.ModelId);
+            var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+            // This acquisition proves the real credential mechanism released its file protection.
+            using (await store.LockAsync(deadline.Token))
+            {
+                var state = await store.ReadAsync(deadline.Token);
+                var account = state.Accounts.Single(account => account.Id == committed.ConnectionId);
+                Assert.Equal(first.Owner, account.UserProfileId);
+                Assert.Equal(mutation != "disconnect", account.Tokens is not null);
+            }
+            if (mutation == "begin") Assert.NotNull(host.Browser.LastUri);
+            await SwitchAsync(changingClient, second.Owner);
+            if (otherHost)
+            {
+                Assert.False(gate.OwnerLifetime.IsCancellationRequested);
+                await using var refresh = host.Application.Services.CreateAsyncScope();
+                await refresh.ServiceProvider.GetRequiredService<LocalAccessManagement>().ExpireAsync(deadline.Token);
+            }
+            Assert.True(gate.OwnerLifetime.IsCancellationRequested);
+            gate.Continue.TrySetResult();
+            using var response = await running;
+            Assert.Equal(mutation == "connection" ? HttpStatusCode.NoContent : HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(first.Owner.ToString(), Assert.Single(response.Headers.GetValues(LocalProfileMiddleware.OwnerHeader)));
+            if (mutation == "model")
+                Assert.Equal("gpt-5.6", (await response.Content.ReadFromJsonAsync<JsonElement>(deadline.Token)).GetProperty("modelId").GetString());
+            if (mutation == "begin")
+                Assert.True((await response.Content.ReadFromJsonAsync<JsonElement>(deadline.Token)).GetProperty("browserOpened").GetBoolean());
+            await using var final = fixture.CreateAsyncScope();
+            var saved = await final.ServiceProvider.GetRequiredService<AppDbContext>().Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == first.Owner, deadline.Token);
+            Assert.Equal(committed.Generation, saved.Generation);
+            Assert.Equal(committed.ConnectionId, saved.ConnectionId);
+            Assert.Equal(committed.ModelId, saved.ModelId);
+            Assert.Equal(committed.Enabled, saved.Enabled);
+            Assert.Equal(1, gate.Pauses);
+            Assert.Equal(0, host.Server.InferenceCount);
+        }
+        finally { gate.Continue.TrySetResult(); using (await running) { } }
+    }
+
+    [Theory]
+    [InlineData("create")]
+    [InlineData("archive")]
+    public async Task True_client_cancellation_after_journal_commit_is_not_forged_into_success(string mutation)
+    {
+        var first = await SeedAsync();
+        await fixture.SelectProfileAsync(first.Owner);
+        var gate = new MutationDeliveryGate();
+        using var host = Host(services => ConfigureMutationDelivery(services, gate));
+        using var client = host.Client();
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        var before = await CurrentAsync(client);
+        gate.Arm();
+        var running = SendJournalMutationAsync(client, first, before.Version, mutation, caller.Token);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            Assert.True(gate.Committed);
+            await AssertJournalMutationStoredAsync(first, gate.Target, mutation);
+            caller.Cancel();
+            gate.Continue.TrySetResult();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+            await gate.Released.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            await AssertJournalMutationStoredAsync(first, gate.Target, mutation);
+        }
+        finally { gate.Continue.TrySetResult(); }
+    }
+
+    [Fact]
+    public async Task Owner_invalidation_before_journal_save_still_refuses_the_mutation()
+    {
+        var first = await SeedAsync();
+        var second = await SeedAsync();
+        await fixture.SelectProfileAsync(first.Owner);
+        var gate = new MutationDeliveryGate { BeforeMutation = true };
+        using var host = Host(services => ConfigureMutationDelivery(services, gate));
+        using var client = host.Client();
+        var before = await CurrentAsync(client);
+        gate.Arm();
+        var running = SendJournalMutationAsync(client, first, before.Version, "create", Cancellation);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15), Cancellation);
+            Assert.False(gate.Committed);
+            await SwitchAsync(client, second.Owner);
+            Assert.True(gate.OwnerLifetime.IsCancellationRequested);
+            gate.Continue.TrySetResult();
+            using var response = await running;
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            await using var scope = fixture.CreateAsyncScope();
+            Assert.False(await scope.ServiceProvider.GetRequiredService<AppDbContext>().People.AnyAsync(person => person.Id == gate.Target, Cancellation));
+        }
+        finally { gate.Continue.TrySetResult(); using (await running) { } }
+    }
+
+    private static Task<HttpResponseMessage> SendJournalMutationAsync(HttpClient client, Seed owner, Guid version,
+        string mutation, CancellationToken cancellationToken) => mutation switch
+    {
+        "create" or "create-delete" => client.PostAsJsonAsync("/people", new { UserProfileId = owner.Owner, DisplayName = "Committed person" }, cancellationToken),
+        "update" => client.PutAsJsonAsync($"/people/{owner.Person}", new { DisplayName = "Committed person" }, cancellationToken),
+        "archive" => client.PutAsJsonAsync($"/people/{owner.Person}/archive", new { }, cancellationToken),
+        "rename" => client.PatchAsJsonAsync($"/local-profiles/{owner.Owner}/name", new { DisplayName = "Committed profile", ExpectedVersion = version }, cancellationToken),
+        _ => throw new InvalidOperationException()
+    };
+
+    private async Task AssertJournalMutationStoredAsync(Seed owner, Guid target, string mutation)
+    {
+        await using var scope = fixture.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (mutation == "rename")
+            Assert.Equal("Committed profile", (await database.UserProfiles.AsNoTracking().SingleAsync(profile => profile.Id == owner.Owner, Cancellation)).DisplayName);
+        else
+        {
+            var person = await database.People.AsNoTracking().SingleAsync(person => person.Id == target, Cancellation);
+            Assert.Equal(owner.Owner, person.UserProfileId);
+            if (mutation == "archive") Assert.NotNull(person.ArchivedAt);
+            else Assert.Equal("Committed person", person.DisplayName);
+            Assert.Equal(1, await database.People.CountAsync(row => row.Id == target, Cancellation));
+        }
+    }
+
+    private static void RemoveExpirationTimer(IServiceCollection services)
+    {
+        foreach (var descriptor in services.Where(service => service.ImplementationType == typeof(LocalAccessExpirationService)).ToArray())
+            services.Remove(descriptor);
+    }
+
+    private static void ConfigureMutationDelivery(IServiceCollection services, MutationDeliveryGate gate)
+    {
+        RemoveExpirationTimer(services);
+        services.RemoveAll<IPeoplePersistence>();
+        services.AddScoped<IPeoplePersistence>(provider =>
+        {
+            var database = provider.GetRequiredService<AppDbContext>();
+            return new DeliveryPeoplePersistence(new PeoplePersistence(database), database,
+                provider.GetRequiredService<LocalProfileOperation>(), gate);
+        });
+        services.RemoveAll<IUserProfilePersistence>();
+        services.AddScoped<IUserProfilePersistence>(provider =>
+        {
+            var database = provider.GetRequiredService<AppDbContext>();
+            return new DeliveryProfilePersistence(new UserProfilePersistence(database), database,
+                provider.GetRequiredService<LocalProfileOperation>(), gate);
+        });
+        services.RemoveAll<IProfileAiManagement>();
+        services.AddScoped<IProfileAiManagement>(provider => new DeliveryAiManagement(
+            new ProfileAiManagement(provider.GetRequiredService<ProfileAiAccess>(), provider.GetRequiredService<ChatGptCapabilityResolver>()),
+            provider.GetRequiredService<AppDbContext>(), provider.GetRequiredService<LocalProfileOperation>(), gate));
+    }
+
+    private sealed class MutationDeliveryGate
+    {
+        private int armed;
+        public bool BeforeMutation { get; init; }
+        public bool Committed { get; private set; }
+        public Guid Owner { get; private set; }
+        public Guid Target { get; private set; }
+        public int Pauses { get; private set; }
+        public CancellationToken OwnerLifetime { get; private set; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Released { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Arm() => Interlocked.Exchange(ref armed, 1);
+        public async Task PauseAsync(AppDbContext database, LocalProfileOperation operation, Guid target, bool committed = true)
+        {
+            if (Interlocked.Exchange(ref armed, 0) == 0) return;
+            Assert.Null(database.Database.CurrentTransaction);
+            Committed = committed; Owner = operation.RequireOwner(); Target = target;
+            OwnerLifetime = operation.Lifetime; Pauses++;
+            Entered.TrySetResult();
+            // AFTER real persistence/management returned and released all protection, never inside a commit interceptor.
+            try { await Continue.Task; }
+            finally { Released.TrySetResult(); }
+        }
+    }
+
+    private sealed class DeliveryPeoplePersistence(IPeoplePersistence inner, AppDbContext database,
+        LocalProfileOperation operation, MutationDeliveryGate gate) : IPeoplePersistence
+    {
+        public Task<bool> ProfileExistsAsync(Guid owner, Guid profile, CancellationToken token) => inner.ProfileExistsAsync(owner, profile, token);
+        public Task<Person?> FindPersonAsync(Guid owner, Guid person, bool readOnly, CancellationToken token) => inner.FindPersonAsync(owner, person, readOnly, token);
+        public Task<IReadOnlyList<Person>> ListPeopleAsync(Guid owner, bool? archived, CancellationToken token, bool? favorite = null, Guid? group = null) => inner.ListPeopleAsync(owner, archived, token, favorite, group);
+        public Task<Person> SetFavoriteAsync(Guid owner, Guid person, Action<Person> mutate, CancellationToken token) => inner.SetFavoriteAsync(owner, person, mutate, token);
+        public async Task AddPersonAsync(Person person, CancellationToken token)
+        {
+            if (gate.BeforeMutation) await gate.PauseAsync(database, operation, person.Id, committed: false);
+            await inner.AddPersonAsync(person, token);
+            if (!gate.BeforeMutation) await gate.PauseAsync(database, operation, person.Id);
+        }
+        public async Task SavePersonAsync(Person person, CancellationToken token)
+        {
+            await inner.SavePersonAsync(person, token);
+            await gate.PauseAsync(database, operation, person.Id);
+        }
+        public Task DeletePersonAsync(Person person, CancellationToken token) => inner.DeletePersonAsync(person, token);
+    }
+
+    private sealed class DeliveryProfilePersistence(IUserProfilePersistence inner, AppDbContext database,
+        LocalProfileOperation operation, MutationDeliveryGate gate) : IUserProfilePersistence
+    {
+        public Task<SocialTelemetry.Domain.Users.UserProfile?> FindProfileAsync(Guid owner, bool readOnly, CancellationToken token) => inner.FindProfileAsync(owner, readOnly, token);
+        public async Task SaveProfileAsync(SocialTelemetry.Domain.Users.UserProfile profile, CancellationToken token)
+        {
+            await inner.SaveProfileAsync(profile, token);
+            await gate.PauseAsync(database, operation, profile.Id);
+        }
+    }
+
+    private sealed class DeliveryAiManagement(IProfileAiManagement inner, AppDbContext database,
+        LocalProfileOperation operation, MutationDeliveryGate gate) : IProfileAiManagement
+    {
+        public async Task BeginAsync(Guid? id, bool newAccount, bool consent, CancellationToken token)
+        {
+            await inner.BeginAsync(id, newAccount, consent, token);
+            await gate.PauseAsync(database, operation, operation.RequireOwner());
+        }
+        public Task<ConnectionStatus> CompleteAsync(string? state, string? code, string? client, string? error, CancellationToken token) => inner.CompleteAsync(state, code, client, error, token);
+        public async Task<DisconnectResult> DisconnectAsync(CancellationToken token)
+        {
+            var result = await inner.DisconnectAsync(token);
+            await gate.PauseAsync(database, operation, operation.RequireOwner());
+            return result;
+        }
+        public Task<ModelCatalog> ModelsAsync(CancellationToken token) => inner.ModelsAsync(token);
+        public async Task SelectConnectionAsync(Guid id, bool adopt, CancellationToken token)
+        {
+            await inner.SelectConnectionAsync(id, adopt, token);
+            await gate.PauseAsync(database, operation, id);
+        }
+        public async Task SelectModelAsync(string model, CancellationToken token)
+        {
+            await inner.SelectModelAsync(model, token);
+            await gate.PauseAsync(database, operation, operation.RequireOwner());
+        }
+        public Task<ConnectionStatus> StatusAsync(CancellationToken token) => inner.StatusAsync(token);
+        public Task<IReadOnlyList<ConnectionIdentity>> UnassignedAsync(CancellationToken token) => inner.UnassignedAsync(token);
     }
 
     private static void ConfigureCommittedResponse(IServiceCollection services, CommittedResponseGate response)
