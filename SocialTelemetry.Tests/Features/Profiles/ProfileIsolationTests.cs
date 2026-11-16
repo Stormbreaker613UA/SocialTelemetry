@@ -908,6 +908,249 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Paused_catalog_does_not_block_final_analysis_credential_lease(bool otherHost)
+    {
+        var owner = await SeedAsync();
+        await fixture.SelectProfileAsync(owner.Owner);
+        var gate = new CatalogGate();
+        using var host = Host(catalogGate: otherHost ? null : gate);
+        using var remote = otherHost ? Host(credentialDirectory: host.CredentialDirectory, catalogGate: gate) : null;
+        using var client = host.Client();
+        using var catalogClient = (remote ?? host).Client();
+        await AdoptAsync(client, await LegacyAsync(host));
+        host.Server.StreamBody = CompletedResult(owner.Person);
+        host.Server.InferenceStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.Server.ContinueInference = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var analysis = client.PostAsJsonAsync($"/interactions/{owner.Interaction}/analyze", new { }, deadline.Token);
+        Task<HttpResponseMessage>? catalog = null;
+        try
+        {
+            await host.Server.InferenceStarted.Task.WaitAsync(deadline.Token);
+            gate.Arm();
+            catalog = catalogClient.GetAsync("/ai-connection/chatgpt/models", deadline.Token);
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            Assert.True((await StatusAsync(catalogClient)).Connected);
+            host.Server.ContinueInference.TrySetResult();
+            using var committed = await analysis;
+            Assert.Equal(HttpStatusCode.Created, committed.StatusCode);
+            await AssertStoredAsync(owner, 1);
+            Assert.False(catalog.IsCompleted);
+            gate.Continue.TrySetResult();
+            using var models = await catalog;
+            Assert.Equal(HttpStatusCode.OK, models.StatusCode);
+        }
+        finally
+        {
+            gate.Continue.TrySetResult();
+            host.Server.ContinueInference.TrySetResult();
+            if (catalog is not null) using (await catalog) { }
+            using (await analysis) { }
+        }
+    }
+
+    [Fact]
+    public async Task Catalog_paused_during_inference_preparation_cannot_issue_a_reconnected_session()
+    {
+        var owner = await SeedAsync();
+        await fixture.SelectProfileAsync(owner.Owner);
+        var gate = new CatalogGate { IgnoreCancellation = true };
+        using var host = Host(catalogGate: gate);
+        using var remote = Host(credentialDirectory: host.CredentialDirectory);
+        using var client = host.Client();
+        using var remoteClient = remote.Client();
+        using (var begin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, begin.StatusCode);
+        using (var callback = await client.GetAsync(host.Callback(), Cancellation))
+            Assert.Equal(HttpStatusCode.OK, callback.StatusCode);
+        using (var selected = await client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = "gpt-5.6-sol" }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, selected.StatusCode);
+        host.Server.StreamBody = CompletedResult(owner.Person);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        gate.Arm();
+        var analysis = client.PostAsJsonAsync($"/interactions/{owner.Interaction}/analyze", new { }, deadline.Token);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            using (var disconnected = await remoteClient.DeleteAsync("/ai-connection/chatgpt", deadline.Token))
+                Assert.Equal(HttpStatusCode.OK, disconnected.StatusCode);
+            using (var begin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, deadline.Token))
+                Assert.Equal(HttpStatusCode.OK, begin.StatusCode);
+            using (var callback = await client.GetAsync(host.Callback(), deadline.Token))
+                Assert.Equal(HttpStatusCode.OK, callback.StatusCode);
+            gate.Continue.TrySetResult();
+            using var late = await analysis;
+            Assert.Equal(HttpStatusCode.Conflict, late.StatusCode);
+            Assert.Equal(0, host.Server.InferenceCount);
+            Assert.True((await StatusAsync(client)).Connected);
+            await AssertStoredAsync(owner, 0);
+        }
+        finally { gate.Continue.TrySetResult(); using (await analysis) { } }
+    }
+
+    [Theory]
+    [InlineData("model")]
+    [InlineData("connection")]
+    [InlineData("disconnect")]
+    [InlineData("switch")]
+    public async Task Late_catalog_cannot_publish_a_selection_after_original_binding_changes(string change)
+    {
+        var owner = await SeedAsync();
+        var second = await SeedAsync();
+        await fixture.SelectProfileAsync(owner.Owner);
+        var gate = new CatalogGate { IgnoreCancellation = true };
+        using var host = Host(catalogGate: gate);
+        using var client = host.Client();
+        var original = await LegacyAsync(host);
+        await AdoptAsync(client, original);
+        var alternative = await LegacyAsync(host);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        gate.Arm();
+        var changing = client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = "gpt-5.6" }, deadline.Token);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            if (change == "model")
+            {
+                using var changed = await client.PutAsJsonAsync("/ai-connection/chatgpt/model", new { ModelId = "gpt-5.6" }, deadline.Token);
+                Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+            }
+            if (change == "connection") await AdoptAsync(client, alternative);
+            if (change == "disconnect")
+            {
+                using var disconnected = await client.DeleteAsync("/ai-connection/chatgpt", deadline.Token);
+                Assert.Equal(HttpStatusCode.OK, disconnected.StatusCode);
+            }
+            if (change == "switch") await SwitchAsync(client, second.Owner);
+            await using var scope = fixture.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var before = await database.Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == owner.Owner, deadline.Token);
+            gate.Continue.TrySetResult();
+            using var late = await changing;
+            Assert.Equal(HttpStatusCode.Conflict, late.StatusCode);
+            var after = await database.Set<ProfileAiSelection>().AsNoTracking().SingleAsync(row => row.UserProfileId == owner.Owner, deadline.Token);
+            Assert.Equal(before.Generation, after.Generation);
+            Assert.Equal(before.ConnectionId, after.ConnectionId);
+            Assert.Equal(before.ModelId, after.ModelId);
+            Assert.Equal(before.Enabled, after.Enabled);
+            await AssertStoredAsync(owner, 0);
+        }
+        finally { gate.Continue.TrySetResult(); using (await changing) { } }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Catalog_cancellation_or_replaced_claim_cannot_return_captured_credentials(bool replaceClaim)
+    {
+        var owner = await SeedAsync();
+        await fixture.SelectProfileAsync(owner.Owner);
+        var gate = new CatalogGate { IgnoreCancellation = true };
+        using var host = Host(catalogGate: gate);
+        using var client = host.Client();
+        var id = await LegacyAsync(host);
+        await AdoptAsync(client, id);
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        // Use the actual owned connection boundary so true caller cancellation is observable.
+        var connection = host.Application.Services.GetRequiredService<ChatGptConnection>();
+        gate.Arm();
+        var catalog = connection.GetOwnedModelsAsync(owner.Owner, id, "gpt-5.6-sol", caller.Token);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            var store = host.Application.Services.GetRequiredService<ChatGptCredentialStore>();
+            using (await store.LockAsync(deadline.Token))
+            {
+                var state = await store.ReadAsync(deadline.Token);
+                if (replaceClaim)
+                {
+                    state.Accounts.Single(account => account.Id == id).UserProfileId = Guid.NewGuid();
+                    await store.SaveAsync(state, deadline.Token);
+                }
+            }
+            if (!replaceClaim) caller.Cancel();
+            gate.Continue.TrySetResult();
+            if (replaceClaim)
+            {
+                var error = await Assert.ThrowsAsync<AiProviderException>(() => catalog);
+                Assert.Equal(AiFailure.ExecutionInvalidated, error.Failure);
+            }
+            else await Assert.ThrowsAnyAsync<OperationCanceledException>(() => catalog);
+            using (await store.LockAsync(deadline.Token))
+            {
+                var saved = await store.ReadAsync(deadline.Token);
+                Assert.Equal("private-access-synthetic", saved.Accounts.Single(account => account.Id == id).Tokens!.AccessToken);
+            }
+        }
+        finally { gate.Continue.TrySetResult(); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Stale_catalog_unauthorized_response_does_not_rotate_another_hosts_replacement(bool reconnect)
+    {
+        var owner = await SeedAsync();
+        await fixture.SelectProfileAsync(owner.Owner);
+        var clock = new TestClock();
+        var gate = new CatalogGate { IgnoreCancellation = true };
+        using var host = Host(services => { services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(clock); }, catalogGate: gate);
+        using var client = host.Client();
+        using (var begin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, Cancellation))
+            Assert.Equal(HttpStatusCode.OK, begin.StatusCode);
+        using (var callback = await client.GetAsync(host.Callback(), Cancellation))
+            Assert.Equal(HttpStatusCode.OK, callback.StatusCode);
+        using var remote = Host(services =>
+        {
+            services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(clock);
+            services.AddHttpClient<ChatGptHttpClient>().ConfigurePrimaryHttpMessageHandler(() => host.Server).RemoveAllLoggers();
+        }, host.CredentialDirectory);
+        using var remoteClient = remote.Client();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        host.Server.ModelsStatus = HttpStatusCode.Unauthorized;
+        gate.Arm();
+        var stale = client.GetAsync("/ai-connection/chatgpt/models", deadline.Token);
+        try
+        {
+            await gate.Entered.Task.WaitAsync(deadline.Token);
+            host.Server.ModelsStatus = HttpStatusCode.OK;
+            if (reconnect)
+            {
+                using (var disconnected = await remoteClient.DeleteAsync("/ai-connection/chatgpt", deadline.Token))
+                    Assert.Equal(HttpStatusCode.OK, disconnected.StatusCode);
+                using (var begin = await client.PostAsJsonAsync("/ai-connection/chatgpt/connect", new { }, deadline.Token))
+                    Assert.Equal(HttpStatusCode.OK, begin.StatusCode);
+                using (var callback = await client.GetAsync(host.Callback(), deadline.Token))
+                    Assert.Equal(HttpStatusCode.OK, callback.StatusCode);
+            }
+            else
+            {
+                clock.Advance(TimeSpan.FromHours(2));
+                using var refreshed = await remoteClient.GetAsync("/ai-connection/chatgpt/models", deadline.Token);
+                Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
+                Assert.Equal(1, host.Server.RefreshCount);
+            }
+            gate.Continue.TrySetResult();
+            using var result = await stale;
+            Assert.Equal(reconnect ? HttpStatusCode.Conflict : HttpStatusCode.OK, result.StatusCode);
+            Assert.Equal(reconnect ? 0 : 1, host.Server.RefreshCount);
+            Assert.True((await StatusAsync(client)).Connected);
+            using var final = await client.GetAsync("/ai-connection/chatgpt/models", deadline.Token);
+            Assert.Equal(HttpStatusCode.OK, final.StatusCode);
+            Assert.Equal(reconnect ? 0 : 1, host.Server.RefreshCount);
+        }
+        finally { gate.Continue.TrySetResult(); using (await stale) { } }
+    }
+
+    [Theory]
     [InlineData("refusal-event", AiFailure.ProviderRejected)]
     [InlineData("tool-event", AiFailure.MalformedResponse)]
     [InlineData("terminal-refusal", AiFailure.ProviderRejected)]
@@ -1456,7 +1699,7 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
     }
 
     private TestHost Host(Action<IServiceCollection>? configure = null, string? credentialDirectory = null,
-        Dictionary<string, string?>? configuration = null) => new(fixture, configure, credentialDirectory, configuration);
+        Dictionary<string, string?>? configuration = null, CatalogGate? catalogGate = null) => new(fixture, configure, credentialDirectory, configuration, catalogGate);
     private static async Task<SocialTelemetry.Api.Features.LocalProfiles.Get.Response> CurrentAsync(HttpClient client) =>
         await client.GetFromJsonAsync<SocialTelemetry.Api.Features.LocalProfiles.Get.Response>("/local-profiles", Cancellation) ?? throw new InvalidOperationException();
     private static async Task<ChatGptConnectionStatus> StatusAsync(HttpClient client) =>
@@ -1519,7 +1762,7 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
         public WebApplicationFactory<Program> Application { get; }
         public string CredentialDirectory { get; }
         public TestHost(PeopleApiFixture fixture, Action<IServiceCollection>? configure, string? credentialDirectory,
-            Dictionary<string, string?>? configuration)
+            Dictionary<string, string?>? configuration, CatalogGate? catalogGate)
         {
             CredentialDirectory = credentialDirectory ?? Path.GetFullPath(Path.Combine(fixture.AttachmentStorageDirectory, "..", "credentials-" + Guid.NewGuid()));
             Server = new(Browser) { ModelsBody = """{"models":[{"slug":"gpt-5.6-sol","display_name":"First","visibility":"list"},{"slug":"gpt-5.6","display_name":"Second","visibility":"list"}]}""" };
@@ -1527,7 +1770,12 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
             {
                 services.Configure<ChatGptOptions>(options => options.DataDirectory = CredentialDirectory);
                 services.RemoveAll<ISystemBrowser>(); services.AddSingleton<ISystemBrowser>(Browser);
-                services.AddHttpClient<ChatGptHttpClient>().ConfigurePrimaryHttpMessageHandler(() => Server).RemoveAllLoggers();
+                services.AddHttpClient<ChatGptHttpClient>().ConfigurePrimaryHttpMessageHandler(() =>
+                {
+                    if (catalogGate is null) return Server;
+                    catalogGate.InnerHandler = Server;
+                    return catalogGate;
+                }).RemoveAllLoggers();
                 services.AddSingleton<IStartupFilter>(new Loopback()); configure?.Invoke(services);
             }).WithWebHostBuilder(builder =>
             {
@@ -1546,6 +1794,27 @@ public abstract class ProfileIsolationTestsContract<TFixture>(TFixture fixture) 
             ["code"] = "private-synthetic-code", ["client_id"] = "fixture-client"
         });
         public void Dispose() { Application.Dispose(); Server.DisposeKey(); }
+    }
+    private sealed class CatalogGate : DelegatingHandler
+    {
+        private int armed;
+        public bool IgnoreCancellation { get; init; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Arm() => Interlocked.Exchange(ref armed, 1);
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var pause = request.RequestUri?.AbsoluteUri == "https://api.openai.com/v1/models" && Interlocked.Exchange(ref armed, 0) == 1;
+            var response = await base.SendAsync(request, cancellationToken);
+            if (!pause) return response;
+            try
+            {
+                Entered.TrySetResult();
+                await Continue.Task.WaitAsync(IgnoreCancellation ? CancellationToken.None : cancellationToken);
+                return response;
+            }
+            catch { response.Dispose(); throw; }
+        }
     }
     private sealed class Loopback : IStartupFilter
     {

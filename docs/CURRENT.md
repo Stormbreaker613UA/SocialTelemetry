@@ -1,10 +1,14 @@
 # SocialTelemetry Current State
 
-Updated: 2026-11-15 (published baseline3b986cad; ten findings independently review-CLOSED, nine published; B2-03 scoped publication PENDING; two other P2 open; Backend SOURCE STOP; LocalAI unpublished)
+Updated: 2026-11-16 (published baselinea952555a; eleven findings independently review-CLOSED, ten published; B1-P2 scoped publication PENDING; only B2-02 OPEN; Backend SOURCE STOP; LocalAI unpublished)
 
 ## Active review corrections (owner-approved 2026-10-26)
 
 Owner STOP boundary (2026-11-15): after the currently agreed review-remediation fixes, checks, independent closures and scoped publications are completed, Root must STOP and discuss further actions/decisions with the owner. No automatic next feature, LocalAI integration, broader publication, UI or release work beyond those agreed correction scopes. Current B2-01 scope/checks remain unchanged; workers report directly to Root and do not choose subsequent product stages.
+
+Root verified B2-03 publicationa952555a5da325c48f652e4e5ad1061913cde108, parent3b986cad4ee85fef87f54e56ef6302d43eb1d01d: exact4M/0A/0D via --no-renames, raw aggregateF5610D3D04BA70840D1A5512036BB6CBEFB8F23B85161CABC3D28E02001586F8, all four normalized working blobs, fresh live origin/main and empty index. Ten findings are CLOSED/published; B1-P2 and B2-02 remain open, A5 separately deferred. LocalAI34/protected10 remain preserved outside this commit. Historical B2-03 publication-pending wording below is superseded; no whole-LocalAI/v1 acceptance follows.
+
+B1-P2 implemented/tested on frozen build02 Windows/Linux and independently CLOSED by SAME Astra actual FULL FINAL, no remaining REQUIRED finding in assigned scope. Scoped four-path publication PENDING; Backend SOURCE STOP. Eleven findings independently review-CLOSED, ten published; only B2-02 remains OPEN, A5 separately deferred. No whole-LocalAI/v1 acceptance. Historical bounded assignment follows: release credential-file protection before the model-catalog HTTP request on the live owned picker/selection and inference-session preparation paths. Capture the owned account/session/token under the existing lock, perform catalog I/O outside protection, then reread durable ownership/session/token state before returning a catalog or issuing an inference session. Never save a stale credential-state snapshot or retarget to another account/session. Preserve exact model IDs, live catalog behavior, capability resolution, original owner/admission/generation, short final execution lease and existing serialized token-rotation persistence/cancellation/reconnect semantics; any unauthorized-catalog retry must not rotate a token already replaced by another host or revive disconnected credentials. Do not redesign refresh/revocation or add caches, lock managers, services, schema, dependencies or adjacent fixes. Verify with deterministic fake-HTTP catalog gates that a paused catalog does not block an existing execution lease/valid analysis commit, including cooperating hosts, and that disconnect/reconnect/owner or generation changes cannot publish stale results. Cover real bound PostgreSQL/SQLite flows and relevant refresh/rotation/cancellation regressions with bounded Windows/Linux current-DLL checks, no model/native/broad/EF reruns. Backend owns minimal existing source/tests and targeted CURRENT after this handoff; narrow review and scoped publication remain separate. The owner STOP boundary remains mandatory after the agreed remediation finishes.
 
 Root verified B2-01 publication3b986cad4ee85fef87f54e56ef6302d43eb1d01d, parent46ed23168a19dea6be00c3bab0c73915166231e6: exact3M/0A/0D via --no-renames, raw aggregate81454A18316931745504A117CDDDB3F1C3563CE4E14C01718031C5767DE2EA69, all three normalized working blobs, fresh live origin/main and empty index. Nine findings are CLOSED/published; B1-P2, B2-02 and B2-03 remain open, A5 separately deferred. LocalAI34/protected Spec/.gitignore/tracker patch/five voice files are preserved outside this commit. Historical B2-01 publication-pending wording below is superseded; no whole-LocalAI/v1 acceptance follows.
 
@@ -47,6 +51,110 @@ First group is B5A-01/B5A-02 only: refuse an Interaction deletion with foreign l
 Backend source editing is STOPPED after implementation/testing and the SAME Reviewer's final narrow closure of B5A-01/B5A-02. Owner explicitly authorized separately coordinated scoped publication of ONLY the five reviewed correction source/test paths plus CURRENT (six paths), which remains PENDING until Git succeeds. Unpublished LocalAI source, Planner Spec/.gitignore and the other ten P2 are excluded from that bounded publication. Do not claim LocalAI reviewed clear/published or whole-v1 acceptance. Existing test counts, setup failures, platform/keyring qualifications and logs remain unchanged; no reruns or additional model/native/live-provider work.
 
 Subsequent priority groups remain storage recovery/avatar/temp privacy; selector/journal classification/analysis pending writes; provider callbacks/SSE/locking/post-commit responses. Final publication requires the explicit corrected scope, review closure and preserved unrelated tracker/voice/ignored files. Future UI/Advisor/server work does not start here.
+
+### B1-P2 final implementation/test/review checkpoint (Backend, 2026-11-15; review closure 2026-11-16; SOURCE STOP)
+
+ONLY ChatGptConnection.cs + ChatGptConnection.Ownership.cs + existing ProfileIsolationTests.cs + CURRENT =4M/0A/0D, baselinea952555a5da325c48f652e4e5ad1061913cde108. Implemented/tested and independently CLOSED by SAME Astra actual FULL FINAL recovered/captured by Root, no remaining REQUIRED finding in assigned scope. Reviewed both production diffs, test diff/actual assertions, necessary boundaries and supplied evidence; end freeze matched. Eleven findings independently review-CLOSED, ten published; ONLY B1-P2 scoped publication PENDING. Only B2-02 remains OPEN; A5 separately deferred. On 2026-11-16 after the power outage, Root freshly verified source4/fiveDLL/log4/protected10/LocalAI34 hashes exactly match the pre-outage freeze, connectivity-only fsck exit0, indexempty/diffcheck0/no indexlock/no model processes. No rebuild or test rerun; all supplied results/failure/platform/keyring qualifications unchanged. No whole-LocalAI/v1 acceptance. RootSpec/ignore/protected10/LocalAI34/patch/five voices preserved/excluded; OWNER STOP paragraph EXACT unchanged. This final checkpoint supersedes pending/active-run wording in recovery below; earlier failures/keyring/SQL-file/platform qualifications retained. No Git/Reviewer/Tracker/Memory/newagents/newreportfiles/nextstage.
+
+- Existing owned catalog and inference preparation now share private immutable CatalogCredentials capture under the original file lock, catalog HTTP outside file/SQL protection, then authoritative current state reread checking original account/owner/client/subject/session/token before return. Session creation/legacy model selection also reread after their own lock wait; never save pre-network state. Legacy ownerless active catalog/select/session paths adapted coherently with original active account/model validation and missing-selection early refusal, no global fallback/retarget. Small private capture and validation/session helpers, no new public contract/service/cache/lockmanager/options/schema/dependency.
+- On the existing single401 retry, reacquire file lock and reread original identity/session first; rotate only if the rejected access/refresh token is still current, otherwise use the other host's already persisted replacement. A disconnect/reconnect/claim replacement rejects old work. GetTokensAsync normalized body compared EXACT unchanged vs HEAD: refresh rotation/identity validation/replacement persistence despite caller cancel stay serialized as before. Refresh/revocation network behavior is NOT redesigned; ONLY catalog HTTP moved outside file protection. No B2-02/A5/parser/prompt/schema/capability/selection-policy/fingerprint/generation/finallease change.
+- New deterministic tests use actual HTTP/App/ChatGPT transport and existing fake HTTP provider, realPG/fileSQLite, private test-only one-shot DelegatingHandler catalog barrier. Paused same/cooperating-host catalog permits status and real final analysis credential lease/commit201/allPending while catalog remains paused; inference preparation cannot issue reconnected credentials; late model selection refuses model/connection/disconnect/switch generation changes without SQL overwrite; canceled caller/changed durable claim cannot return captured credentials; stale401 after another host refresh makes exactly one rotation, reconnect cannot revive old session. No fake IAiClient/production hook/sleep/LockTimeout workaround. Existing refresh identity/discovery/error/cancellation/live-catalog/lease/provenance/late-binding cases preserved. All eleven new cases run on each provider; no live OAuth/provider/model/native call.
+
+| Check | Actual result | Ignored log |
+|---|---|---|
+| build01 |0warnings/0errors exit0;10.17s MSBuild/10.551s wrapper |.local-dev/logs/b1-build01.log|
+| Windows focused01 (retained FAILED) |53total/51passed/2failed/0skipped exit2;40.155s framework/40.479s wrapper |.local-dev/logs/b1-windows-focused01.log|
+| final build02 |0warnings/0errors exit0;4.50s MSBuild/4.731s wrapper |.local-dev/logs/b1-build02.log|
+| final Windows focused02 PG+real-fileSQLite |53passed/0failed/0skipped exit0;31.587s framework/31.918s wrapper |.local-dev/logs/b1-windows-focused02.log|
+| Linux SAME finalfiveDLL focused02 PG+real-fileSQLite |53passed/0failed/0skipped exit0;1m59s018ms framework/128.115s Docker wrapper |.local-dev/logs/b1-linux-focused02.log|
+
+Per OS PG15 + SQLite38 =53 (30 both-provider product cases +23 standalone SQLite adapter/refresh/lease cases);22 new +31 existing. Decomposition is not extra runs; overlapping OS cases are not summed as unique. Exact19 method suffixes below, each prefixed*, --parallel none --no-ansi --progress off. Windows dotnet SocialTelemetry.Tests/bin/Debug/net10.0/SocialTelemetry.Tests.dll --filter-method <19patterns>; Linux dotnet /work/bin/SocialTelemetry.Tests.dll SAME filter/flags. Full expanded command/environment/PID/creationUTC/DLL/summary/exit in log headers.
+
+Windows01 two failures were ONLY the new inference-preparation reconnect fixture on each provider: LegacyAsync seeded different fixture-GUID ClientId while Host.Callback used fixture-client, correctly400 InvalidCallback. Changed ONLY that test setup to actual fake-OAuth registration +explicit model selection, no assertion weakening/production change. Rebuilt final02 then one justified final focused Windows repeat and first Linux run, no duplicate green rerun. Four product DLLs unchanged from build01; TestDLL changed. No unproven timeout/flake claim. All other prior failures/qualifications remain historical.
+
+Final source3 raw hashes below frozen BEFORE build02; no source/test edit or rebuild after build02. Candidate build02 fiveDLL list in recovery below is the TESTED final snapshot: Windows logged hashes, Linux copied sha256sum and final host hashes ALL matched; only CURRENT facts changed after freeze. CS3 raw ordinal aggregateB5B6BFCF61D23CB62BDE8C3A03DAA120B35215BBB772D41FE76D3C1ECBD18223.
+- SocialTelemetry.Infrastructure/AI/ChatGptConnection.Ownership.cs 2F8A322372FC2E262D4FBFDADB74A362E2ED649F05713DE088B72174189E662F
+- SocialTelemetry.Infrastructure/AI/ChatGptConnection.cs 73FD249F3F17AABDC5978F27F924DE5AD1599460DB3EE0E010246F9786F0E6CE
+- SocialTelemetry.Tests/Features/Profiles/ProfileIsolationTests.cs F4789DF04E7FBB7BA207D7F49464EEAB594A33BCC65804749B103F59C237674F
+
+Actual UTC ranges/log raw SHA256:
+- build01 2026-11-15T19:22:20.892097+00:00..2026-11-15T19:22:31.442747+00:00 SHA256 B8644666A2276A0929490D687EA57A4CEE3E808B5914B6179A38C57037F8C32A
+- windows-focused01 2026-11-15T19:23:05.540907+00:00..2026-11-15T19:23:46.019760+00:00 SHA256 907829FB3649EB0ACCA1E86E399A09FF86920E9B601353C57DBE90EDE2F6F60F
+- build02 2026-11-15T19:24:36.274058+00:00..2026-11-15T19:24:41.005084+00:00 SHA256 B2351D58A19B887C096CC3613FFBA1980F4C4059178B37F6C3C47BE30BA1AD41
+- windows-focused02 2026-11-15T19:25:06.059514+00:00..2026-11-15T19:25:37.977467+00:00 SHA256 1BA5A04DCDD3D3372C465BA10B60D1168519C5550F758A84FBD386A2E5119C04
+- linux-focused02 2026-11-15T19:26:24.862695+00:00..2026-11-15T19:28:32.977573+00:00 SHA256 8D54284D6B657CEDB68D810130CC1EF001B878009017640775B9CD802B256380
+
+Owned build01PID3640/exec93126, build02PID34844 completedinline, Windows01PID33904/exec67187, Windows02PID31756/exec99247, DockerPID38580/exec29665 all finished; initial Windows01 exit2 retained, others exit0. Linux child16 exit0; --rm socialtelemetry-b1 absent, all SIX fixture-created containers fb4a1bcdfd83/54a38fa0637e/727beb83a9e0/99199e2f4f70/5c16bb535a41/f6ea92ec1424 checked absent, all five recorded host PIDs absent. No owned resource/cleanup retained; no shared Docker/Desktop/unrelated workloads stopped. Ignored logs/input copies retained, ordinary owned fixture cleanup only.
+
+Docker29.9.2; cachedaspnet10 sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c, --pull=never/--rm/--init/root/x64/glibc, readonly Windows-built test input copied to F-bind /work, socket for disposablePG17-alpine +real-fileSQLite. F isolated process/app/media/LocalAccess/provider/framework/temp/home/cache roots; no old/default C key/data moved/deleted. Historical default-keyring created-vs-preexisting uncertainty unchanged; no global filesystem-write audit claim. NOT LinuxSDK/fullsuite/musl/nonroot/ARM64/native/liveprovider/model/quality proof. SQL/file nonatomicity and serialized refresh/revocation qualifications unchanged. No broad/Qwen/Whisper/native/EF/model/downloads; no schema/model impact. Protected10 aggregate8DAE668FF143A524B963E33400E27725A9567276D55CF9BD45F662582DF8FD96 and LocalAI34aggregate46CEC389CE85E166C8C94536B327E7FD755E420E386A26F62329BD2343CA8B4B unchanged. HEADa952555a5da325c48f652e4e5ad1061913cde108/indexempty/diffcheck0 at final validation; Root separately inspects and assigns narrow review, Backend does not activate it.
+
+### B1-P2 material implementation recovery (Backend, 2026-11-15; verification PENDING)
+
+ONLY existing ChatGptConnection.cs + Ownership.cs + ProfileIsolationTests.cs + CURRENT =4M/0A/0D, baselinea952555a5da325c48f652e4e5ad1061913cde108. Ten findings CLOSED/published; B1/B2-02 remain OPEN pending independent review. RootSpec/ignore/protected10/LocalAI34/patch/five voices preserved; OWNER STOP boundary unchanged. No Git/Reviewer/Tracker/Memory/newagents/newreportfiles/nextstage.
+
+Implemented private immutable credential capture under existing file lock, catalog HTTP outside file/SQL protection, authoritative current account/owner/client/subject/session/access+refresh token reread before returning or issuing inference session. Existing legacy active-model paths adapted coherently with exact active account/model validation; no fallback. 401 retry re-locks/rereads: same original session required, reuse another host's replacement instead of rotating consumed token. Only fresh protected state saved, never pre-network state. GetTokensAsync serialized refresh/persistence/cancellation body unchanged; no cache/newlock/service/schema/dependency/options/prompt/model/parser/A5/B2-02 change.
+
+New deterministic real bound HTTP/App/ChatGPT transport tests in existing ProfileIsolationTests: paused catalog permits status and real final analysis credential lease/201/allPending while gate stays paused, same/cooperating hosts; late catalog cannot overwrite generation after model/connection/disconnect/switch; canceled caller/changed durable claim cannot return captured catalog; stale401 after other-host rotation makes exactly one refresh, disconnect/reconnect cannot revive captured session; inference preparation cannot issue reconnected credentials. Test-only one-shot DelegatingHandler barrier in existing fixture, no production hook/sleep/LockTimeout reduction. Existing FakeChatGptServer/ChatGptTestApp (part of unpublished LocalAI34) NOT modified. All disposable realPG/fileSQLite, no live provider.
+
+No build/tests for this delta yet; Docker read-only29.9.2 ready, no start/reset/install. No owned active runner at save. Pending dotnet build SocialTelemetry.slnx --no-restore -> .local-dev/logs/b1-build01.log, then exact focused Windows/currentDLL Linux -> .local-dev/logs/b1-{windows,linux}-focused01.log. F .local-dev/runs/b1-* process temp/home/cache + explicit isolated App/media/LocalAccess/provider/framework rings; Linux cachedaspnet10/root/glibc/--init/--rm/--pull=never/readOnlyinput/F-bind/socket, not SDK/fullsuite/native/liveprovider proof. No broad/Qwen/Whisper/EF/model/downloads. Retain UTC/PID+creationidentity/retainedexec/summary/exit and testedfiveDLLs as launched; no green claim until exit. Historical failure/keyring/SQL-file qualifications retained.
+
+Frozen candidate source raw SHA256:
+- SocialTelemetry.Infrastructure/AI/ChatGptConnection.cs 73FD249F3F17AABDC5978F27F924DE5AD1599460DB3EE0E010246F9786F0E6CE
+- SocialTelemetry.Infrastructure/AI/ChatGptConnection.Ownership.cs 2F8A322372FC2E262D4FBFDADB74A362E2ED649F05713DE088B72174189E662F
+- SocialTelemetry.Tests/Features/Profiles/ProfileIsolationTests.cs 7B2AEE726694440C9926FFD13AD28FD924AA1116D379B69618B2C3646A26C074
+
+PRE-B1 fiveDLLs (historical, NOT this source proof):
+- Api 7DC385C3FB4E1B53F4D51BA6EC4BC996ACCE1CA9EC8E0A0DF624754F25CD3A81
+- Application 278D0F3AAF695782FB0AD1A1374490D9DB0D19B2ACE87C6891652819CFAD0665
+- Domain 5D0034F2A3284C6B85DBE6AACFE4A7A490E6CA9E2F9EAD18A4696D06F7F1BF2C
+- Infrastructure 9D66C44D87694934150A0995EE0EEB76EEE20E6DFF03E09B6C750021D3202A8F
+- Tests B21D1AD023E4F0C7E8F4446E7302AA28E97FB81E3A64FD5C62C412BE6C74AFBB
+
+Focused method suffixes and exact commands are recorded in runtime log headers at launch; existing refresh/rotation/identity/failure/catalog/cancel/lease/provenance/late-binding cases selected, not whole ProfileIsolation or broad suite.
+
+
+B1 BEFORE focused runs: build01 completed2026-11-15T19:22:31.442747Z, dotnet build SocialTelemetry.slnx --no-restore,0warnings/0errors exit0,10.17s MSBuild/10.551s wrapper; buildPID3640/retainedexec93126 complete. Source3 frozen BEFORE build01. Windows exact19 method suffixes below then SAME finalfiveDLL Linux, --parallel none --no-ansi --progress off; actual logs/PID/creationUTC/retainedexec/results/exits recorded at launch. No owned active runner at this save.
+- Api 8AEEA4507F1E213D50BA6D94A6E7F2B538DBBA91C212E3BE36148FFCC802C387
+- Application 19143FCF5AD92495B4F39127805A71FFA07816D7AEE55E6C18ECD0312295736F
+- Domain 6FF4B651A597C7C092FDC683ECB00FC74C1B51EEE35C945E60109EDD7C7D8879
+- Infrastructure 7DEBCB2B8E954737311F567D5A5AF63964AE07011237D4B10DBAF19096B94E41
+- Tests 3B3B7A16733DEFE2654D2A73BD82CBB35113384C83532248F09D464646699152
+
+Exact19 method suffixes (each prefixed*):
+- Paused_catalog_does_not_block_final_analysis_credential_lease
+- Catalog_paused_during_inference_preparation_cannot_issue_a_reconnected_session
+- Late_catalog_cannot_publish_a_selection_after_original_binding_changes
+- Catalog_cancellation_or_replaced_claim_cannot_return_captured_credentials
+- Stale_catalog_unauthorized_response_does_not_rotate_another_hosts_replacement
+- Concurrent_refresh_across_two_hosts_uses_the_rotating_token_once
+- Caller_cancellation_during_refresh_still_persists_replacement_credentials
+- Failed_replacement_identity_validation_requires_reconnect_without_reusing_old_token
+- Discovery_failure_after_rotation_clears_saved_credentials
+- Refresh_errors_distinguish_unusable_credentials_from_temporary_failures
+- Models_use_live_catalog_and_do_not_silently_replace_an_unavailable_selection
+- Provider_failures_are_safe_and_do_not_clear_credentials
+- Identity_without_inference_permission_stays_connected_but_cannot_use_models
+- Caller_can_cancel_waiting_for_execution_lease_without_losing_session
+- Cancellation_remains_cancellation_and_preserves_credentials
+- Missing_connection_or_model_stops_before_inference
+- Completed_inference_preserves_requested_and_returned_model_provenance
+- Text_transport_uses_nonstored_streaming_Responses_and_returns_only_completed_output
+- Late_inference_cannot_commit_after_original_binding_is_invalidated
+
+
+B1 Windows focused01 FAILED:53total/51passed/2failed/0skipped exit2,40.155s framework/40.479s wrapper,2026-11-15T19:23:05.540..19:23:46.019760Z, PID33904/retainedexec67187 complete. Both failures are new inference-preparation reconnect fixture on PG/SQLite: seeded LegacyAsync ClientId fixture-GUID cannot match Host.Callback fixture-client, so expectedOK callback correctly returned400 InvalidCallback. Fixed ONLY that test setup to real fake-OAuth registration +explicit model selection, preserving assertions/production. Failed log .local-dev/logs/b1-windows-focused01.log retained. No timeout/flake/production defect claim.
+Pending build02 after final fixture edit -> .local-dev/logs/b1-build02.log, then justified final focused Windows02 +first Linux02 SAMEfinalfiveDLL exact19methods/flags; no broad. Source2 production body unchanged from build01; current test raw F4789DF04E7FBB7BA207D7F49464EEAB594A33BCC65804749B103F59C237674F. No owned active runner at this save; build01 fiveDLL above historical until compared. Future PID/creationUTC/retainedexec/summary/exit retained in logs; all earlier qualifications preserved.
+
+
+B1 BEFORE final focused runs: build02 exit0,0warnings/0errors after fixture-only setup correction; PID34844 completed. Source3 now frozen before build02; no active owned runner at save. Pending Windows02 then Linux02 exact19methods; command/result/PID/creationUTC/handles in .local-dev/logs/b1-{windows,linux}-focused02.log. Final candidate build02 fiveDLLs:
+- Api 8AEEA4507F1E213D50BA6D94A6E7F2B538DBBA91C212E3BE36148FFCC802C387 (vs build01 unchanged)
+- Application 19143FCF5AD92495B4F39127805A71FFA07816D7AEE55E6C18ECD0312295736F (vs build01 unchanged)
+- Domain 6FF4B651A597C7C092FDC683ECB00FC74C1B51EEE35C945E60109EDD7C7D8879 (vs build01 unchanged)
+- Infrastructure 7DEBCB2B8E954737311F567D5A5AF63964AE07011237D4B10DBAF19096B94E41 (vs build01 unchanged)
+- Tests 20375515EA27C0CFEC87BFC281FDD89C04E424EF59D9C8A9D77A2C9D99D417D1 (vs build01 changed)
+
+
+B1 Windows focused02 completed2026-11-15T19:25:37.977467Z:53passed/0failed/0skipped exit0,31.587s framework/31.918s wrapper, PID31756/creationUTC19:25:06.069383Z/retainedexec99247 complete. Four productDLL unchanged from build01; TestDLL changed only for fixture correction. Source3/build02 fiveDLL frozen, no edits/rebuild/greenrepeat. Pending Linux SAME exact19methods/build02 fiveDLL -> .local-dev/logs/b1-linux-focused02.log; --rm socialtelemetry-b1 container, ownedDockerPID/creationUTC/childPID/retainedexec recorded at launch. No Linuxgreenclaim yet. Old Windows01 failedlog retained as fixture InvalidCallback setup failure, not relabelled. No owned active runner at this save.
 
 ### B2-03 final implementation/test/review checkpoint (Backend, 2026-11-15; SOURCE STOP)
 

@@ -56,28 +56,17 @@ public sealed partial class ChatGptConnection
 
     internal async Task<ChatGptModelCatalog> GetOwnedModelsAsync(Guid owner, Guid connectionId, string? selectedModel, CancellationToken cancellationToken)
     {
-        using var storageLock = await store.LockAsync(cancellationToken);
-        var state = await store.ReadAsync(cancellationToken);
-        var account = OwnedAccount(state, owner, connectionId);
-        var models = await GetModelsAsync(state, account, cancellationToken);
-        return new ChatGptModelCatalog(models, selectedModel, models.Any(model => model.Id == selectedModel));
+        var catalog = await LoadCatalogAsync(owner, connectionId, cancellationToken);
+        return new ChatGptModelCatalog(catalog.Models, selectedModel, catalog.Models.Any(model => model.Id == selectedModel));
     }
 
     internal async Task<InferenceSession> GetOwnedInferenceSessionAsync(Guid owner, Guid connectionId, string model, CancellationToken cancellationToken)
     {
+        var catalog = await LoadCatalogAsync(owner, connectionId, cancellationToken);
         using var storageLock = await store.LockAsync(cancellationToken);
         var state = await store.ReadAsync(cancellationToken);
-        var account = OwnedAccount(state, owner, connectionId);
-        var models = await GetModelsAsync(state, account, cancellationToken);
-        if (!models.Any(candidate => candidate.Id == model)) throw new AiProviderException(AiFailure.ModelUnavailable);
-        var tokens = account.Tokens ?? throw new AiProviderException(AiFailure.NotConnected);
-        if (tokens.SessionId == Guid.Empty)
-        {
-            tokens.SessionId = Guid.NewGuid();
-            await store.SaveAsync(state, cancellationToken);
-        }
-        return new InferenceSession { Model = model, AccessToken = tokens.AccessToken, SessionId = tokens.SessionId,
-            LifetimeCancellationToken = lifetimes.GetOrAdd(tokens.SessionId, _ => new CancellationTokenSource()).Token };
+        var account = RequireCatalogAccount(state, catalog.Credentials);
+        return await CreateInferenceSessionAsync(state, account, model, catalog.Models, cancellationToken);
     }
 
     internal async Task ValidateOwnedSessionAsync(Guid owner, Guid connectionId, Guid sessionId, CancellationToken cancellationToken)

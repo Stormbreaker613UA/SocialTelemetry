@@ -152,21 +152,19 @@ public sealed partial class ChatGptConnection(
 
     internal async Task<ChatGptModelCatalog> GetModelsAsync(CancellationToken cancellationToken)
     {
-        using var storageLock = await store.LockAsync(cancellationToken);
-        var state = await store.ReadAsync(cancellationToken);
-        var account = ActiveAccount(state);
-        var models = await GetModelsAsync(state, account, cancellationToken);
-        return new ChatGptModelCatalog(models, account.SelectedModel, models.Any(model => model.Id == account.SelectedModel));
+        var catalog = await LoadCatalogAsync(null, null, cancellationToken);
+        var selected = catalog.Credentials.SelectedModel;
+        return new ChatGptModelCatalog(catalog.Models, selected, catalog.Models.Any(model => model.Id == selected));
     }
 
     internal async Task SelectModelAsync(string modelId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(modelId)) throw new AiProviderException(AiFailure.ModelNotSelected);
+        var catalog = await LoadCatalogAsync(null, null, cancellationToken);
         using var storageLock = await store.LockAsync(cancellationToken);
         var state = await store.ReadAsync(cancellationToken);
-        var account = ActiveAccount(state);
-        var models = await GetModelsAsync(state, account, cancellationToken);
-        if (!models.Any(model => model.Id == modelId)) throw new AiProviderException(AiFailure.ModelUnavailable);
+        var account = RequireCatalogAccount(state, catalog.Credentials);
+        if (!catalog.Models.Any(model => model.Id == modelId)) throw new AiProviderException(AiFailure.ModelUnavailable);
         account.SelectedModel = modelId;
         await store.SaveAsync(state, cancellationToken);
         logger.LogInformation("ChatGPT model {ModelId} selected for connection {ConnectionId}", modelId, account.Id);
@@ -213,12 +211,18 @@ public sealed partial class ChatGptConnection(
 
     internal async Task<InferenceSession> GetInferenceSessionAsync(CancellationToken cancellationToken)
     {
+        var catalog = await LoadCatalogAsync(null, null, cancellationToken, requireSelectedModel: true);
+        var model = catalog.Credentials.SelectedModel ?? throw new AiProviderException(AiFailure.ModelNotSelected);
         using var storageLock = await store.LockAsync(cancellationToken);
         var state = await store.ReadAsync(cancellationToken);
-        var account = ActiveAccount(state);
-        if (account.SelectedModel is null) throw new AiProviderException(AiFailure.ModelNotSelected);
-        var models = await GetModelsAsync(state, account, cancellationToken);
-        if (!models.Any(model => model.Id == account.SelectedModel)) throw new AiProviderException(AiFailure.ModelUnavailable);
+        var account = RequireCatalogAccount(state, catalog.Credentials);
+        return await CreateInferenceSessionAsync(state, account, model, catalog.Models, cancellationToken);
+    }
+
+    private async Task<InferenceSession> CreateInferenceSessionAsync(ChatGptState state, ChatGptAccount account,
+        string model, IReadOnlyList<ChatGptModel> models, CancellationToken cancellationToken)
+    {
+        if (!models.Any(candidate => candidate.Id == model)) throw new AiProviderException(AiFailure.ModelUnavailable);
         var tokens = account.Tokens ?? throw new AiProviderException(AiFailure.NotConnected);
         // Older protected stores predate session generations. Persist one before issuing a lease.
         if (tokens.SessionId == Guid.Empty)
@@ -226,11 +230,10 @@ public sealed partial class ChatGptConnection(
             tokens.SessionId = Guid.NewGuid();
             await store.SaveAsync(state, cancellationToken);
         }
-        var lifetime = lifetimes.GetOrAdd(tokens.SessionId, _ => new CancellationTokenSource());
         return new InferenceSession
         {
-            AccessToken = tokens.AccessToken, Model = account.SelectedModel,
-            SessionId = tokens.SessionId, LifetimeCancellationToken = lifetime.Token
+            AccessToken = tokens.AccessToken, Model = model, SessionId = tokens.SessionId,
+            LifetimeCancellationToken = lifetimes.GetOrAdd(tokens.SessionId, _ => new CancellationTokenSource()).Token
         };
     }
 
@@ -299,18 +302,72 @@ public sealed partial class ChatGptConnection(
         }
     }
 
-    private async Task<IReadOnlyList<ChatGptModel>> GetModelsAsync(ChatGptState state, ChatGptAccount account, CancellationToken cancellationToken)
+    private async Task<(CatalogCredentials Credentials, IReadOnlyList<ChatGptModel> Models)> LoadCatalogAsync(
+        Guid? owner, Guid? connectionId, CancellationToken cancellationToken, bool requireSelectedModel = false)
     {
-        var tokens = await GetTokensAsync(state, account, forceRefresh: false, cancellationToken);
+        CatalogCredentials captured;
+        using (await store.LockAsync(cancellationToken))
+        {
+            var state = await store.ReadAsync(cancellationToken);
+            var account = owner is { } owned ? OwnedAccount(state, owned, connectionId ?? Guid.Empty) : ActiveAccount(state);
+            if (requireSelectedModel && account.SelectedModel is null) throw new AiProviderException(AiFailure.ModelNotSelected);
+            var tokens = await GetTokensAsync(state, account, forceRefresh: false, cancellationToken);
+            captured = new CatalogCredentials(account, tokens, owner is null);
+        }
+
+        IReadOnlyList<ChatGptModel> models;
         try
         {
-            return await provider.GetModelsAsync(tokens.AccessToken, cancellationToken);
+            models = await provider.GetModelsAsync(captured.AccessToken, cancellationToken);
         }
         catch (AiProviderException exception) when (exception.Failure == AiFailure.ReconnectRequired)
         {
-            tokens = await GetTokensAsync(state, account, forceRefresh: true, cancellationToken);
-            return await provider.GetModelsAsync(tokens.AccessToken, cancellationToken);
+            using (await store.LockAsync(cancellationToken))
+            {
+                // Another host may have rotated while this catalog request was in flight.
+                // Re-read before deciding whether the rejected token still needs rotation.
+                var state = await store.ReadAsync(cancellationToken);
+                var account = RequireCatalogAccount(state, captured, allowRotatedToken: true);
+                var unchangedToken = SameCatalogTokens(account.Tokens!, captured);
+                var tokens = await GetTokensAsync(state, account, forceRefresh: unchangedToken, cancellationToken);
+                captured = new CatalogCredentials(account, tokens, captured.RequiresActiveAccount);
+            }
+            models = await provider.GetModelsAsync(captured.AccessToken, cancellationToken);
         }
+
+        using (await store.LockAsync(cancellationToken))
+            RequireCatalogAccount(await store.ReadAsync(cancellationToken), captured);
+        return (captured, models);
+    }
+
+    private static ChatGptAccount RequireCatalogAccount(ChatGptState state, CatalogCredentials captured,
+        bool allowRotatedToken = false)
+    {
+        var account = state.Accounts.SingleOrDefault(candidate => candidate.Id == captured.ConnectionId);
+        if (account?.Tokens is not { } tokens || account.UserProfileId != captured.Owner ||
+            account.ClientId != captured.ClientId || account.Subject != captured.Subject ||
+            tokens.SessionId != captured.SessionId ||
+            captured.RequiresActiveAccount && (state.ActiveConnectionId != captured.ConnectionId || account.SelectedModel != captured.SelectedModel) ||
+            !allowRotatedToken && !SameCatalogTokens(tokens, captured))
+            throw new AiProviderException(AiFailure.ExecutionInvalidated);
+        return account;
+    }
+
+    private static bool SameCatalogTokens(ChatGptTokens tokens, CatalogCredentials captured) =>
+        ChatGptHttpClient.FixedEquals(captured.AccessToken, tokens.AccessToken) && tokens.RefreshToken == captured.RefreshToken;
+
+    // Credential-bearing classes deliberately have no generated record ToString.
+    private sealed class CatalogCredentials(ChatGptAccount account, ChatGptTokens tokens, bool requiresActiveAccount)
+    {
+        public Guid ConnectionId { get; } = account.Id;
+        public Guid? Owner { get; } = account.UserProfileId;
+        public string ClientId { get; } = account.ClientId;
+        public string? Subject { get; } = account.Subject;
+        public Guid SessionId { get; } = tokens.SessionId;
+        public string AccessToken { get; } = tokens.AccessToken;
+        public string? RefreshToken { get; } = tokens.RefreshToken;
+        public string? SelectedModel { get; } = account.SelectedModel;
+        public bool RequiresActiveAccount { get; } = requiresActiveAccount;
     }
 
     private async Task<ChatGptTokens> GetTokensAsync(ChatGptState state, ChatGptAccount account, bool forceRefresh, CancellationToken cancellationToken)
